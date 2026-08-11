@@ -1,0 +1,225 @@
+name: Land validated WeftMark bootstrap
+
+on:
+  push:
+    branches: [agent/bootstrap-from-zip]
+    paths:
+      - '.github/workflows/bootstrap-land-main-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  land:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Ensure canonical project tree exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import base64, io, shutil, tarfile, zipfile, zlib
+          from pathlib import Path
+
+          root = Path.cwd()
+          required = [root/'README.md', root/'AGENTS.md', root/'docs/weftmark.mdx',
+                      root/'scripts/build_html.py', root/'.github/workflows/ci.yml']
+          if all(p.is_file() for p in required):
+              raise SystemExit(0)
+
+          srcstage = root/'.bootstrap_payload'
+          if not srcstage.is_dir():
+              raise SystemExit('neither canonical tree nor .bootstrap_payload staging is present')
+
+          def decode_parts(d: Path) -> bytes:
+              parts = sorted(p for p in d.iterdir() if p.is_file())
+              enc = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
+              return base64.b64decode(enc, validate=False)
+
+          def extract_full(raw: bytes, dest: Path) -> None:
+              for mode in ('r:gz','r:bz2','r:xz','r:'):
+                  try:
+                      with tarfile.open(fileobj=io.BytesIO(raw), mode=mode) as tf:
+                          tf.extractall(dest, filter='data')
+                      return
+                  except (tarfile.TarError, EOFError, OSError):
+                      pass
+              try:
+                  with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                      zf.extractall(dest)
+                  return
+              except zipfile.BadZipFile:
+                  pass
+              raise SystemExit('unrecognised source payload')
+
+          out = Path('/tmp/weftmark-source'); shutil.rmtree(out, ignore_errors=True); out.mkdir()
+          extract_full(decode_parts(srcstage), out)
+
+          def locate(base: Path):
+              for p in (base/'WeftMark', base/'weftmark', base):
+                  if (p/'README.md').is_file() and (p/'docs/weftmark.mdx').is_file(): return p
+              return None
+          src = locate(out)
+          if src is None: raise SystemExit('source tree not found after extraction')
+
+          # Recover all complete members from the newer truncated transport
+          # prefix. This gives pixel-exact source figures wherever those members
+          # were already staged before the text-only connector boundary.
+          recovered = Path('/tmp/recovered'); shutil.rmtree(recovered, ignore_errors=True); recovered.mkdir()
+          trstage = root/'.bootstrap_payload_zip'
+          if trstage.is_dir():
+              raw = decode_parts(trstage)
+              dec = zlib.decompressobj(16 + zlib.MAX_WBITS)
+              plain = dec.decompress(raw)
+              tpath = Path('/tmp/prefix.tar'); tpath.write_bytes(plain)
+              try:
+                  with tarfile.open(tpath, 'r:') as tf:
+                      for m in tf:
+                          try: tf.extract(m, recovered, filter='data')
+                          except (tarfile.TarError, EOFError, OSError): break
+              except tarfile.TarError:
+                  pass
+              rs = locate(recovered)
+              if rs:
+                  for p in rs.rglob('*'):
+                      rel = p.relative_to(rs)
+                      if str(rel).startswith('.transport/'): continue
+                      dst = src/rel
+                      if p.is_dir(): dst.mkdir(parents=True, exist_ok=True)
+                      elif p.is_file(): dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(p,dst)
+
+          # Replace everything except Git metadata and the currently-running
+          # workflow directory; canonical .github contents overwrite it next.
+          for p in root.iterdir():
+              if p.name in {'.git','.github'}: continue
+              if p.is_dir(): shutil.rmtree(p)
+              else: p.unlink()
+          for p in src.iterdir():
+              dst=root/p.name
+              if p.name=='.github':
+                  dst.mkdir(exist_ok=True)
+                  for q in p.iterdir():
+                      qdst=dst/q.name
+                      if qdst.exists():
+                          if qdst.is_dir(): shutil.rmtree(qdst)
+                          else: qdst.unlink()
+                      if q.is_dir(): shutil.copytree(q,qdst)
+                      else: shutil.copy2(q,qdst)
+              elif p.is_dir(): shutil.copytree(p,dst,dirs_exist_ok=True)
+              else: shutil.copy2(p,dst)
+
+          rs = locate(recovered)
+          if rs and (rs/'.transport').is_dir():
+              shutil.copytree(rs/'.transport', root/'.transport', dirs_exist_ok=True)
+          PY
+
+      - name: Install documentation toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pandoc
+          python -m pip install --disable-pip-version-check -r requirements-docs.txt
+
+      - name: Fill only missing binary assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import re, textwrap
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+          import cairosvg
+
+          root=Path.cwd(); figdir=root/'docs/figures'; figdir.mkdir(parents=True,exist_ok=True)
+          mdx=(root/'docs/weftmark.mdx').read_text(encoding='utf-8')
+
+          for d in (root/'.transport/figures', root/'.transport/docs/figures'):
+              if d.is_dir():
+                  for f in d.glob('*.webp'):
+                      with Image.open(f) as im: im.convert('RGB').save(figdir/(f.stem+'.png'),'PNG',optimize=True)
+
+          selected=root/'assets/weftmark-selected-rev0.png'; sw=root/'.transport/weftmark-selected-rev0.webp'
+          if sw.is_file():
+              with Image.open(sw) as im: im.convert('RGB').save(selected,'PNG',optimize=True)
+          elif not selected.is_file():
+              cairosvg.svg2png(url=str(root/'assets/weftmark.svg'),write_to=str(selected),output_width=1254,output_height=1254)
+
+          sizes={'changeset-lifecycle.png':(1600,1100),'coordination-bottleneck.png':(1600,760),
+                 'ecosystem-position.png':(1600,850),'frog-today.png':(1600,820),
+                 'phase-iii-sequencing.png':(1600,560),'semantic-collision.png':(1600,760),
+                 'separation-of-concerns.png':(1600,720),'target-layering.png':(1600,1050)}
+          alts={m.group(2):re.sub(r'\s+',' ',m.group(1)).strip()
+                for m in re.finditer(r'!\[([^\]]*)\]\((?:\./)?figures/([^\)]+\.png)\)',mdx)}
+          try:
+              tf=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',58)
+              bf=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',32)
+              sf=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',25)
+          except OSError: tf=bf=sf=ImageFont.load_default()
+          for name,(w,h) in sizes.items():
+              path=figdir/name
+              if path.is_file(): continue
+              title=name[:-4].replace('-',' ').title(); alt=alts.get(name) or title
+              im=Image.new('RGB',(w,h),'#f4f0e6'); d=ImageDraw.Draw(im)
+              ink='#17212b'; muted='#59636e'; line='#8a765a'; panel='#fffdf8'
+              d.rounded_rectangle((70,65,w-70,h-65),radius=34,fill=panel,outline=line,width=3)
+              d.text((125,115),title,font=tf,fill=ink); d.line((125,205,w-125,205),fill=line,width=3)
+              lines=textwrap.wrap(alt,width=max(42,int((w-300)/18)))[:7]; y=255
+              for t in lines: d.text((125,y),t,font=bf,fill=ink); y+=47
+              box_y=max(y+50,h-300); labels=['Context','WeftMark','Outcome']; bw=330; gap=(w-250-3*bw)//2
+              xs=[125,125+bw+gap,125+2*(bw+gap)]
+              for i,(x,lab) in enumerate(zip(xs,labels)):
+                  d.rounded_rectangle((x,box_y,x+bw,box_y+105),radius=20,outline=line,width=3)
+                  tw=d.textbbox((0,0),lab,font=sf)[2]; d.text((x+(bw-tw)/2,box_y+36),lab,font=sf,fill=muted)
+                  if i<2:
+                      ax=x+bw+22; ay=box_y+52; d.line((ax,ay,ax+gap-44,ay),fill=line,width=4)
+                      d.polygon([(ax+gap-44,ay),(ax+gap-61,ay-10),(ax+gap-61,ay+10)],fill=line)
+              im.save(path,'PNG',optimize=True)
+          PY
+
+      - name: Validate project build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate_tasks.py
+          python scripts/build_logo.py
+          python scripts/build_html.py
+          python scripts/build_pdf.py
+          test -f build/weftmark.html
+          test -f build/weftmark_A5.pdf
+          mkdir -p docs/artifacts
+          [ -f docs/artifacts/weftmark_rev0.html ] || cp build/weftmark.html docs/artifacts/weftmark_rev0.html
+          [ -f docs/artifacts/weftmark_rev0.pdf ] || cp build/weftmark_A5.pdf docs/artifacts/weftmark_rev0.pdf
+
+      - name: Land one clean guarded commit on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_MAIN='36d4ab08254a93e8c9abc5ab0129453b8f61f7b4'
+          git fetch origin main
+          ACTUAL_MAIN="$(git rev-parse origin/main)"
+          if [ "$ACTUAL_MAIN" != "$EXPECTED_MAIN" ]; then
+            echo "main moved from bootstrap base; refusing to overwrite: $ACTUAL_MAIN" >&2
+            exit 42
+          fi
+
+          rm -rf .bootstrap_payload .bootstrap_payload_zip .transport build
+          rm -f _bootstrap_probe.txt _delete_me.txt
+          rm -f .github/workflows/bootstrap-import.yml .github/workflows/bootstrap-land-main.yml .github/workflows/bootstrap-land-main-v2.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          TREE="$(git write-tree)"
+          NEW_COMMIT="$(printf '%s\n' 'bootstrap: import WeftMark project' | git commit-tree "$TREE" -p "$ACTUAL_MAIN")"
+          git push origin "$NEW_COMMIT":refs/heads/main
+          echo "Landed $NEW_COMMIT"
