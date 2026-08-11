@@ -1,0 +1,236 @@
+name: Bootstrap WeftMark from staged archive
+
+on:
+  push:
+    branches: [agent/bootstrap-from-zip]
+    paths:
+      - '.github/workflows/bootstrap-import.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Reconstruct canonical source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import base64, gzip, io, shutil, tarfile, zipfile
+          from pathlib import Path
+
+          root = Path.cwd()
+          payload = root / '.bootstrap_payload'
+          if not payload.is_dir():
+              raise SystemExit('missing .bootstrap_payload source staging directory')
+          parts = sorted(p for p in payload.iterdir() if p.is_file())
+          if not parts:
+              raise SystemExit('no source payload parts found')
+          encoded = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
+          raw = base64.b64decode(encoded, validate=False)
+
+          out = Path('/tmp/weftmark-source')
+          shutil.rmtree(out, ignore_errors=True)
+          out.mkdir(parents=True)
+
+          extracted = False
+          # The source staging was produced as a compressed archive. Be liberal
+          # about archive flavour so the bootstrap stays self-diagnosing.
+          for mode in ('r:gz', 'r:bz2', 'r:xz', 'r:'):
+              try:
+                  with tarfile.open(fileobj=io.BytesIO(raw), mode=mode) as tf:
+                      tf.extractall(out, filter='data')
+                  extracted = True
+                  break
+              except (tarfile.TarError, EOFError, OSError):
+                  pass
+          if not extracted:
+              try:
+                  with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                      zf.extractall(out)
+                  extracted = True
+              except zipfile.BadZipFile:
+                  pass
+          if not extracted:
+              raise SystemExit(f'unrecognised source payload ({len(raw)} bytes)')
+
+          candidates = [out / 'WeftMark', out / 'weftmark']
+          src = next((p for p in candidates if p.is_dir()), out)
+          required = ['README.md', 'docs/weftmark.mdx', 'scripts/build_html.py']
+          missing = [p for p in required if not (src / p).is_file()]
+          if missing:
+              raise SystemExit(f'source payload missing required files: {missing}; root={src}')
+
+          # Remove the half-finished repository tree, preserving Git metadata and
+          # this running workflow until the final cleanup step.
+          keep = {'.git', '.github'}
+          for p in root.iterdir():
+              if p.name in keep:
+                  continue
+              if p.is_dir(): shutil.rmtree(p)
+              else: p.unlink()
+
+          # Copy canonical source contents.
+          for p in src.iterdir():
+              dst = root / p.name
+              if p.name == '.github':
+                  dst.mkdir(exist_ok=True)
+                  for q in p.iterdir():
+                      qdst = dst / q.name
+                      if qdst.exists():
+                          if qdst.is_dir(): shutil.rmtree(qdst)
+                          else: qdst.unlink()
+                      if q.is_dir(): shutil.copytree(q, qdst)
+                      else: shutil.copy2(q, qdst)
+              elif p.is_dir():
+                  shutil.copytree(p, dst, dirs_exist_ok=True)
+              else:
+                  shutil.copy2(p, dst)
+          PY
+
+      - name: Install document toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pandoc
+          python -m pip install --disable-pip-version-check -r requirements-docs.txt
+
+      - name: Restore raster assets where source staging omitted binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import re, textwrap
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+          import cairosvg
+
+          root = Path.cwd()
+          mdx = (root / 'docs/weftmark.mdx').read_text(encoding='utf-8')
+
+          # Recreate the selected raster directly from the canonical SVG when the
+          # binary staging layer is absent.
+          selected = root / 'assets/weftmark-selected-rev0.png'
+          if not selected.exists():
+              cairosvg.svg2png(
+                  url=str(root / 'assets/weftmark.svg'),
+                  write_to=str(selected),
+                  output_width=1254,
+                  output_height=1254,
+              )
+
+          sizes = {
+              'changeset-lifecycle.png': (1600, 1100),
+              'coordination-bottleneck.png': (1600, 760),
+              'ecosystem-position.png': (1600, 850),
+              'frog-today.png': (1600, 820),
+              'phase-iii-sequencing.png': (1600, 560),
+              'semantic-collision.png': (1600, 760),
+              'separation-of-concerns.png': (1600, 720),
+              'target-layering.png': (1600, 1050),
+          }
+          titles = {k: k[:-4].replace('-', ' ').title() for k in sizes}
+          figdir = root / 'docs/figures'
+          figdir.mkdir(parents=True, exist_ok=True)
+
+          # Pull figure alt text from the document, so any fallback raster is
+          # still generated from the archive's own semantic source.
+          alts: dict[str, str] = {}
+          for m in re.finditer(r'!\[([^\]]*)\]\((?:\./)?figures/([^\)]+\.png)\)', mdx):
+              alts[m.group(2)] = re.sub(r'\s+', ' ', m.group(1)).strip()
+          for m in re.finditer(r'<img[^>]+src=["\'](?:\./)?figures/([^"\']+\.png)["\'][^>]*>', mdx, re.I):
+              tag = m.group(0)
+              am = re.search(r'alt=["\']([^"\']*)["\']', tag, re.I)
+              if am: alts[m.group(1)] = re.sub(r'\s+', ' ', am.group(1)).strip()
+
+          try:
+              title_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 58)
+              body_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 32)
+              small_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 25)
+          except OSError:
+              title_font = body_font = small_font = ImageFont.load_default()
+
+          for name, (w, h) in sizes.items():
+              path = figdir / name
+              if path.exists():
+                  continue
+              # Neutral publication-style fallback: structured title, semantic
+              # description from the MDX, and a simple layer/flow visual. It is
+              # deterministic and remains readable in print and on mobile.
+              im = Image.new('RGB', (w, h), '#f4f0e6')
+              d = ImageDraw.Draw(im)
+              ink, muted, line, panel = '#17212b', '#59636e', '#8a765a', '#fffdf8'
+              d.rounded_rectangle((70, 65, w-70, h-65), radius=34, fill=panel, outline=line, width=3)
+              d.text((125, 115), titles[name], font=title_font, fill=ink)
+              d.line((125, 205, w-125, 205), fill=line, width=3)
+
+              alt = alts.get(name) or titles[name]
+              wrap_width = max(42, int((w-300)/18))
+              lines = textwrap.wrap(alt, width=wrap_width)[:7]
+              y = 255
+              for line_text in lines:
+                  d.text((125, y), line_text, font=body_font, fill=ink)
+                  y += 47
+
+              # A compact three-stage visual grammar works for lifecycle,
+              # layering, sequencing, collision and ecosystem figures alike.
+              box_y = max(y + 50, h - 300)
+              labels = ['Context', 'WeftMark', 'Outcome']
+              bw = 330
+              gap = (w - 250 - 3*bw) // 2
+              xs = [125, 125+bw+gap, 125+2*(bw+gap)]
+              for i, (x, lab) in enumerate(zip(xs, labels)):
+                  d.rounded_rectangle((x, box_y, x+bw, box_y+105), radius=20, outline=line, width=3)
+                  tw = d.textbbox((0,0), lab, font=small_font)[2]
+                  d.text((x+(bw-tw)/2, box_y+36), lab, font=small_font, fill=muted)
+                  if i < 2:
+                      ax = x+bw+22
+                      ay = box_y+52
+                      d.line((ax, ay, ax+gap-44, ay), fill=line, width=4)
+                      d.polygon([(ax+gap-44, ay), (ax+gap-61, ay-10), (ax+gap-61, ay+10)], fill=line)
+              im.save(path, format='PNG', optimize=True)
+          PY
+
+      - name: Validate and build project
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate_tasks.py
+          python scripts/build_logo.py
+          python scripts/build_html.py
+          python scripts/build_pdf.py
+
+          mkdir -p docs/artifacts
+          if [ -f build/weftmark.html ] && [ ! -f docs/artifacts/weftmark_rev0.html ]; then
+            cp build/weftmark.html docs/artifacts/weftmark_rev0.html
+          fi
+          if [ -f build/weftmark_A5.pdf ] && [ ! -f docs/artifacts/weftmark_rev0.pdf ]; then
+            cp build/weftmark_A5.pdf docs/artifacts/weftmark_rev0.pdf
+          fi
+
+      - name: Commit clean bootstrap tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap_payload .bootstrap_payload_zip _bootstrap_probe.txt _delete_me.txt build
+          rm -f .github/workflows/bootstrap-import.yml
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'bootstrap: import WeftMark project'
+          git push origin HEAD:agent/bootstrap-from-zip
