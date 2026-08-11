@@ -1,0 +1,38 @@
+name: Cleanup WeftMark bootstrap transport
+
+on:
+  push:
+    branches: [agent/bootstrap-from-zip]
+    paths:
+      - '.github/workflows/bootstrap-cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Delete transport branch only after verified landing
+        shell: bash
+        run: |
+          set -euo pipefail
+          BOOTSTRAP_BASE='36d4ab08254a93e8c9abc5ab0129453b8f61f7b4'
+          git fetch origin main
+          MAIN="$(git rev-parse origin/main)"
+          if [ "$MAIN" = "$BOOTSTRAP_BASE" ]; then
+            echo 'main has not landed yet; preserving transport branch' >&2
+            exit 42
+          fi
+          git cat-file -e origin/main:AGENTS.md
+          git cat-file -e origin/main:scripts/build_pdf.py
+          git cat-file -e origin/main:docs/weftmark.mdx
+          git cat-file -e origin/main:.github/workflows/ci.yml
+          if git cat-file -e origin/main:.bootstrap_payload 2>/dev/null || git cat-file -e origin/main:.bootstrap_payload_zip 2>/dev/null; then
+            echo 'bootstrap payload still present on main; preserving transport branch' >&2
+            exit 43
+          fi
+          git push origin --delete agent/bootstrap-from-zip
