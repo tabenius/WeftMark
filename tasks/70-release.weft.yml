@@ -1,0 +1,111 @@
+format: weft-task-v0
+phase: release
+summary: Convert a useful internal control plane into an honestly described open-source alpha.
+
+tasks:
+  - slug: security-threat-model
+    title: Threat-model local and remote coordination surfaces
+    status: todo
+    priority: P0
+    depends:
+      - mcp-surface
+      - github-forge-adapter
+    purpose: Make trust boundaries explicit before remote adapters become routine.
+    scope:
+      files:
+        - docs/security.md
+        - tests/security/**
+      contracts:
+        - boundary:agent-identity
+        - boundary:credential-access
+        - boundary:remote-forge
+        - boundary:mcp-write
+    deliverables:
+      - Threat model, trust boundaries and abuse cases.
+      - Minimum secure defaults for local, MCP and forge integrations.
+    accept:
+      - Credential handling, actor identity, evidence tampering and review bypass are covered.
+    negative:
+      - Secrets are never stored in task/evidence payloads when a reference is sufficient.
+    evidence:
+      - kind: security
+        required: true
+        criterion: Threat model reviewed independently of implementation author.
+
+  - slug: packaging-alpha
+    title: Package an installable alpha
+    status: todo
+    priority: P1
+    depends:
+      - weftmark-dogfood
+      - security-threat-model
+    purpose: Make installation reproducible for solo developers and small teams.
+    scope:
+      files:
+        - pyproject.toml
+        - README.md
+        - docs/INSTALL.md
+      contracts:
+        - contract:package-v0
+    deliverables:
+      - Installable Python package and CLI entry point.
+      - Optional extras for MCP and forge adapters.
+    accept:
+      - Core local use installs without proprietary SDK dependencies.
+      - Fresh-environment smoke test covers changeset, evidence and review commands.
+    negative:
+      - Model-provider SDKs are not hard dependencies of the core package.
+    evidence:
+      - kind: ci
+        required: true
+        criterion: Package build and clean-install smoke test pass on supported Python versions.
+
+  - slug: open-source-license
+    title: Select and document the open-source license
+    status: todo
+    priority: P0
+    depends:
+      - repo-bootstrap
+    purpose: Resolve the license explicitly before public alpha claims are made.
+    scope:
+      files:
+        - LICENSE
+        - README.md
+      contracts:
+        - policy:license
+    deliverables:
+      - Chosen OSI-compatible license file and third-party notice policy.
+    accept:
+      - README states the exact license and contribution implications.
+    negative:
+      - The project is not described as open source before a license exists.
+    evidence:
+      - kind: review
+        required: true
+        criterion: License choice and inbound contribution policy reviewed by the maintainer.
+
+  - slug: alpha-release-evidence
+    title: Produce the first release evidence bundle
+    status: todo
+    priority: P0
+    depends:
+      - packaging-alpha
+      - open-source-license
+      - docs-assurance-facts
+    purpose: Make the first public alpha demonstrate the product principle it advocates.
+    scope:
+      files:
+        - release/**
+      contracts:
+        - contract:release-evidence-v0
+    deliverables:
+      - Version, source SHA, task graph state, test/CI evidence, review decision, SBOM or dependency inventory, and generated docs digest.
+    accept:
+      - Release evidence identifies exactly which commit was built and reviewed.
+      - Missing/unavailable evidence is visible rather than omitted.
+    negative:
+      - A release cannot claim verified capabilities absent corresponding evidence.
+    evidence:
+      - kind: deployment
+        required: true
+        criterion: Release bundle is published alongside the alpha artifact.

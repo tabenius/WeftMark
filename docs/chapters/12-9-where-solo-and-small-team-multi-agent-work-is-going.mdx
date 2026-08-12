@@ -1,0 +1,78 @@
+## 9. Where solo and small-team multi-agent work is going
+
+This section is intentionally interpretive. The following points are
+inferences from current open-source project direction, protocol work and
+the workflow patterns described earlier.
+
+### 9.1 The unit of work is moving from “chat” to “workspace”
+
+A chat transcript is not enough to manage parallel engineering. Current
+orchestration tools increasingly give each task a branch or worktree,
+its own terminal, and a reviewable diff. The durable unit is becoming a
+**workspace with lineage**. WeftMark should make that lineage explicit
+and agent-neutral.
+
+### 9.2 The human becomes scheduler and reviewer
+
+As agents become faster, a solo developer can behave more like a small
+engineering manager: decompose work, start several independent threads,
+inspect failures, compare approaches, and decide what enters the main
+branch. This makes review ergonomics, prioritization and “what needs my
+attention now?” more valuable than another chat window.
+
+### 9.3 Multi-vendor becomes normal
+
+Provider-agnostic tools such as OpenCode, Cline, Aider and Goose already
+assume that the “best model” is not permanent. Some users will route a
+planning task to one model, a mechanical refactor to another, and a
+private repository analysis to a local model through Ollama. WeftMark
+should identify the worker and record provenance without making model
+choice part of its core policy.
+
+### 9.4 Protocols reduce client lock-in, not coordination complexity
+
+MCP and ACP make it easier to connect tools, context, editors and
+agents. That is good, but standardized connectivity does not answer
+ownership, dependency, merge readiness or evidence freshness. Protocol
+convergence therefore increases the number of interchangeable workers —
+and makes a neutral coordination layer more useful, not less.
+
+### 9.5 Worktree isolation becomes a baseline; semantic isolation is next
+
+Git worktrees are appearing repeatedly because they are cheap,
+understandable and native to the underlying version-control system. They
+solve many filesystem collisions. The next frontier is semantic scope:
+contracts, schemas and boundaries that are shared even when files are
+separate.
+
+### 9.6 Evidence will become a competitive boundary
+
+When code production is cheap, confidence becomes expensive. A small
+team will increasingly care about whether an agent can provide
+reproducible test evidence, whether a reviewer is independent from the
+implementer, whether CI actually ran, and whether the result is stale
+after a rebase. Continue’s move toward source-controlled AI checks is
+one visible signal in this direction.
+
+### 9.7 Open-source control planes have a structural advantage
+
+The coordination ledger contains intimate knowledge of a developer’s
+repositories, task priorities, failures, agent behavior and operational
+environment. Open source matters here for reasons beyond price:
+inspectability, long-lived exportability, self-hosting, offline/local
+use, and the ability to survive the shutdown or strategic pivot of an
+agent vendor.
+
+<div class="callout">
+
+**Design implication.** WeftMark should optimize for *replaceable
+workers and durable work*. The agent session is temporary; the change
+set, evidence and review record are the asset.
+
+</div>
+
+</div>
+
+<div id="roadmap" class="section break-before">
+
+<span class="kicker">Roadmap</span>

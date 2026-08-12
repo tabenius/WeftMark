@@ -1,0 +1,127 @@
+## 2. RAGBAZ Frog today
+
+The current public repository is already a serious coordination
+prototype rather than a toy. The package identifies itself as
+<span class="inline-code">ragbaz-frog 0.2.0</span>, requires Python
+3.11+, exposes <span class="inline-code">frog</span> and
+<span class="inline-code">frog-mcp</span> entry points, and has an
+optional MCP dependency. Its master branch currently points to commit
+<span class="inline-code">debf6e2</span> from 13 June 2026, which added
+MCP health and gateway helpers.
+
+<div class="grid3">
+
+<div class="card">
+
+<div class="metric">
+
+Local-first
+
+</div>
+
+<div class="metric-label">
+
+coordination state
+
+</div>
+
+SQLite with explicit migrations, WAL mode, busy timeout and a guard
+against network-filesystem DB placement.
+
+</div>
+
+<div class="card">
+
+<div class="metric">
+
+Agent-aware
+
+</div>
+
+<div class="metric-label">
+
+identity & ownership
+
+</div>
+
+Agent/session identity, claims, locks, stale/expired lease handling and
+pre-edit lock checks.
+
+</div>
+
+<div class="card">
+
+<div class="metric">
+
+Graph-aware
+
+</div>
+
+<div class="metric-label">
+
+tasks & builds
+
+</div>
+
+Task dependencies, next-task scheduling, repo dependency edges, affected
+builds and runner delegation.
+
+</div>
+
+</div>
+
+### What is already there
+
+<div class="table-wrap">
+
+| Area                    | Current Frog capability                                                                         | Why it matters                                                          |
+|-------------------------|-------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| CLI / structured output | Strict command grammar, human rendering and <span class="inline-code">--json</span>             | Useful both for humans and agent/tool automation.                       |
+| Coordination DB         | SQLite, migrations, WAL, local-filesystem invariant                                             | Simple deployment with explicit concurrency semantics.                  |
+| Locks                   | Acquire, audit, reap, check-file, holder identity                                               | Turns “please do not collide” into an enforceable workflow primitive.   |
+| Task lifecycle          | Create, claim, finish, dependencies, blockers, priorities                                       | Moves beyond a passive issue list toward scheduling.                    |
+| Repository graph        | Repo discovery, targets, dependency edges, affected builds                                      | Lets agents reason about consequences, not just files.                  |
+| Forensics               | Event log, <span class="inline-code">log why</span>, <span class="inline-code">log blame</span> | Preserves causal context that chat histories often lose.                |
+| Federation              | Boxes, SSH workspaces, aliases, event mirroring                                                 | Supports more than one machine without sharing SQLite over network FS.  |
+| Interfaces              | TUI/board, MCP server, hooks, provider sync                                                     | Shows the core is already becoming a service used by multiple surfaces. |
+
+</div>
+
+<div class="figure">
+
+![Document figure](../assets/figures/frog-today.png)
+
+**Figure 3 — Frog today.** Frog already has the outline of an
+application service and adapter architecture. The opportunity is to make
+the core product concepts more explicit and reduce environment-specific
+assumptions.
+
+</div>
+
+### Repository-grounded gaps before calling it an open-source product
+
+The public repository is visible, but the current root does not expose a
+top-level <span class="inline-code">LICENSE</span> file. That is a legal
+and adoption gap: “public source” and “open source” are not the same
+thing. A license decision should therefore be an early productization
+task.
+
+The development history is also still primarily direct-commit oriented.
+I did not find a current GitHub Actions workflow in master, and the
+repository search currently returns no pull requests. Frog has strong
+local test discipline — the commit history documents hundreds of passing
+unit tests — but WeftMark should dogfood the review-and-evidence model
+it is trying to sell.
+
+Finally, some operational helpers still contain environment-specific
+assumptions, while the core package description remains tied to
+<span class="inline-code">/data/src</span>. That is entirely reasonable
+for an internal system, but a reusable product needs a stronger
+distinction between **core domain**, **local deployment profile** and
+**integration adapters**.
+
+</div>
+
+<div id="lessons" class="section break-before">
+
+<span class="kicker">Observed workflow</span>

@@ -1,0 +1,104 @@
+## 5. Core concepts
+
+### 5.1 Change Set
+
+A **Change Set** is the missing object between “task” and “pull
+request”. It binds intent to execution state. At minimum it should know
+the repository, base revision, working branch/worktree, assigned agent
+session, declared scopes, commits, evidence requirements and current
+review state.
+
+<div class="code">
+
+change_set: id: chg_01... task: ingress-mtls-proof repo:
+tabenius/example base_sha: 7c3... branch: weft/ingress-mtls-proof
+worktree: /.../.weft/worktrees/chg_01 agent: codex-session-42 scopes: -
+file: src/ingress/\*\* - contract: tenant-authentication
+evidence_policy: - unit-tests - integration-two-host - security-review
+review_state: evidence_incomplete
+
+</div>
+
+### 5.2 Evidence as data, not prose
+
+Evidence needs a richer state model than pass/fail. An agent can fail a
+test, a CI system can be unavailable, a previously passing result can
+become stale when the commit changes, and a benchmark can be valid only
+for one machine profile.
+
+<div class="grid2">
+
+<div class="card">
+
+#### Evidence kinds
+
+<span class="tag">unit test</span><span class="tag">integration
+test</span><span class="tag">CI</span><span class="tag">benchmark</span><span class="tag">security
+review</span><span class="tag">artifact</span><span class="tag">deployment
+probe</span>
+
+</div>
+
+<div class="card">
+
+#### Evidence states
+
+<span class="tag">declared</span><span class="tag">running</span><span class="tag">passed</span><span class="tag">failed</span><span class="tag">unavailable</span><span class="tag">stale</span><span class="tag">superseded</span>
+
+</div>
+
+</div>
+
+### 5.3 Semantic scopes
+
+File locks are necessary but insufficient. A semantic scope lets a
+repository declare named contracts or boundaries that cross file paths.
+A task that changes an authentication contract, event schema or
+migration protocol claims that contract even if its edited files do not
+overlap another task.
+
+<div class="figure">
+
+![Document figure](../assets/figures/semantic-collision.png)
+
+**Figure 5 — Semantic collision.** Three agents may touch different
+files while altering the same behavioral contract. Semantic locks make
+that hidden coupling visible.
+
+</div>
+
+### 5.4 Handoff
+
+A handoff is a deliberately compact replay package for another agent or
+human. It should be generated from the ledger rather than written from
+memory. The receiving worker should be able to accept it and continue
+with the exact branch, base, active scopes, decisions, failing tests and
+next action.
+
+<div class="code">
+
+weft handoff create ingress-mtls-proof --to opencode HANDOFF h_82f1
+change-set chg_01a7 base/head 7c3... → 91f... active scopes
+contract:tenant-auth, src/ingress/\*\* evidence unit:passed ·
+integration:failed · CI:unavailable blocked by test certificate expiry
+fixture next action fix fixture; rerun integration-two-host review not
+requested
+
+</div>
+
+### 5.5 Review as a first-class state transition
+
+Review should answer a defined question: *does the available change and
+evidence satisfy the declared acceptance and safety constraints?* A
+useful machine-readable result is more precise than a generic
+“approved”.
+
+<span class="tag">READY</span><span class="tag">READY WITH
+FOLLOW-UP</span><span class="tag">BLOCKED</span><span class="tag">STALE
+— REVALIDATE</span><span class="tag">EVIDENCE INCOMPLETE</span>
+
+</div>
+
+<div id="architecture" class="section break-before">
+
+<span class="kicker">Target design</span>

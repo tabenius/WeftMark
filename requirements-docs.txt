@@ -1,0 +1,4 @@
+WeasyPrint>=68,<69
+CairoSVG>=2.8,<3
+Pillow>=12,<13
+PyYAML>=6,<7

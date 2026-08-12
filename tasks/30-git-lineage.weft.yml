@@ -1,0 +1,126 @@
+format: weft-task-v0
+phase: git-lineage
+summary: Bind coordination state to the version-control facts developers already trust.
+
+tasks:
+  - slug: git-port-contract
+    title: Define a vendor-neutral Git port
+    status: todo
+    priority: P0
+    depends:
+      - domain-package-skeleton
+    purpose: Let domain/application services ask lineage questions without shelling out directly.
+    scope:
+      files:
+        - src/weftmark/application/ports/git.py
+        - tests/contracts/test_git_port.py
+      contracts:
+        - port:git-v0
+    deliverables:
+      - Interface for repository identity, refs, commits, diff paths, dirty state, and ancestry.
+    accept:
+      - Interface supports local Git and future remote adapters without GitHub-specific types.
+    negative:
+      - Pull request identifiers do not appear in the Git port.
+    evidence:
+      - kind: review
+        required: true
+        criterion: Port boundary reviewed for provider-specific leakage.
+
+  - slug: local-git-adapter
+    title: Implement the local Git adapter
+    status: todo
+    priority: P0
+    depends:
+      - git-port-contract
+    purpose: Make repository/commit lineage available without network access.
+    scope:
+      files:
+        - src/weftmark/adapters/git_local.py
+        - tests/adapters/test_git_local.py
+      contracts:
+        - adapter:git-local-v0
+    deliverables:
+      - Safe subprocess adapter for required Git operations.
+    accept:
+      - Tests cover detached HEAD, worktrees, dirty trees, missing refs, and merge-base queries.
+    negative:
+      - Adapter never runs a mutating Git command through a read-only method.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_git_local.py
+
+  - slug: git-change-binding
+    title: Bind Change Sets to base/head Git lineage
+    status: todo
+    priority: P0
+    depends:
+      - changeset-core-model
+      - local-git-adapter
+    purpose: Make the exact source state behind a claimed change auditable.
+    scope:
+      files:
+        - src/weftmark/application/change_binding.py
+        - tests/application/test_change_binding.py
+      contracts:
+        - boundary:git-lineage
+    deliverables:
+      - Service that records and refreshes base/head SHA, branch/worktree and changed paths.
+    accept:
+      - A moved head creates a new lineage observation rather than rewriting history.
+      - A rebase is represented explicitly.
+    negative:
+      - A task cannot be marked merge-ready when its evidence binds to an obsolete head SHA.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_change_binding.py
+
+  - slug: forge-port-contract
+    title: Define the optional code-forge port
+    status: todo
+    priority: P1
+    depends:
+      - git-port-contract
+      - review-decision-model
+    purpose: Support GitHub first without making GitHub the product model.
+    scope:
+      files:
+        - src/weftmark/application/ports/forge.py
+      contracts:
+        - port:forge-v0
+    deliverables:
+      - Provider-neutral PR/MR, review, CI-status and comment interfaces.
+    accept:
+      - GitHub and GitLab terminology can map into the same domain-facing contract.
+    negative:
+      - Forge API availability is not required for local-only Change Set operation.
+    evidence:
+      - kind: review
+        required: true
+        criterion: Port stays optional and does not contaminate core lifecycle types.
+
+  - slug: github-forge-adapter
+    title: Implement a GitHub forge adapter
+    status: todo
+    priority: P1
+    depends:
+      - forge-port-contract
+    purpose: Project Change Sets, evidence, and review state onto GitHub pull-request workflows.
+    scope:
+      files:
+        - src/weftmark/adapters/github.py
+        - tests/adapters/test_github.py
+      contracts:
+        - adapter:github-v0
+    deliverables:
+      - Read-side PR metadata, status checks, workflow evidence, reviews and changed-file mapping.
+    accept:
+      - Adapter can distinguish failed checks from checks that never ran or are unavailable.
+    negative:
+      - Network/API failures are represented as unavailable evidence, not test failure.
+    evidence:
+      - kind: test
+        required: true
+        criterion: Recorded fixtures cover success, failure, pending, missing-run and API-error cases.

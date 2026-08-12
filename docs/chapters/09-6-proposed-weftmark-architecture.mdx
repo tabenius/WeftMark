@@ -1,0 +1,51 @@
+## 6. Proposed WeftMark architecture
+
+The strongest architectural move is to formalize the separation that
+Frog has already begun: interfaces should call application services;
+application services should express domain rules; adapters should
+isolate Git, GitHub, agent runtimes, CI systems and project trackers;
+storage should preserve an append-friendly coordination and evidence
+ledger.
+
+<div class="figure">
+
+![Document figure](../assets/figures/target-layering.png)
+
+**Figure 6 — Target layering.** The domain layer should know that
+evidence exists and that a claim owns scopes; it should not know whether
+the worker is Cline, OpenCode, Codex, an Ollama-backed local agent or a
+human terminal session.
+
+</div>
+
+### Storage direction
+
+SQLite remains a good default for a local-first solo/small-team tool.
+Frog has already put useful guardrails around it. The product should
+resist prematurely turning the coordination database into a distributed
+database. A simpler path is:
+
+1.  keep a single write authority per coordination domain;
+2.  use append-friendly events for audit and replication;
+3.  store large artifacts outside SQLite and keep content-addressed
+    references;
+4.  federate through explicit APIs/SSH/HTTP rather than network-mounted
+    database files;
+5.  add PostgreSQL only if a real multi-user server deployment requires
+    it.
+
+### Protocols: use rather than invent
+
+Two open protocols are especially important. **MCP** standardizes how
+agent applications reach tools and context. **ACP** standardizes how
+editors/clients communicate with coding agents and explicitly targets
+both local and remote scenarios. WeftMark should therefore avoid
+creating a proprietary “universal agent protocol”. It can implement
+adapters around MCP/ACP and focus its own API on coordination,
+provenance and evidence.
+
+</div>
+
+<div id="implementation" class="section break-before">
+
+<span class="kicker">Engineering</span>

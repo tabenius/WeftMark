@@ -28,7 +28,8 @@ honest about that distinction:
 - `docs/weftmark.mdx` is the editable source of truth for the product and
   architecture paper.
 - `docs/artifacts/weftmark_rev0.html` and `weftmark_rev0.pdf` preserve the
-  original self-contained report as historical revision 0 artifacts.
+  revision-0 report. The bootstrap workflow creates this immutable snapshot from
+  the MDX source on the first successful `main` build.
 - `tasks/*.weft.yml` contain the dependency-aware initial implementation plan.
 - `AGENTS.md` specifies the small YAML-compatible task dialect used by those
   files.
@@ -106,8 +107,7 @@ assets/generated/weftmark-on-black-512.webp
 ```
 
 The vector mark is a cleaned, flat-vector interpretation of the selected rev0
-concept. `assets/weftmark-selected-rev0.png` is retained as a visual design
-reference, not as the canonical source.
+concept. The SVGs are canonical; PNG and WebP files are reproducible derivatives.
 
 ## Task plan
 

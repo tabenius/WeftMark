@@ -1,0 +1,145 @@
+format: weft-task-v0
+phase: domain
+summary: Define durable product concepts before adding adapters or interfaces.
+
+tasks:
+  - slug: domain-package-skeleton
+    title: Establish domain and application package boundaries
+    status: todo
+    priority: P0
+    depends:
+      - bootstrap-ci
+    purpose: Prevent CLI, GitHub, MCP, or storage details from becoming the product model.
+    scope:
+      files:
+        - src/weftmark/domain/**
+        - src/weftmark/application/**
+        - pyproject.toml
+      contracts:
+        - boundary:domain-adapter
+    deliverables:
+      - Importable Python package with domain and application layers.
+      - Architectural dependency test preventing domain imports from adapters.
+    accept:
+      - Domain types can be imported without Git, GitHub, SQLite, MCP, or network dependencies.
+    negative:
+      - Domain modules must not import adapter modules.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/architecture
+
+  - slug: changeset-core-model
+    title: Define the Change Set domain model
+    status: todo
+    priority: P0
+    depends:
+      - domain-package-skeleton
+    purpose: Make a stable envelope around transient agent sessions and branch work.
+    scope:
+      files:
+        - src/weftmark/domain/changeset.py
+        - tests/domain/test_changeset.py
+      contracts:
+        - contract:changeset-v0
+        - boundary:git-lineage
+    deliverables:
+      - Stable ChangeSet identity and lifecycle model.
+      - Goal, repository, base revision, branch/worktree, scopes, state, and timestamps.
+    accept:
+      - Change sets model planned, active, review, merged, closed, and abandoned states explicitly.
+      - Base revision and repository identity are immutable after activation unless an explicit rebase event is recorded.
+    negative:
+      - A closed change set cannot silently return to active state.
+      - Branch movement without a lineage event is rejected.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_changeset.py
+      - kind: review
+        required: true
+        criterion: Lifecycle reviewed against the Change Set figure in docs/weftmark.mdx.
+
+  - slug: evidence-core-model
+    title: Define typed evidence and evidence-state semantics
+    status: todo
+    priority: P0
+    depends:
+      - domain-package-skeleton
+    purpose: Separate code production from proof that the result was verified.
+    scope:
+      files:
+        - src/weftmark/domain/evidence.py
+        - tests/domain/test_evidence.py
+      contracts:
+        - contract:evidence-v0
+    deliverables:
+      - Evidence kinds, producers, subjects, timestamps, artifacts, commands, and environments.
+      - States including declared, running, passed, failed, unavailable, and stale.
+    accept:
+      - Unavailable evidence is distinct from failed evidence.
+      - Evidence can bind to task, change set, commit, review, and deployment subjects.
+      - Staleness can be computed when a bound commit or environment changes.
+    negative:
+      - Missing CI execution must never be represented as a test failure.
+      - Evidence cannot be silently rebound to a different commit.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_evidence.py
+
+  - slug: handoff-core-model
+    title: Define first-class handoff records
+    status: todo
+    priority: P1
+    depends:
+      - changeset-core-model
+      - evidence-core-model
+    purpose: Allow another agent or human to continue work without reconstructing state from chat history.
+    scope:
+      files:
+        - src/weftmark/domain/handoff.py
+        - tests/domain/test_handoff.py
+      contracts:
+        - contract:handoff-v0
+    deliverables:
+      - Handoff snapshot of goal, task, change set, revisions, scope, decisions, evidence, known failures, and next action.
+    accept:
+      - Handoffs are immutable records with a supersedes chain.
+      - A receiving worker can identify exact repository/base/head context from the record.
+    negative:
+      - Handoff creation does not transfer repository credentials or secrets.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_handoff.py
+
+  - slug: review-decision-model
+    title: Define persistent review decisions and blockers
+    status: todo
+    priority: P0
+    depends:
+      - changeset-core-model
+      - evidence-core-model
+    purpose: Preserve merge/hold decisions as domain state instead of ephemeral chat or PR prose.
+    scope:
+      files:
+        - src/weftmark/domain/review.py
+        - tests/domain/test_review.py
+      contracts:
+        - contract:review-decision-v0
+    deliverables:
+      - Ready, ready-with-follow-up, blocked, stale, and evidence-incomplete decisions.
+      - Findings with severity, scope, rationale, and resolution status.
+    accept:
+      - A blocking finding prevents a releasable decision until resolved or explicitly waived.
+      - Waivers record actor, rationale, time, and affected finding.
+    negative:
+      - A review decision cannot overwrite its provenance or author identity.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_review.py
+      - kind: security
+        required: true
+        criterion: Waiver and blocker transitions are reviewed for fail-open paths.

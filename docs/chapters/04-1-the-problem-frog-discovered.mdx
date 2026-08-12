@@ -1,0 +1,76 @@
+## 1. The problem Frog discovered
+
+With one developer and one coding agent, coordination can be informal. A
+branch, a chat session and a quick diff may be enough. The situation
+changes when a solo developer starts several agents in parallel, or when
+a small team mixes different agent products. The bottleneck moves away
+from typing code and toward **planning, ownership, isolation, review and
+proof**.
+
+The important distinction is that parallel software work creates more
+than one kind of conflict:
+
+<div class="grid2">
+
+<div class="card">
+
+### Textual conflict
+
+Two workers edit the same lines or files. Git can detect many of these
+conflicts. Worktrees and branches reduce them further.
+
+</div>
+
+<div class="card">
+
+### Semantic conflict
+
+Two workers edit different files but change the same protocol, schema,
+security boundary, migration or behavioral contract. Git usually cannot
+see this.
+
+</div>
+
+<div class="card">
+
+### Evidence conflict
+
+A task says “done”, but the available proof may mean only “edited
+locally”, not “tested”, “CI-verified”, “reviewed” or “deployed”.
+
+</div>
+
+<div class="card">
+
+### Context conflict
+
+A handoff loses decisions, rejected options, test results, branch state
+or the exact next action. The next agent repeats work or unknowingly
+reverses decisions.
+
+</div>
+
+</div>
+
+Frog was built in response to these problems rather than from a generic
+project-management template. That matters. Its strongest ideas are
+operational: task claiming is atomic, locks have owners, remote
+databases are not silently shared over unsafe filesystems, the scheduler
+understands dependencies and conflicts, and the event log can answer
+causal questions.
+
+<div class="figure">
+
+![Document figure](../assets/figures/coordination-bottleneck.png)
+
+**Figure 2 — The new bottleneck.** Once multiple agents can produce code
+simultaneously, the scarce resource becomes trustworthy coordination and
+review rather than raw code generation.
+
+</div>
+
+</div>
+
+<div id="today" class="section break-before">
+
+<span class="kicker">Repository snapshot</span>

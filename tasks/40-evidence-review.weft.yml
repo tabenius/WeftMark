@@ -1,0 +1,114 @@
+format: weft-task-v0
+phase: evidence-review
+summary: Close the loop from intent to proof to a persistent merge decision.
+
+tasks:
+  - slug: evidence-policy-model
+    title: Define evidence policies per task and Change Set
+    status: todo
+    priority: P0
+    depends:
+      - evidence-core-model
+      - review-decision-model
+    purpose: State what must be proven before work becomes reviewable or releasable.
+    scope:
+      files:
+        - src/weftmark/domain/policy.py
+        - tests/domain/test_policy.py
+      contracts:
+        - contract:evidence-policy-v0
+    deliverables:
+      - Required/optional evidence rules by kind and scope.
+      - Policy evaluation result explaining missing, stale, failed, and unavailable proof.
+    accept:
+      - Policies can require CI, security review, tests, docs, benchmark or deployment evidence.
+      - Evaluation is explainable rather than a single boolean.
+    negative:
+      - Unavailable required evidence cannot be treated as passed.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_policy.py
+
+  - slug: local-command-evidence
+    title: Capture local command/test evidence
+    status: todo
+    priority: P0
+    depends:
+      - evidence-core-model
+      - git-change-binding
+    purpose: Turn local tests into structured proof bound to an exact source revision and environment.
+    scope:
+      files:
+        - src/weftmark/application/evidence_runner.py
+        - tests/application/test_evidence_runner.py
+      contracts:
+        - surface:evidence-run
+    deliverables:
+      - Command runner with exit status, duration, cwd, environment fingerprint and output artifact references.
+    accept:
+      - Evidence binds to the current head SHA and becomes stale after source movement.
+    negative:
+      - Secret environment values are not serialized into evidence records.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_evidence_runner.py
+      - kind: security
+        required: true
+        criterion: Environment capture is reviewed for credential leakage.
+
+  - slug: review-service
+    title: Produce reviewer-facing readiness summaries
+    status: todo
+    priority: P0
+    depends:
+      - evidence-policy-model
+      - scope-audit-service
+      - git-change-binding
+    purpose: Answer what was intended, what changed, what proof exists, and what remains unresolved.
+    scope:
+      files:
+        - src/weftmark/application/review_service.py
+        - tests/application/test_review_service.py
+      contracts:
+        - surface:review-summary-v0
+    deliverables:
+      - Structured review summary and readiness decision proposal.
+    accept:
+      - Summary includes declared goal/scope, actual changed paths, contract scopes, lineage, evidence, findings and staleness.
+      - Ready, follow-up, blocked, stale and evidence-incomplete outcomes are explainable.
+    negative:
+      - The service cannot emit READY while an unresolved blocking finding exists.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_review_service.py
+      - kind: review
+        required: true
+        criterion: Output is useful without reading raw agent chat transcripts.
+
+  - slug: docs-assurance-facts
+    title: Define machine-readable product assurance facts
+    status: todo
+    priority: P1
+    depends:
+      - evidence-policy-model
+    purpose: Prevent documentation from silently drifting ahead of implemented or verified capability.
+    scope:
+      files:
+        - assurance/**
+        - scripts/check_assurance_docs.py
+      contracts:
+        - contract:assurance-facts-v0
+    deliverables:
+      - Facts describing feature state as planned, implemented, verified, reviewed, and releasable.
+      - Validation hooks for README/component manifest claims.
+    accept:
+      - A manifest/document claim can be checked against its supporting fact/evidence state.
+    negative:
+      - Implemented is never automatically promoted to verified.
+    evidence:
+      - kind: docs
+        required: true
+        criterion: At least three README claims are generated or validated from assurance facts.

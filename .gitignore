@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local/editor state
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Generated documentation builds (rev0 artifacts under docs/artifacts are committed)
+build/*
+!build/.gitkeep
+
+# Temporary exports
+*.tmp
+*.bak

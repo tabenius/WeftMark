@@ -1,0 +1,108 @@
+format: weft-task-v0
+phase: surfaces
+summary: Expose the same application model to humans and agents without duplicating semantics.
+
+tasks:
+  - slug: cli-surface
+    title: Implement the first WeftMark CLI
+    status: todo
+    priority: P0
+    depends:
+      - review-service
+      - handoff-core-model
+      - semantic-lock-model
+    purpose: Give humans a compact local workflow before adding a web interface.
+    scope:
+      files:
+        - src/weftmark/cli/**
+        - tests/cli/**
+      contracts:
+        - surface:cli-v0
+    deliverables:
+      - Commands for changeset create/show/list, scope, evidence, review, and handoff.
+    accept:
+      - Human output is readable and each read command has structured JSON output.
+      - Exit codes distinguish policy failure, unavailable evidence, and invalid input.
+    negative:
+      - CLI commands do not bypass application services to write storage directly.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/cli
+
+  - slug: mcp-surface
+    title: Expose the application services over MCP
+    status: todo
+    priority: P1
+    depends:
+      - cli-surface
+    purpose: Let coding agents coordinate through the same contracts humans use.
+    scope:
+      files:
+        - src/weftmark/mcp/**
+        - tests/mcp/**
+      contracts:
+        - surface:mcp-v0
+    deliverables:
+      - Read tools for task/change/evidence/review context.
+      - Write tools for claim/scope/evidence/handoff with explicit permissions.
+    accept:
+      - MCP tool results are equivalent to application-service results.
+      - Mutating tools expose dry-run where practical.
+    negative:
+      - MCP does not become a second business-logic implementation.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/mcp
+      - kind: security
+        required: true
+        criterion: Write tools reviewed for least-privilege permission grouping.
+
+  - slug: terminal-review-ui
+    title: Add a compact terminal reviewer view
+    status: todo
+    priority: P2
+    depends:
+      - cli-surface
+    purpose: Make change/evidence/blocker state glanceable during solo and small-team workflows.
+    scope:
+      files:
+        - src/weftmark/tui/**
+      contracts:
+        - surface:tui-review-v0
+    deliverables:
+      - Read-mostly terminal view of Change Sets, evidence and blockers.
+    accept:
+      - The TUI consumes the same read model as CLI/MCP.
+    negative:
+      - TUI startup cannot require scanning entire repository trees synchronously.
+    evidence:
+      - kind: benchmark
+        required: true
+        criterion: Warm startup remains interactive on a workspace with at least 50 repositories.
+
+  - slug: tablet-web-read-model
+    title: Prototype a tablet-friendly read-only review web surface
+    status: todo
+    priority: P2
+    depends:
+      - cli-surface
+      - docs-assurance-facts
+    purpose: Explore the product as an evidence/review instrument without prematurely building a full SaaS control plane.
+    scope:
+      files:
+        - web/**
+      contracts:
+        - surface:web-review-v0
+    deliverables:
+      - Responsive Change Set/evidence/review pages optimized for tablet widths.
+    accept:
+      - Read-only view can be produced from exported local state.
+      - No proprietary cloud dependency is required for local use.
+    negative:
+      - The prototype does not become an alternate source of truth for task or evidence state.
+    evidence:
+      - kind: review
+        required: true
+        criterion: Tablet view supports reviewer questions described in docs/weftmark.mdx.

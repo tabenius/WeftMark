@@ -1,0 +1,51 @@
+## 8. Where the open-source tooling ecosystem is now
+
+The ecosystem is converging on a useful division of labor. Open-source
+coding agents are becoming provider-agnostic and accessible through
+multiple clients. Separate orchestration tools are appearing to run many
+agents in parallel. Protocols are reducing editor/tool lock-in. This is
+exactly the environment in which a neutral coordination-and-evidence
+layer can make sense.
+
+<div class="table-wrap">
+
+| Project          | Open-source role                                                                                          | Relevant signal for WeftMark                                                                                          |
+|------------------|-----------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| **OpenCode**     | Provider-agnostic coding agent with TUI and client/server architecture.                                   | Agent frontends can be decoupled from execution; remote/mobile control becomes natural.                               |
+| **OpenHands**    | Agent SDK plus local/remote execution model, Docker runtime and server APIs.                              | Sandboxed and remote execution are becoming reusable infrastructure, not features every coordinator must reinvent.    |
+| **Cline**        | Open-source SDK, CLI and IDE agent with MCP, checkpoints, subagents/teams and provider choice.            | Agent harnesses themselves are becoming embeddable platforms.                                                         |
+| **Cline Kanban** | Parallel agent task board; each task gets an ephemeral Git worktree, diff review and dependency chaining. | Worktree-per-task and human review are emerging as common orchestration patterns.                                     |
+| **Aider**        | Terminal pair programmer with strong Git integration and broad model support.                             | A coordination layer should treat Git-native agent workflows as first-class, not force a proprietary execution model. |
+| **Goose**        | Local desktop/CLI/API agent, multiple providers, MCP extensions and ACP integration.                      | Open agent clients are becoming multi-provider and multi-surface by default.                                          |
+| **Continue**     | Open-source CLI increasingly focused on source-controlled AI checks enforced in CI.                       | Verification agents and code-generation agents are separating — evidence becomes its own workflow.                    |
+| **Claude Squad** | TUI for multiple coding agents in isolated Git workspaces.                                                | Solo developers increasingly need session orchestration across vendors.                                               |
+| **Agent Deck**   | Terminal session manager supporting multiple agent CLIs and Git worktrees.                                | The “mission control” category is real, but session management alone does not preserve durable proof.                 |
+| **ACP + MCP**    | Open protocols for agent↔client and model/app↔tool interaction.                                           | WeftMark can integrate instead of becoming another closed agent ecosystem.                                            |
+
+</div>
+
+<div class="callout">
+
+**Important market lesson.** Roo Code was a major open-source agent
+project and was archived in May 2026. Vibe Kanban, another prominent
+multi-agent orchestration project, has announced a sunset. Fast project
+churn is not a reason to avoid the category; it is a reason to keep
+WeftMark’s durable state independent of any one agent frontend.
+
+</div>
+
+<div class="figure">
+
+![Document figure](../assets/figures/ecosystem-position.png)
+
+**Figure 7 — Ecosystem position.** The open-source category is already
+rich in agent loops and parallel UIs. WeftMark’s differentiation is
+durable state and evidence across them.
+
+</div>
+
+</div>
+
+<div id="discussion" class="section break-before">
+
+<span class="kicker">Discussion</span>

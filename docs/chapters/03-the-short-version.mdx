@@ -1,0 +1,96 @@
+## The short version
+
+RAGBAZ Frog started as a coordination toolkit for a very concrete
+problem: several human and AI workers touching the same collection of
+repositories at the same time. It has already grown beyond a task list.
+It knows about agents, locks, dependencies, repositories, affected
+builds, event history, remote boxes, MCP, task claiming, causal logs and
+a live board. The next product should not become a bigger task manager.
+It should become the **evidence-bearing control plane around software
+agents**.
+
+<div class="callout">
+
+**Product thesis.** WeftMark should answer five questions that ordinary
+coding agents and issue trackers answer poorly when work becomes
+parallel: *Who is allowed to change this? What exactly is their scope?
+What changed? What evidence says it is correct? Who decided it is
+ready?*
+
+</div>
+
+<div class="grid3">
+
+<div class="card">
+
+<div class="metric">
+
+Frog
+
+</div>
+
+<div class="metric-label">
+
+coordination foundation
+
+</div>
+
+Local-first task, lock, scheduling, federation and audit primitives.
+
+</div>
+
+<div class="card">
+
+<div class="metric">
+
+WeftMark
+
+</div>
+
+<div class="metric-label">
+
+product destination
+
+</div>
+
+Change sets, evidence, semantic scope, review decisions and handoffs.
+
+</div>
+
+<div class="card">
+
+<div class="metric">
+
+Open source
+
+</div>
+
+<div class="metric-label">
+
+strategic constraint
+
+</div>
+
+The control plane should remain usable across proprietary and open
+agent/model stacks.
+
+</div>
+
+</div>
+
+<div class="figure">
+
+![Document figure](../assets/figures/separation-of-concerns.png)
+
+**Figure 1 — Separation of concerns.** WeftMark should not compete with
+the model, the agent loop, or the editor. Its durable value is the
+coordination and evidence layer that remains useful while all three
+layers above it change quickly.
+
+</div>
+
+</div>
+
+<div id="problem" class="section break-before">
+
+<span class="kicker">Didactic foundation</span>

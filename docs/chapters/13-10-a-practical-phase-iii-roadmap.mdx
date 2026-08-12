@@ -1,0 +1,180 @@
+## 10. A practical Phase III roadmap
+
+Phase III should be deliberately narrow. The project already has many
+features; the risk is feature accumulation without a sharper product
+boundary.
+
+<div class="stage">
+
+<div class="stage-num">
+
+0
+
+</div>
+
+<div>
+
+### Open-source and evidence baseline
+
+Add a recognized open-source license, GitHub Actions CI, reproducible
+package/test commands, basic release workflow, and a protected “PR
+before merge” habit for WeftMark itself.
+
+**Exit:** every master change has a reviewable change record and
+machine-generated evidence.
+
+</div>
+
+</div>
+
+<div class="stage">
+
+<div class="stage-num">
+
+1
+
+</div>
+
+<div>
+
+### Change Set model
+
+Add branch/worktree/base-SHA lineage around existing task claims. Keep
+old task commands working.
+
+**Exit:** <span class="inline-code">weft change show</span> can explain
+exactly what workspace and commits implement a task.
+
+</div>
+
+</div>
+
+<div class="stage">
+
+<div class="stage-num">
+
+2
+
+</div>
+
+<div>
+
+### Evidence ledger
+
+Record local test runs, CI checks and artifact references with producer,
+commit and freshness semantics.
+
+**Exit:** finishing a task can require evidence policy rather than a
+boolean status update.
+
+</div>
+
+</div>
+
+<div class="stage">
+
+<div class="stage-num">
+
+3
+
+</div>
+
+<div>
+
+### Handoff + review
+
+Generate compact handoff packages and persist reviewer
+verdicts/findings. Provide human-first rendering in CLI/TUI before
+building a full web UI.
+
+**Exit:** a new agent can accept work without reconstructing context
+from chat logs.
+
+</div>
+
+</div>
+
+<div class="stage">
+
+<div class="stage-num">
+
+4
+
+</div>
+
+<div>
+
+### Semantic scopes
+
+Add repository-defined contract/schema/boundary scopes and conflict
+detection. Use them in scheduler and pre-edit hooks.
+
+**Exit:** two tasks touching the same architectural contract cannot
+silently run as independent work.
+
+</div>
+
+</div>
+
+<div class="stage">
+
+<div class="stage-num">
+
+5
+
+</div>
+
+<div>
+
+### Agent adapters and open protocols
+
+Stabilize a runner adapter around CLI/ACP-capable agents. Treat Cline,
+OpenCode, Goose, Aider and others as replaceable workers. Continue using
+MCP for tools where appropriate.
+
+**Exit:** the same WeftMark task can be handed between two different
+agent vendors without losing lineage.
+
+</div>
+
+</div>
+
+<div class="stage">
+
+<div class="stage-num">
+
+6
+
+</div>
+
+<div>
+
+### Tablet/web review surface
+
+Only after the data model is stable, build a read/review-focused web
+client: queues, diffs, evidence, handoff and review decisions. Remote
+control should be a projection of the core state, not a second workflow
+engine.
+
+**Exit:** a developer can steer and review parallel work comfortably
+from a tablet without sacrificing the CLI.
+
+</div>
+
+</div>
+
+<div class="figure">
+
+![Document figure](../assets/figures/phase-iii-sequencing.png)
+
+**Figure 8 — Phase III sequencing.** The highest leverage work is data
+model and evidence discipline. A web/tablet surface becomes much easier
+once the same state already serves CLI, TUI and MCP.
+
+</div>
+
+</div>
+
+<div id="conclusion" class="section break-before">
+
+<span class="kicker">Conclusion</span>

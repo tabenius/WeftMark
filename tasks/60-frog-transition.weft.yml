@@ -1,0 +1,84 @@
+format: weft-task-v0
+phase: frog-transition
+summary: Reuse Frog's proven coordination ideas without inheriting accidental environment-specific boundaries.
+
+tasks:
+  - slug: frog-state-inventory
+    title: Map Frog data and commands to WeftMark concepts
+    status: todo
+    priority: P1
+    depends:
+      - changeset-core-model
+      - evidence-core-model
+      - semantic-scope-model
+    purpose: Separate reusable lessons from Frog-specific implementation and workspace assumptions.
+    scope:
+      files:
+        - docs/frog-transition.md
+      contracts:
+        - contract:frog-transition-map-v0
+    deliverables:
+      - Mapping of Frog tasks, locks, agents, events, repos, workspaces and causality into WeftMark equivalents.
+      - Explicit list of concepts that should not migrate.
+    accept:
+      - Mapping distinguishes semantic reuse from code reuse.
+    negative:
+      - Frog AGENTS.db schema is not declared the WeftMark runtime schema by default.
+    evidence:
+      - kind: docs
+        required: true
+        criterion: Mapping cites current Frog commands and manifest capabilities.
+
+  - slug: frog-plan-importer
+    title: Import Frog task-plan data into WeftMark plan/runtime forms
+    status: todo
+    priority: P2
+    depends:
+      - frog-state-inventory
+      - cli-surface
+    purpose: Let existing Frog-managed workspaces seed WeftMark without manual task recreation.
+    scope:
+      files:
+        - src/weftmark/adapters/frog.py
+        - tests/adapters/test_frog.py
+      contracts:
+        - adapter:frog-import-v0
+    deliverables:
+      - Read-only importer for selected Frog task, repo, agent and lock metadata.
+    accept:
+      - Import is idempotent and records source identity/version.
+    negative:
+      - Import never takes write ownership of a live Frog database.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_frog.py
+
+  - slug: weftmark-dogfood
+    title: Use WeftMark to develop WeftMark
+    status: todo
+    priority: P0
+    depends:
+      - cli-surface
+      - local-command-evidence
+      - review-service
+    purpose: Replace speculative workflow design with observed use in the project's own development.
+    scope:
+      files:
+        - tasks/**
+        - evidence-fixtures/**
+        - docs/dogfood-log.md
+      contracts:
+        - process:dogfood-v0
+    deliverables:
+      - At least five real Change Sets developed through claim/scope/evidence/review/handoff flows.
+      - Recorded friction and resulting design corrections.
+    accept:
+      - At least one handoff crosses agent/vendor boundaries.
+      - At least one unavailable/stale evidence case is observed and handled correctly.
+    negative:
+      - Dogfood sessions do not waive evidence policy merely because the project is early-stage.
+    evidence:
+      - kind: review
+        required: true
+        criterion: Five completed Change Sets and lessons are documented.

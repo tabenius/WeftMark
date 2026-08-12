@@ -1,0 +1,83 @@
+format: weft-task-v0
+phase: scope-locks
+summary: Move from file collision detection toward semantic coordination.
+
+tasks:
+  - slug: semantic-scope-model
+    title: Define file, contract, boundary, schema, and surface scopes
+    status: todo
+    priority: P0
+    depends:
+      - domain-package-skeleton
+    purpose: Represent hidden coupling that file paths alone cannot express.
+    scope:
+      files:
+        - src/weftmark/domain/scope.py
+        - tests/domain/test_scope.py
+      contracts:
+        - contract:scope-v0
+    deliverables:
+      - Typed scope identifiers and normalization rules.
+    accept:
+      - Canonical forms exist for file, contract, boundary, schema, and surface scopes.
+      - Scope comparison is deterministic and serialization-safe.
+    negative:
+      - Free-form display labels are not used as lock identity.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_scope.py
+
+  - slug: semantic-lock-model
+    title: Extend lock semantics to contract and boundary scopes
+    status: todo
+    priority: P0
+    depends:
+      - semantic-scope-model
+      - changeset-core-model
+    purpose: Prevent two agents from independently changing the same behavior while editing different files.
+    scope:
+      files:
+        - src/weftmark/domain/lock.py
+        - tests/domain/test_lock.py
+      contracts:
+        - contract:semantic-lock-v0
+    deliverables:
+      - Lease-based semantic lock model tied to agent/session/change set.
+      - Conflict computation across scope kinds.
+    accept:
+      - Exact contract collisions are detected independent of file paths.
+      - Lock expiry and explicit release are distinct events.
+    negative:
+      - An expired lease never grants current ownership.
+      - File-disjoint work is not assumed conflict-free when contract scopes overlap.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_lock.py
+
+  - slug: scope-audit-service
+    title: Audit actual changes against declared file and semantic scopes
+    status: todo
+    priority: P1
+    depends:
+      - semantic-lock-model
+      - git-change-binding
+    purpose: Detect scope drift instead of relying on an agent to remember its initial claim.
+    scope:
+      files:
+        - src/weftmark/application/scope_audit.py
+        - tests/application/test_scope_audit.py
+      contracts:
+        - surface:scope-audit
+    deliverables:
+      - Audit findings for uncovered files and undeclared contract changes.
+    accept:
+      - File changes outside declared scope are visible as findings.
+      - Semantic contract findings can be attached by adapters or reviewers.
+    negative:
+      - Audit findings do not silently mutate task scope.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_scope_audit.py

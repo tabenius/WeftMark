@@ -1,0 +1,32 @@
+## 3. What our way of working taught us
+
+The most useful design input does not come from imagining every possible
+feature. It comes from observing the repeated friction in real
+multi-agent work. Several patterns recur:
+
+<div class="table-wrap">
+
+| What happens in practice                                                        | What the product should learn                                                   |
+|---------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| A large goal is decomposed into named, dependency-aware work slices.            | Make the **work graph** first-class, not merely task rows.                      |
+| Different agents work on different slices and can diverge from the base branch. | Bind a claim to **branch/worktree + base SHA + scope**.                         |
+| Work gets handed from one agent or vendor to another.                           | Create a durable **handoff object** containing state, evidence and next action. |
+| A task can be implemented but not yet verified, reviewed or safe to merge.      | Represent **evidence states** explicitly; “done” is not enough.                 |
+| Agents can touch different files while modifying the same protocol or boundary. | Add **semantic / contract scopes** in addition to file locks.                   |
+| Human review ends with approve, block, conditional approval or “revalidate”.    | Persist the **review decision** as data, not only as a chat message.            |
+| Plans and documentation drift from what the code actually proves.               | Generate human-facing status from **machine-readable facts** where possible.    |
+
+</div>
+
+<div class="callout">
+
+**The key shift:** Frog coordinates *work*. WeftMark should coordinate
+*change with proof*.
+
+</div>
+
+</div>
+
+<div id="weftmark" class="section break-before">
+
+<span class="kicker">Product direction</span>

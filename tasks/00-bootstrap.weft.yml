@@ -1,0 +1,145 @@
+format: weft-task-v0
+phase: bootstrap
+summary: Make the repository reproducible, inspectable, and self-documenting before product code lands.
+
+tasks:
+  - slug: repo-bootstrap
+    title: Establish repository structure and RAGBAZ manifest
+    status: done
+    priority: P0
+    depends: []
+    purpose: Create the minimum durable project skeleton for WeftMark.
+    scope:
+      files:
+        - README.md
+        - AGENTS.md
+        - ragbaz.component.json
+        - .gitignore
+        - .frogid
+      contracts:
+        - contract:ragbaz-component-manifest
+    deliverables:
+      - Root documentation and component identity.
+      - RAGBAZ component manifest at prototype lifecycle.
+    accept:
+      - Repository purpose and relationship to Frog are explicit.
+      - Manifest does not claim production capabilities that do not exist yet.
+    negative:
+      - No secret or vendor credential is committed.
+    evidence:
+      - kind: review
+        required: true
+        criterion: Repository skeleton reviewed against the Frog component-manifest conventions.
+
+  - slug: docs-source-pipeline
+    title: Make MDX-compatible documentation the source of truth
+    status: done
+    priority: P0
+    depends:
+      - repo-bootstrap
+    purpose: Keep the product paper editable while preserving deterministic HTML and A5 PDF generation.
+    scope:
+      files:
+        - docs/weftmark.mdx
+        - docs/weftmark.css
+        - scripts/build_html.py
+        - scripts/build_pdf.py
+      contracts:
+        - contract:docs-build-v0
+    deliverables:
+      - MDX-compatible source document.
+      - Self-contained HTML builder.
+      - WeasyPrint PDF builder.
+    accept:
+      - HTML builds from docs/weftmark.mdx without network access.
+      - PDF uses A5 paged-media CSS from the same source.
+    negative:
+      - The rev0 HTML and PDF artifacts are not overwritten by normal builds.
+    evidence:
+      - kind: test
+        required: true
+        command: python scripts/build_pdf.py
+      - kind: docs
+        required: true
+        criterion: Generated HTML is self-contained.
+
+  - slug: logo-source-pipeline
+    title: Establish canonical SVG and raster logo builds
+    status: done
+    priority: P1
+    depends:
+      - repo-bootstrap
+    purpose: Keep brand assets reproducible rather than hand-maintaining PNG/WebP derivatives.
+    scope:
+      files:
+        - assets/weftmark.svg
+        - assets/weftmark-on-black.svg
+        - scripts/build_logo.py
+      contracts:
+        - contract:brand-mark-v0
+    deliverables:
+      - White-background canonical SVG.
+      - Black-background SVG preserving white internal regions.
+      - 512 px PNG and lossless WebP derivatives.
+    accept:
+      - Both variants render to PNG and WebP from SVG source.
+      - SVG files contain vector paths rather than an embedded raster image.
+    negative:
+      - Raster artifacts never become the editing source of truth.
+    evidence:
+      - kind: test
+        required: true
+        command: python scripts/build_logo.py --size 512
+
+  - slug: task-plan-validator
+    title: Validate the initial Weft task mini-format
+    status: done
+    priority: P1
+    depends:
+      - repo-bootstrap
+    purpose: Catch missing dependencies, duplicate slugs, cycles, and malformed evidence declarations early.
+    scope:
+      files:
+        - tasks/**
+        - scripts/validate_tasks.py
+      contracts:
+        - contract:weft-task-v0
+    deliverables:
+      - Static validation command for task-plan files.
+    accept:
+      - All initial plan files validate.
+      - Unknown dependencies and graph cycles fail nonzero.
+    negative:
+      - Validation must not mutate task state.
+    evidence:
+      - kind: test
+        required: true
+        command: python scripts/validate_tasks.py
+
+  - slug: bootstrap-ci
+    title: Add repository CI for tasks, docs, and assets
+    status: review
+    priority: P0
+    depends:
+      - docs-source-pipeline
+      - logo-source-pipeline
+      - task-plan-validator
+    purpose: Dogfood the principle that generated artifacts and plan contracts need evidence, not assumptions.
+    scope:
+      files:
+        - .github/workflows/ci.yml
+      contracts:
+        - contract:ci-evidence-v0
+    deliverables:
+      - CI job for task validation.
+      - CI job for SVG raster generation.
+      - CI job for self-contained HTML and A5 PDF build.
+    accept:
+      - CI fails when task validation or document generation fails.
+      - Build products are uploaded as workflow artifacts without modifying the repository.
+    negative:
+      - CI must not require proprietary model credentials.
+    evidence:
+      - kind: ci
+        required: true
+        criterion: First main-branch run is green with all three build surfaces exercised.

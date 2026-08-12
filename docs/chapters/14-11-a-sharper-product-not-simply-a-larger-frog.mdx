@@ -1,0 +1,34 @@
+## 11. A sharper product, not simply a larger Frog
+
+Frog has already demonstrated the difficult part: a small coordination
+system can encode real operational lessons about concurrency, identity,
+task claiming, remote workspaces, dependency-aware scheduling and
+forensic history. The next step is to give those lessons a stronger
+product boundary.
+
+WeftMark should be the layer that survives agent churn. A developer may
+use Claude Code for one task, Codex for another, OpenCode with a Zen
+model for a third, and a local Ollama-backed agent for sensitive work.
+The exact workers will change. The **task graph, declared scope, branch
+lineage, evidence, review and handoff** should not.
+
+<div class="callout">
+
+**North-star statement.** WeftMark is the ledger that can explain
+exactly why an agent was allowed to change something, what it changed,
+what evidence exists that it works, who reviewed it, and whether it is
+actually safe to merge.
+
+</div>
+
+That is a more defensible niche than becoming another coding agent,
+another Kanban board or another wrapper around a model API. It is also
+closely aligned with where open-source agent tooling appears to be
+heading: interchangeable workers, open protocols, isolated workspaces,
+remote execution, and increasingly formal review and verification.
+
+</div>
+
+<div id="references" class="section break-before">
+
+<span class="kicker">Sources</span>

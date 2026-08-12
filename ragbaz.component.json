@@ -1,0 +1,116 @@
+{
+  "$schema": "https://ragbaz.cc/schemas/ragbaz.component.schema.json",
+  "schemaVersion": "0.1.0",
+  "identity": {
+    "id": "ragbaz.weftmark",
+    "name": "RAGBAZ WeftMark",
+    "version": "0.0.1",
+    "repoPath": "WeftMark",
+    "owner": "ragbaz",
+    "lifecycle": "prototype"
+  },
+  "commercial": {
+    "packageTags": [
+      "agent-coordination",
+      "software-provenance",
+      "review-evidence"
+    ],
+    "personas": [
+      "solo-developer",
+      "small-engineering-team",
+      "agent-team",
+      "platform-owner"
+    ],
+    "supportTier": "none",
+    "salesStatus": "internal",
+    "pricingTags": []
+  },
+  "capabilities": {
+    "provides": [
+      {
+        "id": "ops.weftmark.design",
+        "label": "WeftMark product and implementation design",
+        "version": "0",
+        "supportTier": "prototype",
+        "description": "Repository-grounded product architecture, task graph, documentation build, and brand assets. Runtime coordination capabilities are planned, not yet implemented."
+      }
+    ]
+  },
+  "provides": {
+    "artifacts": [
+      {
+        "name": "weftmark-rev0-html",
+        "mediaType": "text/html",
+        "digestRequired": true,
+        "signatureRequired": false
+      },
+      {
+        "name": "weftmark-rev0-pdf",
+        "mediaType": "application/pdf",
+        "digestRequired": true,
+        "signatureRequired": false
+      },
+      {
+        "name": "weftmark-logo-svg",
+        "mediaType": "image/svg+xml",
+        "digestRequired": true,
+        "signatureRequired": false
+      }
+    ],
+    "adminSurfaces": [
+      {
+        "name": "task-plan",
+        "description": "YAML-compatible implementation task graph under tasks/.",
+        "capabilities": [
+          "ops.weftmark.design"
+        ]
+      }
+    ]
+  },
+  "security": {
+    "authMethods": [],
+    "tokenScopes": [],
+    "tenantBoundary": "none",
+    "dataClasses": [
+      "public"
+    ],
+    "secretAccess": "none",
+    "revocation": "No runtime access surface exists in the prototype repository.",
+    "auditEvents": []
+  },
+  "health": {
+    "checks": [
+      {
+        "name": "task-plan-validation",
+        "type": "command",
+        "target": "python3 scripts/validate_tasks.py",
+        "intervalSeconds": 300,
+        "timeoutSeconds": 20,
+        "required": true
+      }
+    ]
+  },
+  "compatibility": {
+    "contracts": [
+      {
+        "name": "weft-task-v0",
+        "version": "0.1.0",
+        "test": "python3 scripts/validate_tasks.py"
+      },
+      {
+        "name": "docs-build-v0",
+        "version": "0.1.0",
+        "test": "python3 scripts/build_pdf.py"
+      }
+    ]
+  },
+  "docs": {
+    "readme": "README.md",
+    "architecture": "docs/weftmark.mdx"
+  },
+  "metadata": {
+    "origin": "RAGBAZ Frog evolution",
+    "sourceSnapshot": "2026-08-11",
+    "runtimeImplemented": false
+  }
+}

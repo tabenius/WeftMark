@@ -1,0 +1,96 @@
+## 7. Implementation perspective
+
+The migration should be evolutionary. Frog has working behavior and a
+substantial test suite; replacing it wholesale would destroy the most
+valuable asset — the encoded lessons of actual use.
+
+### 7.1 Start by dogfooding the process
+
+Before implementing advanced features, WeftMark/Frog should adopt the
+workflow it wants to enforce:
+
+<div class="code">
+
+task → claim → branch/worktree → implementation → evidence → PR → review
+→ merge
+
+</div>
+
+The first infrastructure work should therefore add a public CI workflow,
+an explicit open-source license, reproducible package/test commands,
+basic release workflow, and a protected “PR before merge” habit for
+WeftMark itself. This gives the project a real evidence surface to
+integrate.
+
+### 7.2 Introduce new tables without breaking old commands
+
+<div class="table-wrap">
+
+| New entity      | Minimal fields                                                              | Migration strategy                                         |
+|-----------------|-----------------------------------------------------------------------------|------------------------------------------------------------|
+| **change_sets** | id, task_slug, repo_id, base_sha, head_sha, branch, worktree, state         | Create lazily when a claimed task gains a branch/worktree. |
+| **scopes**      | id, kind=file\|contract\|schema\|boundary, key, repo_id                     | Map existing lock file patterns to file scopes.            |
+| **claims**      | change_set, agent, session, lease, active                                   | Reuse current atomic claim semantics.                      |
+| **evidence**    | kind, subject, commit, status, producer, command, environment, artifact_ref | Initially ingest local test and CI results.                |
+| **reviews**     | change_set, reviewer, verdict, findings, evidence_snapshot                  | Manual first; provider adapters later.                     |
+| **handoffs**    | change_set, from/to, summary, next_action, created_at                       | Generated projection from current state.                   |
+
+</div>
+
+### 7.3 Keep a compatibility bridge
+
+A safe product rename does not require immediately breaking the existing
+CLI. A practical sequence is to ship the package as WeftMark while
+keeping <span class="inline-code">frog</span> as a compatibility entry
+point for one major release. Commands can gradually move from implicit
+“task finished” semantics to explicit change-set/evidence semantics.
+
+<div class="code">
+
+frog task claim foo \# legacy-compatible weft task claim foo \# new name
+weft change show foo weft evidence run --required weft review foo weft
+handoff create foo --to cline
+
+</div>
+
+### 7.4 Split modules by domain, not by arbitrary size
+
+Earlier Frog work deliberately avoided a risky physical split of the
+large storage module and instead introduced lightweight domain facades.
+That was a sensible stabilization decision. The new domain objects now
+provide a better seam for the next refactor:
+
+<div class="code">
+
+weftmark/ domain/ tasks.py scopes.py evidence.py changesets.py
+reviews.py handoffs.py application/ scheduler.py change_service.py
+review_service.py adapters/ sqlite.py git.py github.py agent_acp.py
+mcp.py ci.py interfaces/ cli/ tui/ http/
+
+</div>
+
+The crucial rule is not the folder names. It is that **CLI, MCP, TUI and
+a future web/tablet client all invoke the same application services**.
+
+### 7.5 Security and trust boundaries
+
+As agents become more autonomous, WeftMark will hold sensitive power: it
+can assign work, open worktrees, start processes, collect credentials
+indirectly through adapters and decide whether evidence is sufficient.
+The design should therefore default to least privilege:
+
+- agent runners get only the repository and tools needed for the claimed
+  scope;
+- credentials remain in provider-specific stores; WeftMark stores
+  references, not secrets;
+- remote execution is authenticated and auditable;
+- evidence producers are identified so self-attestation can be
+  distinguished from independent verification;
+- release/merge operations remain separate capabilities from code
+  editing.
+
+</div>
+
+<div id="ecosystem" class="section break-before">
+
+<span class="kicker">Open-source landscape</span>
