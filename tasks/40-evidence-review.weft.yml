@@ -60,7 +60,7 @@ tasks:
 
   - slug: review-service
     title: Produce reviewer-facing readiness summaries
-    status: todo
+    status: done
     priority: P0
     depends:
       - evidence-policy-model
