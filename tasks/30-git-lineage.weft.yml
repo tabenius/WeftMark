@@ -29,7 +29,7 @@ tasks:
 
   - slug: local-git-adapter
     title: Implement the local Git adapter
-    status: todo
+    status: done
     priority: P0
     depends:
       - git-port-contract
