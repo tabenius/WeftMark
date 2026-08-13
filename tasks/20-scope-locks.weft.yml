@@ -58,7 +58,7 @@ tasks:
 
   - slug: scope-audit-service
     title: Audit actual changes against declared file and semantic scopes
-    status: todo
+    status: done
     priority: P1
     depends:
       - semantic-lock-model
