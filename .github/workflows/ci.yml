@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: requirements-docs.txt
 
       - name: Install Pandoc
         run: sudo apt-get update && sudo apt-get install -y pandoc
@@ -80,6 +81,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: requirements-docs.txt
 
       - name: Install Pandoc
         if: steps.snapshot.outputs.needed == 'true'
