@@ -27,4 +27,4 @@ rev0: figures logo pdf
 	cp build/weftmark_A5.pdf docs/artifacts/weftmark_rev0.pdf
 
 clean:
-	rm -rf build/* assets/figures/* assets/generated/*
+	rm -rf build/*
