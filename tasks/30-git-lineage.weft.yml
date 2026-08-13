@@ -53,7 +53,7 @@ tasks:
 
   - slug: git-change-binding
     title: Bind Change Sets to base/head Git lineage
-    status: todo
+    status: done
     priority: P0
     depends:
       - changeset-core-model
