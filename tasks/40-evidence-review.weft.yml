@@ -5,7 +5,7 @@ summary: Close the loop from intent to proof to a persistent merge decision.
 tasks:
   - slug: evidence-policy-model
     title: Define evidence policies per task and Change Set
-    status: todo
+    status: done
     priority: P0
     depends:
       - evidence-core-model
