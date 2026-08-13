@@ -90,7 +90,7 @@ tasks:
 
   - slug: handoff-core-model
     title: Define first-class handoff records
-    status: todo
+    status: done
     priority: P1
     depends:
       - changeset-core-model
