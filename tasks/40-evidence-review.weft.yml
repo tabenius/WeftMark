@@ -32,7 +32,7 @@ tasks:
 
   - slug: local-command-evidence
     title: Capture local command/test evidence
-    status: todo
+    status: done
     priority: P0
     depends:
       - evidence-core-model
