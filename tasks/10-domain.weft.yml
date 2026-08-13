@@ -116,7 +116,7 @@ tasks:
 
   - slug: review-decision-model
     title: Define persistent review decisions and blockers
-    status: todo
+    status: done
     priority: P0
     depends:
       - changeset-core-model
