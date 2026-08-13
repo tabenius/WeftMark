@@ -118,7 +118,7 @@ tasks:
 
   - slug: bootstrap-ci
     title: Add repository CI for tasks, docs, and assets
-    status: review
+    status: done
     priority: P0
     depends:
       - docs-source-pipeline
