@@ -62,7 +62,7 @@ tasks:
 
   - slug: evidence-core-model
     title: Define typed evidence and evidence-state semantics
-    status: todo
+    status: done
     priority: P0
     depends:
       - domain-package-skeleton
