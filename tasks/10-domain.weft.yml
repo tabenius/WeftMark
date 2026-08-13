@@ -31,7 +31,7 @@ tasks:
 
   - slug: changeset-core-model
     title: Define the Change Set domain model
-    status: todo
+    status: done
     priority: P0
     depends:
       - domain-package-skeleton
