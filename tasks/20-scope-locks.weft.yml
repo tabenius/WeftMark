@@ -30,7 +30,7 @@ tasks:
 
   - slug: semantic-lock-model
     title: Extend lock semantics to contract and boundary scopes
-    status: todo
+    status: done
     priority: P0
     depends:
       - semantic-scope-model
