@@ -27,8 +27,8 @@ jobs:
       - name: Install Python build dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements-docs.txt -e '.[test]'
 
-      - name: Enforce runtime architecture boundaries
-        run: python -m pytest tests/architecture
+      - name: Run runtime test suite
+        run: python -m pytest
 
       - name: Validate task graph
         run: python scripts/validate_tasks.py
