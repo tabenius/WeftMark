@@ -5,7 +5,7 @@ summary: Define durable product concepts before adding adapters or interfaces.
 tasks:
   - slug: domain-package-skeleton
     title: Establish domain and application package boundaries
-    status: todo
+    status: done
     priority: P0
     depends:
       - bootstrap-ci
