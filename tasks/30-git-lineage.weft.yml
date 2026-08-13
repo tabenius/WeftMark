@@ -5,7 +5,7 @@ summary: Bind coordination state to the version-control facts developers already
 tasks:
   - slug: git-port-contract
     title: Define a vendor-neutral Git port
-    status: todo
+    status: done
     priority: P0
     depends:
       - domain-package-skeleton
