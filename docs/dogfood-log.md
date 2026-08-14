@@ -152,10 +152,24 @@ Sets; it does not yet satisfy the cross-agent or cross-vendor handoff case.
 - Native claim: `dogfood-003-claim`
 - Worker/session: `codex` / `unattended-20260814`
 - Declared semantic scope: `contract:lifecycle-v0`
-- Status: in progress
+- Status: completed locally
 
 This session follows the correction discovered by real `weftmark status`
 output. Lifecycle transitions are explicit declarations, not inferred from a
 green test. Moving to `merged` requires a releasable review bound to the exact
 observed head, while moving to `closed` requires a clean-head handoff for that
 same observation. Invalid domain transitions remain refused.
+
+The implementation keeps lifecycle persistence in `WorkspaceService` and the
+proof gates in a separate application service. Review entry requires a current
+decision on a clean recorded observation; a decision may still be incomplete,
+but it cannot become `merged` until it is releasable. Closure additionally
+requires a current handoff, preserving continuation context before terminal
+state.
+
+Session 003 closes with evidence `dogfood-003-test-1`, review
+`dogfood-003-review-ready`, and handoff `dogfood-003-handoff-1`, followed by
+explicit `review`, `merged`, and `closed` transitions and release of
+`dogfood-003-claim`. This satisfies the third of five required real Change
+Sets. Sessions 001 and 002 can now be closed against their already recorded
+current reviews and handoffs without inventing new proof.
