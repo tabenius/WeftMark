@@ -111,6 +111,37 @@ def test_missing_and_duplicate_changesets_have_stable_errors(
     assert "already exists" in capsys.readouterr().err
 
 
+def test_refresh_records_new_head_and_dirty_paths(tmp_path: Path, capsys) -> None:
+    repo = repository(tmp_path)
+    create = [
+        "--repo",
+        str(repo),
+        "changeset",
+        "create",
+        "chg-1",
+        "--goal",
+        "Refresh facts",
+        "--scope",
+        "file:**",
+    ]
+    assert main(create) == 0
+    capsys.readouterr()
+    previous = git(repo, "rev-parse", "HEAD")
+    (repo / "next.txt").write_text("next\n", encoding="utf-8")
+    git(repo, "add", "next.txt")
+    git(repo, "commit", "-m", "next")
+    (repo / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+
+    assert main(
+        ["--repo", str(repo), "--json", "changeset", "refresh", "chg-1"]
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)["changeset"]
+    assert payload["head_sha"] != previous
+    assert payload["dirty_paths"] == ["dirty.txt"]
+    assert len(payload["observations"]) == 2
+    assert payload["lineage"][-1]["kind"] == "head_advanced"
+
+
 def test_cli_source_writes_only_through_ledger_service() -> None:
     source = Path(__file__).parents[2] / "src" / "weftmark" / "cli" / "main.py"
     text = source.read_text(encoding="utf-8")

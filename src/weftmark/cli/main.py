@@ -11,9 +11,14 @@ from typing import Any, Sequence
 
 from weftmark.adapters.git_local import LocalGit, LocalGitError
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
-from weftmark.application.change_binding import ChangeBindingError, ChangeBindingService
+from weftmark.application.change_binding import ChangeBindingError
 from weftmark.application.ledger import LedgerService, LedgerServiceError
-from weftmark.domain.changeset import ChangeSet, ChangeSetError
+from weftmark.application.workspace import (
+    WorkspaceError,
+    WorkspaceService,
+    binding_to_payload,
+)
+from weftmark.domain.changeset import ChangeSetError
 from weftmark.domain.scope import Scope, ScopeError
 
 
@@ -52,6 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     show = changeset_commands.add_parser("show", help="show the latest Change Set snapshot")
     show.add_argument("id")
+    refresh = changeset_commands.add_parser(
+        "refresh", help="record the latest Git head, diff, and dirty paths"
+    )
+    refresh.add_argument("id")
+    refresh.add_argument("--base", help="replace the tracked base revision")
     changeset_commands.add_parser("list", help="list latest Change Set snapshots")
     return parser
 
@@ -64,23 +74,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         repository = git.repository()
         ledger_path = _ledger_path(args.ledger, repository.id)
         ledger = LedgerService(JsonlLedger(ledger_path))
+        workspace = WorkspaceService(git, ledger)
 
         if args.command == "changeset" and args.changeset_command == "create":
-            result = _create_changeset(args, git, ledger)
+            result = _create_changeset(args, workspace)
             _emit(result, json_output=args.json, action="created")
             return 0
         if args.command == "changeset" and args.changeset_command == "show":
-            entry = ledger.latest(kind="changeset", entity_id=args.id)
-            if entry is None:
+            binding = workspace.get_change_set(args.id)
+            if binding is None:
                 _emit_error(f"Change Set not found: {args.id}", json_output=args.json)
                 return EXIT_NOT_FOUND
-            _emit(entry.payload, json_output=args.json)
+            _emit(binding_to_payload(binding), json_output=args.json)
+            return 0
+        if args.command == "changeset" and args.changeset_command == "refresh":
+            binding = workspace.refresh_change_set(
+                args.id,
+                observed_at=_now(),
+                base_revision=args.base,
+            )
+            _emit(
+                binding_to_payload(binding),
+                json_output=args.json,
+                action="refreshed",
+            )
             return 0
         if args.command == "changeset" and args.changeset_command == "list":
-            latest: dict[str, dict[str, Any]] = {}
-            for entry in ledger.history(kind="changeset"):
-                latest[entry.entity_id] = entry.payload
-            result = [latest[id] for id in sorted(latest)]
+            result = [
+                binding_to_payload(binding)
+                for binding in workspace.list_change_sets()
+            ]
             _emit_list(result, json_output=args.json)
             return 0
     except (JsonlLedgerError, LedgerServiceError) as error:
@@ -91,6 +114,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ChangeSetError,
         LocalGitError,
         ScopeError,
+        WorkspaceError,
         ValueError,
     ) as error:
         _emit_error(str(error), json_output=args.json)
@@ -101,57 +125,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _create_changeset(
     args: argparse.Namespace,
-    git: LocalGit,
-    ledger: LedgerService,
+    workspace: WorkspaceService,
 ) -> dict[str, Any]:
-    if ledger.latest(kind="changeset", entity_id=args.id) is not None:
-        raise ChangeSetError(f"Change Set already exists: {args.id}")
-    repository = git.repository()
-    head = git.head()
-    base = git.commit(args.base).id
     scopes = tuple(Scope.parse(value) for value in args.scope)
-    if head.branch is None or repository.worktree is None:
-        raise ChangeBindingError("Change Set creation requires an attached working tree")
     timestamp = _now()
-    planned = ChangeSet.plan(
+    binding = workspace.create_change_set(
         id=args.id,
         goal=args.goal,
-        repository_id=repository.id,
-        base_sha=str(base),
-        branch=head.branch,
-        worktree=repository.worktree,
-        scopes=tuple(scope.canonical for scope in scopes),
-        at=timestamp,
-    )
-    binding = ChangeBindingService(git).create(
-        planned,
         base_revision=args.base,
-        observed_at=timestamp,
+        scopes=scopes,
+        created_at=timestamp,
     )
-    payload = {
-        "id": binding.change_set.id,
-        "goal": binding.change_set.goal,
-        "repository_id": binding.change_set.repository_id,
-        "base_sha": binding.latest.base_sha,
-        "head_sha": binding.latest.head_sha,
-        "base_revision": binding.base_revision,
-        "branch": binding.latest.branch,
-        "worktree": binding.latest.worktree,
-        "scopes": [scope.to_dict() for scope in scopes],
-        "state": binding.change_set.state.value,
-        "observation_id": binding.latest.id,
-        "changed_paths": list(binding.latest.changed_paths),
-        "dirty_paths": list(binding.latest.dirty_paths),
-        "created_at": binding.change_set.created_at.isoformat(),
-        "updated_at": binding.change_set.updated_at.isoformat(),
-    }
-    ledger.record(
-        kind="changeset",
-        entity_id=binding.change_set.id,
-        payload=payload,
-        recorded_at=timestamp,
-    )
-    return payload
+    return binding_to_payload(binding)
 
 
 def _ledger_path(override: str | None, repository_id: str) -> Path:
