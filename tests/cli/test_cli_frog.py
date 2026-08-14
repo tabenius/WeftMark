@@ -40,6 +40,7 @@ def snapshot() -> FrogSnapshot:
                 "workflow_status": "in_progress",
                 "priority": "p1",
                 "title": "Continue migration",
+                "created_at": "2026-08-14T10:00:00+00:00",
             },
             {
                 "slug": "external-2",
@@ -47,6 +48,7 @@ def snapshot() -> FrogSnapshot:
                 "workflow_status": "done",
                 "priority": "p2",
                 "title": "Already complete",
+                "created_at": "2026-08-14T09:00:00+00:00",
             },
         ),
         "task_dependencies": (),
@@ -132,6 +134,28 @@ def test_cli_records_and_inspects_frog_snapshot_receipt(
     ) == 0
     tasks = json.loads(capsys.readouterr().out)["frog_tasks"]
     assert [task["slug"] for task in tasks] == ["external-1"]
+
+    assert main(
+        [
+            "--repo",
+            str(repo),
+            "--json",
+            "frog",
+            "task",
+            "next",
+            value.digest,
+            "--repo-path",
+            "/source/project",
+            "--limit",
+            "2",
+        ]
+    ) == 0
+    selection = json.loads(capsys.readouterr().out)["frog_task_selection"]
+    assert [item["task"]["slug"] for item in selection["tasks"]] == [
+        "external-1"
+    ]
+    assert selection["authority"].startswith("advisory imported intent")
+    assert selection["ignored_observations"] == {"assignments": 0, "locks": 0}
 
     assert main(
         ["--repo", str(repo), "--json", "frog", "snapshot", "show", value.digest]

@@ -50,6 +50,11 @@ from weftmark.application.frog_promotions import (
     FrogPromotionService,
     promotion_result_to_payload,
 )
+from weftmark.application.frog_planning import (
+    FrogPlanningError,
+    FrogPlanningService,
+    selection_to_payload,
+)
 from weftmark.application.lifecycle import (
     LifecycleError,
     LifecyclePolicyError,
@@ -155,6 +160,12 @@ def build_parser() -> argparse.ArgumentParser:
     frog_task_list.add_argument("digest")
     frog_task_list.add_argument("--repo-path")
     frog_task_list.add_argument("--workflow-status")
+    frog_task_next = frog_task_commands.add_parser(
+        "next", help="rank advisory task intent eligible in one snapshot"
+    )
+    frog_task_next.add_argument("digest")
+    frog_task_next.add_argument("--repo-path")
+    frog_task_next.add_argument("--limit", type=int, default=1)
     frog_task_promote = frog_task_commands.add_parser(
         "promote", help="create local Change Set authority from imported intent"
     )
@@ -331,6 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         bundle_imports = BundleImportService(ledger)
         frog_receipts = FrogReceiptService(ledger)
         frog_promotions = FrogPromotionService(frog_receipts, workspace, ledger)
+        frog_planning = FrogPlanningService(frog_receipts)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -466,6 +478,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit_frog_promotion(
                 promotion_result_to_payload(result), json_output=args.json
+            )
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "task"
+            and args.frog_task_command == "next"
+        ):
+            selection = frog_planning.next(
+                args.digest,
+                repo_path=args.repo_path,
+                limit=args.limit,
+            )
+            _emit_frog_task_selection(
+                selection_to_payload(selection), json_output=args.json
             )
             return 0
 
@@ -691,7 +717,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (BundleError, BundleFileError, BundleImportError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_BUNDLE
-    except (FrogImportError, FrogPromotionError, FrogReceiptError) as error:
+    except (
+        FrogImportError,
+        FrogPlanningError,
+        FrogPromotionError,
+        FrogReceiptError,
+    ) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_INVALID
     except (JsonlLedgerError, LedgerServiceError) as error:
@@ -913,6 +944,41 @@ def _emit_frog_promotion(
             f"{scope['kind']}:{scope['key']}" for scope in change_set["scopes"]
         )
     )
+
+
+def _emit_frog_task_selection(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_task_selection": payload}, sort_keys=True))
+        return
+    print(
+        f"{payload['eligible']} eligible of {payload['considered']} considered  "
+        f"source:{payload['source_label']}"
+    )
+    if not payload["tasks"]:
+        print("no dependency-eligible imported tasks")
+    for value in payload["tasks"]:
+        task = value["task"]
+        print(
+            f"{task['slug']}  {task.get('priority') or '-'}  "
+            f"{task.get('workflow_status') or '-'}  {task['title']}"
+        )
+    ignored = payload["ignored_observations"]
+    print(
+        f"  advisory only; ignored imported authority: "
+        f"{ignored['locks']} locks, {ignored['assignments']} assignments"
+    )
+    if payload["skipped"]:
+        print("  skipped:")
+        shown = payload["skipped"][:5]
+        for value in shown:
+            print(
+                f"    {value['slug']}: " + "; ".join(value["reasons"])
+            )
+        remaining = payload["skipped_count"] - len(shown)
+        if remaining:
+            print(f"    ... and {remaining} more")
 
 
 def _emit_claim(payload: dict[str, Any], *, json_output: bool) -> None:

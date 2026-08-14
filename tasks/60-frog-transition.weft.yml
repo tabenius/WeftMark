@@ -215,3 +215,37 @@ tasks:
       - kind: review
         required: true
         criterion: Promotion provenance and authority boundaries are reviewed against docs/frog-transition.md.
+
+  - slug: frog-imported-task-eligibility
+    title: Select dependency-eligible imported Frog task intent
+    status: review
+    priority: P0
+    depends:
+      - frog-snapshot-receipt-cli
+    purpose: Let operators find the next imported task slice without manually interpreting raw status and relation arrays.
+    scope:
+      files:
+        - src/weftmark/application/frog_planning.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_frog_planning.py
+        - tests/cli/test_cli_frog.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-task-eligibility-v0
+    deliverables:
+      - Advisory dependency and conflict eligibility read model over one immutable Frog snapshot.
+      - Priority-ranked strict CLI next command with explained refusal reasons.
+    accept:
+      - Only exact depends_on relations gate eligibility and all unmet prerequisites are named.
+      - Source repo filtering and result limits are deterministic.
+    negative:
+      - Selection does not create a Change Set or claim.
+      - Imported assignments and locks are surfaced as ignored observations, not local authority.
+      - Imported Git status is not treated as observed local Git lineage.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_frog_planning.py tests/cli/test_cli_frog.py
+      - kind: review
+        required: true
+        criterion: Eligibility is clearly distinguished from promotion and local claim acquisition.
