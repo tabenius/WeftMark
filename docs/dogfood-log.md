@@ -205,3 +205,20 @@ review `dogfood-004-review-ready-final`, and superseding handoff
 defaults and caller-controlled stable IDs coexist. After gated lifecycle
 completion and claim release, session 004 satisfies the fourth of five required
 real Change Sets.
+
+## Session 005: portable verified bundles
+
+- Change Set: `dogfood-005`
+- Goal: export and verify privacy-minimized portable Change Set bundles.
+- Base: `784f55c28d0a7cd6b4afed0884b721df029f2133`
+- Native claim: `claim-20260814T103823833029Z-45d05d6905b9`
+- Worker/session: `codex` / `unattended-20260814`
+- Declared semantic scope: `contract:portable-bundle-v1`
+- Status: in progress
+
+The portable bundle selects one Change Set and its claims, evidence, reviews,
+and handoffs. It removes repository identity and worktree locations, rewrites
+command working directories relative to the worktree, omits environment
+descriptions, and preserves only the digest references already stored for
+stdout and stderr. A canonical SHA-256 digest provides offline integrity
+checking; it is not represented as signer authenticity.

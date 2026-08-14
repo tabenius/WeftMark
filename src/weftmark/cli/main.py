@@ -10,8 +10,19 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from weftmark.adapters.git_local import LocalGit, LocalGitError
+from weftmark.adapters.bundle_file import (
+    BundleFileError,
+    read_bundle,
+    write_bundle,
+)
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
 from weftmark.application.change_binding import ChangeBindingError
+from weftmark.application.bundle import (
+    BundleError,
+    BundleService,
+    verification_to_payload,
+    verify_bundle,
+)
 from weftmark.application.claims import (
     ClaimConflict,
     ClaimService,
@@ -59,6 +70,7 @@ EXIT_POLICY = 5
 EXIT_EVIDENCE_FAILED = 6
 EXIT_EVIDENCE_UNAVAILABLE = 7
 EXIT_CONFLICT = 8
+EXIT_BUNDLE = 9
 
 
 def _now() -> datetime:
@@ -76,6 +88,18 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("status", help="summarize current local workspace records")
+
+    bundle = commands.add_parser("bundle", help="export and verify portable records")
+    bundle_commands = bundle.add_subparsers(dest="bundle_command", required=True)
+    bundle_export = bundle_commands.add_parser(
+        "export", help="export one Change Set and related records"
+    )
+    bundle_export.add_argument("changeset_id")
+    bundle_export.add_argument("--output")
+    bundle_verify = bundle_commands.add_parser(
+        "verify", help="verify an exported bundle offline"
+    )
+    bundle_verify.add_argument("path")
 
     changeset = commands.add_parser("changeset", help="manage Change Sets")
     changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
@@ -231,6 +255,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             EvidenceProducer(ProducerKind.WORKER, "weftmark-cli"),
         )
         lifecycle = LifecycleService(workspace, workflow)
+        bundles = BundleService(workspace, claims, workflow)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -239,6 +264,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             _emit_status(payload, json_output=args.json)
+            return 0
+        if args.command == "bundle" and args.bundle_command == "export":
+            payload = bundles.export(args.changeset_id, exported_at=_now())
+            if args.output:
+                output = write_bundle(args.output, payload)
+                _emit_bundle_file(
+                    output,
+                    digest=payload["digest"],
+                    change_set_id=args.changeset_id,
+                    json_output=args.json,
+                )
+            else:
+                print(json.dumps(payload, sort_keys=True, indent=None if args.json else 2))
+            return 0
+        if args.command == "bundle" and args.bundle_command == "verify":
+            verification = verification_to_payload(verify_bundle(read_bundle(args.path)))
+            _emit_bundle_verification(verification, json_output=args.json)
             return 0
 
         if args.command == "changeset" and args.changeset_command == "create":
@@ -460,6 +502,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ClaimConflict as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_CONFLICT
+    except (BundleError, BundleFileError) as error:
+        _emit_error(str(error), json_output=args.json)
+        return EXIT_BUNDLE
     except (JsonlLedgerError, LedgerServiceError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_LEDGER
@@ -553,6 +598,39 @@ def _emit_status(payload: dict[str, Any], *, json_output: bool) -> None:
             f"{dirty}"
         )
         print(f"  observed head: {value['observed_head_sha']}  {value['observed_at']}")
+
+
+def _emit_bundle_file(
+    path: Path,
+    *,
+    digest: str,
+    change_set_id: str,
+    json_output: bool,
+) -> None:
+    payload = {
+        "path": str(path),
+        "digest": digest,
+        "change_set_id": change_set_id,
+    }
+    if json_output:
+        print(json.dumps({"ok": True, "bundle": payload}, sort_keys=True))
+        return
+    print(f"exported {change_set_id}  {digest}")
+    print(f"  path: {path}")
+
+
+def _emit_bundle_verification(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "verification": payload}, sort_keys=True))
+        return
+    counts = payload["counts"]
+    print(f"verified {payload['change_set_id']}  {payload['digest']}")
+    print(
+        f"  claims:{counts['claims']} evidence:{counts['evidence']} "
+        f"reviews:{counts['reviews']} handoffs:{counts['handoffs']}"
+    )
 
 
 def _emit_claim(payload: dict[str, Any], *, json_output: bool) -> None:

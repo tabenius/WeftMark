@@ -82,3 +82,36 @@ tasks:
       - kind: review
         required: true
         criterion: Five completed Change Sets and lessons are documented.
+
+  - slug: portable-changeset-bundle
+    title: Export and verify portable Change Set records
+    status: done
+    priority: P0
+    depends:
+      - cli-surface
+      - local-command-evidence
+      - handoff-core-model
+    purpose: Move exact continuation context between machines without a cloud service.
+    scope:
+      files:
+        - src/weftmark/application/bundle.py
+        - src/weftmark/adapters/bundle_file.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_bundle.py
+        - tests/adapters/test_bundle_file.py
+        - tests/cli/test_cli_bundle.py
+      contracts:
+        - contract:portable-bundle-v1
+    deliverables:
+      - Change Set-scoped export with related claim, evidence, review, and handoff records.
+      - Offline canonical-digest verification and private file output.
+    accept:
+      - Bundle integrity fails closed after any content change.
+      - Local repository and worktree locations are absent.
+    negative:
+      - Raw stdout, stderr, and environment values are never exported.
+      - Export does not overwrite an existing file.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_bundle.py tests/adapters/test_bundle_file.py tests/cli/test_cli_bundle.py
