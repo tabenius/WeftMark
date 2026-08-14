@@ -36,6 +36,40 @@ tasks:
         required: true
         criterion: Strict grammar and completion refusal are visible at the CLI boundary.
 
+  - slug: native-task-next-service
+    title: Select next eligible native task
+    status: review
+    priority: P0
+    depends:
+      - native-task-cli-surface
+    purpose: Rank newly originated native task intent without reading Frog snapshots or manually interpreting relations.
+    scope:
+      files:
+        - src/weftmark/application/task_planning.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_task_planning.py
+        - tests/cli/test_cli_task_planning.py
+        - tasks/50-surfaces.weft.yml
+      contracts:
+        - contract:native-task-selection-v0
+    deliverables:
+      - Advisory native eligibility read model over task state, dependencies and active conflicts.
+      - Priority-ranked strict task next command with compact explained refusals.
+    accept:
+      - Only idea and todo tasks with all dependencies done and no in-progress conflict are eligible.
+      - Ranking is deterministic by priority, creation time and task identity.
+    negative:
+      - Selection does not create or transition a task, Change Set or claim.
+      - Abandoned dependencies do not count as successfully completed prerequisites.
+      - A todo task conflicting with in-progress work is not offered.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_task_planning.py tests/cli/test_cli_task_planning.py
+      - kind: review
+        required: true
+        criterion: Advisory eligibility remains distinct from local ownership and completion authority.
+
   - slug: cli-surface
     title: Implement the first WeftMark CLI
     status: done

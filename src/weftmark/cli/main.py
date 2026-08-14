@@ -77,6 +77,11 @@ from weftmark.application.local_workflow import (
     scope_audit_to_payload,
 )
 from weftmark.application.status import StatusService, status_to_payload
+from weftmark.application.task_planning import (
+    TaskPlanningError,
+    TaskPlanningService,
+    task_selection_to_payload,
+)
 from weftmark.application.tasks import (
     TaskService,
     TaskServiceError,
@@ -170,6 +175,10 @@ def build_parser() -> argparse.ArgumentParser:
     task_list.add_argument(
         "--state", choices=tuple(value.value for value in TaskState)
     )
+    task_next = task_commands.add_parser(
+        "next", help="rank dependency-eligible native task intent"
+    )
+    task_next.add_argument("--limit", type=int, default=1)
     task_transition = task_commands.add_parser(
         "transition", help="record a non-terminal native task transition"
     )
@@ -446,6 +455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             frog_planning, frog_promotions, claims
         )
         tasks = TaskService(ledger)
+        task_planning = TaskPlanningService(tasks)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -487,6 +497,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if state is None or value.state is state
             ]
             _emit_task_list(payloads, json_output=args.json)
+            return 0
+        if args.command == "task" and args.task_command == "next":
+            _emit_native_task_selection(
+                task_selection_to_payload(task_planning.next(limit=args.limit)),
+                json_output=args.json,
+            )
             return 0
         if args.command == "task" and args.task_command == "transition":
             value = tasks.transition(
@@ -969,6 +985,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         LocalGitError,
         ScopeError,
         TaskError,
+        TaskPlanningError,
         TaskServiceError,
         WorkspaceError,
         EvidenceRunnerError,
@@ -1050,6 +1067,31 @@ def _emit_task_list(payloads: list[dict[str, Any]], *, json_output: bool) -> Non
             f"{payload['id']}  {payload['state']}  "
             f"{payload['priority']}  {payload['title']}"
         )
+
+
+def _emit_native_task_selection(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "task_selection": payload}, sort_keys=True))
+        return
+    print(f"{payload['eligible']} eligible of {payload['considered']} considered")
+    if not payload["tasks"]:
+        print("no dependency-eligible native tasks")
+    for value in payload["tasks"]:
+        task = value["task"]
+        print(
+            f"{task['id']}  {task['priority']}  {task['state']}  {task['title']}"
+        )
+    if payload["skipped"]:
+        print("  skipped:")
+        shown = payload["skipped"][:5]
+        for value in shown:
+            print(f"    {value['id']}: " + "; ".join(value["reasons"]))
+        remaining = payload["skipped_count"] - len(shown)
+        if remaining:
+            print(f"    ... and {remaining} more")
+    print("  advisory only; acquire a Change Set claim before editing")
 
 
 def _emit_task_relation(
