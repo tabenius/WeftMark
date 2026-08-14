@@ -62,7 +62,7 @@ tasks:
 
   - slug: native-task-intent-model
     title: Define native Task Intent and plan relation model
-    status: review
+    status: done
     priority: P0
     depends:
       - domain-package-skeleton
