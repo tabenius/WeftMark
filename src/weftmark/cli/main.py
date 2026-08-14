@@ -12,6 +12,12 @@ from typing import Any, Sequence
 from weftmark.adapters.git_local import LocalGit, LocalGitError
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
 from weftmark.application.change_binding import ChangeBindingError
+from weftmark.application.claims import (
+    ClaimConflict,
+    ClaimService,
+    ClaimServiceError,
+    claim_to_payload,
+)
 from weftmark.application.ledger import LedgerService, LedgerServiceError
 from weftmark.application.evidence_runner import (
     CommandEvidenceRequest,
@@ -45,6 +51,7 @@ EXIT_LEDGER = 4
 EXIT_POLICY = 5
 EXIT_EVIDENCE_FAILED = 6
 EXIT_EVIDENCE_UNAVAILABLE = 7
+EXIT_CONFLICT = 8
 
 
 def _now() -> datetime:
@@ -83,6 +90,31 @@ def build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("id")
     refresh.add_argument("--base", help="replace the tracked base revision")
     changeset_commands.add_parser("list", help="list latest Change Set snapshots")
+
+    claim = commands.add_parser("claim", help="manage semantic Change Set leases")
+    claim_commands = claim.add_subparsers(dest="claim_command", required=True)
+    claim_acquire = claim_commands.add_parser(
+        "acquire", help="atomically acquire every declared Change Set scope"
+    )
+    claim_acquire.add_argument("changeset_id")
+    claim_acquire.add_argument("--id", required=True)
+    claim_acquire.add_argument("--agent", default="weftmark-cli")
+    claim_acquire.add_argument("--session", default="local-session")
+    claim_acquire.add_argument("--lease-seconds", type=int, default=1800)
+    claim_show = claim_commands.add_parser("show", help="show a stored claim")
+    claim_show.add_argument("id")
+    claim_list = claim_commands.add_parser("list", help="list latest claims")
+    claim_list.add_argument("--changeset")
+    claim_renew = claim_commands.add_parser("renew", help="extend an active claim")
+    claim_renew.add_argument("id")
+    claim_renew.add_argument("--agent", default="weftmark-cli")
+    claim_renew.add_argument("--session", default="local-session")
+    claim_renew.add_argument("--extend-seconds", type=int, default=1800)
+    claim_release = claim_commands.add_parser("release", help="release an active claim")
+    claim_release.add_argument("id")
+    claim_release.add_argument("--agent", default="weftmark-cli")
+    claim_release.add_argument("--session", default="local-session")
+    claim_release.add_argument("--reason", required=True)
 
     scope = commands.add_parser("scope", help="audit declared file and semantic scope")
     scope_commands = scope.add_subparsers(dest="scope_command", required=True)
@@ -171,6 +203,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ledger_path = _ledger_path(args.ledger, repository.id)
         ledger = LedgerService(JsonlLedger(ledger_path))
         workspace = WorkspaceService(git, ledger)
+        claims = ClaimService(workspace, ledger)
         workflow = LocalWorkflowService(
             workspace,
             ledger,
@@ -206,6 +239,67 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for binding in workspace.list_change_sets()
             ]
             _emit_list(result, json_output=args.json)
+            return 0
+        if args.command == "claim" and args.claim_command == "acquire":
+            observed_at = _now()
+            value = claims.acquire(
+                args.changeset_id,
+                id=args.id,
+                agent_id=args.agent,
+                session_id=args.session,
+                acquired_at=observed_at,
+                lease_seconds=args.lease_seconds,
+            )
+            _emit_claim(
+                claim_to_payload(value, observed_at=observed_at),
+                json_output=args.json,
+            )
+            return 0
+        if args.command == "claim" and args.claim_command == "show":
+            value = claims.get(args.id)
+            if value is None:
+                _emit_error(f"Claim not found: {args.id}", json_output=args.json)
+                return EXIT_NOT_FOUND
+            _emit_claim(
+                claim_to_payload(value, observed_at=_now()),
+                json_output=args.json,
+            )
+            return 0
+        if args.command == "claim" and args.claim_command == "list":
+            observed_at = _now()
+            payloads = [
+                claim_to_payload(value, observed_at=observed_at)
+                for value in claims.list(change_set_id=args.changeset)
+            ]
+            _emit_claim_list(payloads, json_output=args.json)
+            return 0
+        if args.command == "claim" and args.claim_command == "renew":
+            observed_at = _now()
+            value = claims.renew(
+                args.id,
+                agent_id=args.agent,
+                session_id=args.session,
+                renewed_at=observed_at,
+                extend_seconds=args.extend_seconds,
+            )
+            _emit_claim(
+                claim_to_payload(value, observed_at=observed_at),
+                json_output=args.json,
+            )
+            return 0
+        if args.command == "claim" and args.claim_command == "release":
+            observed_at = _now()
+            value = claims.release(
+                args.id,
+                agent_id=args.agent,
+                session_id=args.session,
+                released_at=observed_at,
+                reason=args.reason,
+            )
+            _emit_claim(
+                claim_to_payload(value, observed_at=observed_at),
+                json_output=args.json,
+            )
             return 0
         if args.command == "scope" and args.scope_command == "audit":
             result = workflow.audit_scope(
@@ -314,12 +408,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             ]
             _emit_handoff_list(payloads, json_output=args.json)
             return 0
+    except ClaimConflict as error:
+        _emit_error(str(error), json_output=args.json)
+        return EXIT_CONFLICT
     except (JsonlLedgerError, LedgerServiceError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_LEDGER
     except (
         ChangeBindingError,
         ChangeSetError,
+        ClaimServiceError,
         LocalGitError,
         ScopeError,
         WorkspaceError,
@@ -379,6 +477,38 @@ def _emit_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:
         return
     for payload in payloads:
         print(f"{payload['id']}  {payload['state']}  {payload['branch']}  {payload['goal']}")
+
+
+def _emit_claim(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "claim": payload}, sort_keys=True))
+        return
+    print(
+        f"{payload['id']}  {payload['effective_state']}  "
+        f"{payload['change_set_id']}  {payload['agent_id']}/{payload['session_id']}"
+    )
+    print(f"  expires: {payload['locks'][0]['expires_at']}")
+    print(
+        "  scopes: "
+        + ", ".join(
+            f"{lock['scope']['kind']}:{lock['scope']['key']}"
+            for lock in payload["locks"]
+        )
+    )
+
+
+def _emit_claim_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "claims": payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print("no claims")
+        return
+    for payload in payloads:
+        print(
+            f"{payload['id']}  {payload['effective_state']}  "
+            f"{payload['change_set_id']}  {payload['agent_id']}"
+        )
 
 
 def _emit_error(message: str, *, json_output: bool) -> None:

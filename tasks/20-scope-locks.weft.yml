@@ -81,3 +81,34 @@ tasks:
       - kind: test
         required: true
         command: python -m pytest tests/application/test_scope_audit.py
+
+  - slug: native-claim-workflow
+    title: Persist and operate semantic Change Set claims locally
+    status: done
+    priority: P0
+    depends:
+      - semantic-lock-model
+      - local-ledger-foundation
+      - cli-surface
+    purpose: Remove Frog as the lock owner for local WeftMark development.
+    scope:
+      files:
+        - src/weftmark/application/claims.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_claims.py
+        - tests/cli/test_cli_claims.py
+      contracts:
+        - surface:claim-v0
+    deliverables:
+      - Atomic multi-scope claim acquisition with overlap refusal.
+      - Human and JSON commands for acquire, show, list, renew, and release.
+    accept:
+      - Concurrent ledger movement cannot bypass scope conflict evaluation.
+      - Conflict has a distinct CLI exit code.
+    negative:
+      - A released or expired claim never blocks new ownership.
+      - Claim operations do not write storage directly from CLI code.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_claims.py tests/cli/test_cli_claims.py
