@@ -183,10 +183,25 @@ current reviews and handoffs without inventing new proof.
 - Native claim: `dogfood-004-claim`
 - Worker/session: `codex` / `unattended-20260814`
 - Declared semantic scope: `contract:identifier-v0`
-- Status: in progress
+- Status: completed locally
 
 This session implements the repeated friction recorded in session 001. Local
 commands generate readable kind-prefixed IDs when the caller omits one, while
 explicit IDs remain authoritative for scripts, imports, and deterministic
 fixtures. Generation is offline, UTC-sortable, and includes random collision
 space rather than a shared machine counter.
+
+The real CLI generated all three omitted IDs successfully on head `7336617`:
+
+- evidence `evidence-20260814T103617476849Z-cf252164e0b7`;
+- review `review-20260814T103634313820Z-7ef82a7a6b7a`;
+- handoff `handoff-20260814T103634676590Z-038f33bb041a`.
+
+The generated values are readable, time-ordered, and surfaced directly in JSON
+without a second lookup. This documentation update advances the head, so the
+session is finally sealed with explicit evidence `dogfood-004-test-final`,
+review `dogfood-004-review-ready-final`, and superseding handoff
+`dogfood-004-handoff-final`. The distinction demonstrates that generated
+defaults and caller-controlled stable IDs coexist. After gated lifecycle
+completion and claim release, session 004 satisfies the fourth of five required
+real Change Sets.
