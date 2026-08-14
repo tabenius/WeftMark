@@ -5,7 +5,7 @@ summary: Reuse Frog's proven coordination ideas without inheriting accidental en
 tasks:
   - slug: frog-state-inventory
     title: Map Frog data and commands to WeftMark concepts
-    status: todo
+    status: done
     priority: P1
     depends:
       - changeset-core-model
@@ -15,6 +15,7 @@ tasks:
     scope:
       files:
         - docs/frog-transition.md
+        - tasks/60-frog-transition.weft.yml
       contracts:
         - contract:frog-transition-map-v0
     deliverables:
