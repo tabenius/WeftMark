@@ -66,3 +66,36 @@ tasks:
       - kind: security
         required: true
         command: python -m pytest tests/application/test_ledger_service.py
+
+  - slug: native-task-ledger-service
+    title: Persist native Task Intent and plan relations
+    status: review
+    priority: P0
+    depends:
+      - native-task-intent-model
+      - local-ledger-foundation
+    purpose: Make native task intent durable and relation updates race-safe before exposing task commands.
+    scope:
+      files:
+        - src/weftmark/application/tasks.py
+        - tests/application/test_tasks.py
+        - tasks/35-local-ledger.weft.yml
+      contracts:
+        - contract:native-task-ledger-v0
+    deliverables:
+      - Versioned Task Intent, dependency and conflict ledger codecs.
+      - Optimistic create, list, non-terminal transition and relation workflows.
+    accept:
+      - Duplicate task creation and dependency cycles fail closed under current ledger state.
+      - Repeated identical dependency and conflict writes are idempotent.
+    negative:
+      - The generic task service cannot mark a task done without a completion gate.
+      - Relations cannot reference missing tasks, self-depend or rewrite immutable reasons.
+      - Persistence does not introduce SQLite, Frog or interface dependencies.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_tasks.py
+      - kind: review
+        required: true
+        criterion: Optimistic writes and terminal completion refusal preserve task authority invariants.
