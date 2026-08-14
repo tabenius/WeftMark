@@ -214,7 +214,7 @@ real Change Sets.
 - Native claim: `claim-20260814T103823833029Z-45d05d6905b9`
 - Worker/session: `codex` / `unattended-20260814`
 - Declared semantic scope: `contract:portable-bundle-v1`
-- Status: in progress
+- Status: completed locally
 
 The portable bundle selects one Change Set and its claims, evidence, reviews,
 and handoffs. It removes repository identity and worktree locations, rewrites
@@ -222,3 +222,21 @@ command working directories relative to the worktree, omits environment
 descriptions, and preserves only the digest references already stored for
 stdout and stderr. A canonical SHA-256 digest provides offline integrity
 checking; it is not represented as signer authenticity.
+
+The real CLI exported closed session 004 to
+`/tmp/weftmark-dogfood-004.bundle.json` and verified digest
+`sha256:c392c803583e55ac5d264955211a9713f091de45e64421a3e3b54a371cd97f38`.
+The verified bundle contains one claim, two evidence records, two reviews, and
+two handoffs. A direct scan found no `/data/src` location, `repository_id`,
+`worktree`, or raw `stdout`/`stderr` field.
+
+Session 005 is sealed with evidence `dogfood-005-test-1`, review
+`dogfood-005-review-ready`, and handoff `dogfood-005-handoff-1`, followed by
+gated closure and release of generated claim
+`claim-20260814T103823833029Z-45d05d6905b9`. This satisfies the five-real-Change
+Set deliverable and preserves the stale-evidence case from session 001.
+
+The overall dogfood task remains in progress: no handoff has yet crossed an
+actual agent or model-vendor boundary, and the new portable format has export
+and verification but not idempotent import. Those claims must not be inferred
+from a successful same-worker offline verification.
