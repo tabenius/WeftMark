@@ -16,7 +16,7 @@ class HandoffError(ValueError):
 
 _PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", re.IGNORECASE)
 _TOKEN_PREFIX = re.compile(
-    r"(?:github_pat_|gh[oprsu]_|sk-[a-z0-9]|AKIA[0-9A-Z]{12})",
+    r"(?:github_pat_|gh[oprsu]_|(?<![a-z0-9])sk-[a-z0-9]|AKIA[0-9A-Z]{12})",
     re.IGNORECASE,
 )
 _SECRET_ASSIGNMENT = re.compile(

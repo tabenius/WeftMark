@@ -130,6 +130,16 @@ def test_secret_placeholders_and_key_names_without_values_are_allowed() -> None:
     assert record.known_failures == ("AUTH_SECRET is missing",)
 
 
+def test_secret_prefix_match_does_not_reject_normal_task_identifiers() -> None:
+    record = handoff(task_id="task-1")
+    assert record.task_id == "task-1"
+
+
+def test_openai_style_secret_prefix_is_still_rejected_at_token_boundary() -> None:
+    with pytest.raises(HandoffError, match="credential or secret"):
+        handoff(next_action="Remove leaked sk-example from the task")
+
+
 def test_invalid_git_context_and_duplicate_references_fail_closed() -> None:
     with pytest.raises(HandoffError, match="full Git object"):
         handoff(head_sha="abc")
