@@ -252,7 +252,7 @@ tasks:
 
   - slug: frog-task-claim-workflow
     title: Claim eligible imported Frog task intent natively
-    status: review
+    status: done
     priority: P0
     depends:
       - frog-imported-task-eligibility
