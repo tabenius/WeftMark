@@ -7,7 +7,11 @@ import re
 from datetime import datetime
 from typing import Any, Mapping
 
-from weftmark.application.ports.ledger import LedgerDraft, LedgerEntry, LedgerPort
+from weftmark.application.ports.ledger import (
+    LedgerDraft,
+    LedgerEntry,
+    LedgerPort,
+)
 
 
 class LedgerServiceError(ValueError):
@@ -35,24 +39,25 @@ class LedgerService:
         payload: Mapping[str, Any],
         recorded_at: datetime,
     ) -> LedgerEntry:
-        sensitive_paths = _sensitive_paths(payload)
-        if sensitive_paths:
-            raise LedgerServiceError(
-                "ledger payload contains secret-bearing fields: "
-                + ", ".join(sensitive_paths)
-            )
-        try:
-            payload_json = json.dumps(
-                payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
-        except (TypeError, ValueError) as error:
-            raise LedgerServiceError("ledger payload must be JSON-safe") from error
-        return self._ledger.append(
-            LedgerDraft(kind, entity_id, payload_json, recorded_at)
-        )
+        draft = _safe_draft(kind, entity_id, payload, recorded_at)
+        return self._ledger.append(draft)
+
+    def record_if_head(
+        self,
+        *,
+        kind: str,
+        entity_id: str,
+        payload: Mapping[str, Any],
+        recorded_at: datetime,
+        expected_digest: str,
+    ) -> LedgerEntry:
+        draft = _safe_draft(kind, entity_id, payload, recorded_at)
+        return self._ledger.append_if_head(draft, expected_digest=expected_digest)
+
+    def snapshot(self) -> tuple[LedgerEntry, ...]:
+        """Return one validated ledger view for optimistic application logic."""
+
+        return self._ledger.entries()
 
     def history(
         self,
@@ -70,6 +75,30 @@ class LedgerService:
     def latest(self, *, kind: str, entity_id: str) -> LedgerEntry | None:
         matches = self.history(kind=kind, entity_id=entity_id)
         return matches[-1] if matches else None
+
+
+def _safe_draft(
+    kind: str,
+    entity_id: str,
+    payload: Mapping[str, Any],
+    recorded_at: datetime,
+) -> LedgerDraft:
+    sensitive_paths = _sensitive_paths(payload)
+    if sensitive_paths:
+        raise LedgerServiceError(
+            "ledger payload contains secret-bearing fields: "
+            + ", ".join(sensitive_paths)
+        )
+    try:
+        payload_json = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as error:
+        raise LedgerServiceError("ledger payload must be JSON-safe") from error
+    return LedgerDraft(kind, entity_id, payload_json, recorded_at)
 
 
 def _sensitive_paths(value: object, prefix: str = "$") -> tuple[str, ...]:

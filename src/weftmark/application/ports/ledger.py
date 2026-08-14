@@ -12,6 +12,13 @@ class LedgerContractError(ValueError):
     """Raised when a ledger value is malformed."""
 
 
+class LedgerHeadChanged(RuntimeError):
+    """Raised when an optimistic append observes a different ledger head."""
+
+
+LEDGER_GENESIS_DIGEST = "0" * 64
+
+
 @dataclass(frozen=True, slots=True)
 class LedgerDraft:
     kind: str
@@ -73,6 +80,11 @@ class LedgerEntry:
 class LedgerPort(Protocol):
     def append(self, draft: LedgerDraft) -> LedgerEntry:
         """Append one entry and return its assigned sequence and digest."""
+
+    def append_if_head(
+        self, draft: LedgerDraft, *, expected_digest: str
+    ) -> LedgerEntry:
+        """Append only when the current head digest matches the expectation."""
 
     def entries(self) -> tuple[LedgerEntry, ...]:
         """Read and validate the complete ordered ledger."""

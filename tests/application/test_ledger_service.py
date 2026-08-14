@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 import pytest
 
 from weftmark.application.ledger import LedgerService, LedgerServiceError
-from weftmark.application.ports.ledger import LedgerDraft, LedgerEntry
+from weftmark.application.ports.ledger import (
+    LEDGER_GENESIS_DIGEST,
+    LedgerDraft,
+    LedgerEntry,
+    LedgerHeadChanged,
+)
 
 
 NOW = datetime(2026, 8, 14, 1, 0, tzinfo=timezone.utc)
@@ -16,10 +21,18 @@ class MemoryLedger:
         self.values: list[LedgerEntry] = []
 
     def append(self, draft: LedgerDraft) -> LedgerEntry:
-        previous = self.values[-1].digest if self.values else "0" * 64
+        previous = self.values[-1].digest if self.values else LEDGER_GENESIS_DIGEST
         entry = LedgerEntry(len(self.values) + 1, previous, "a" * 64, draft)
         self.values.append(entry)
         return entry
+
+    def append_if_head(
+        self, draft: LedgerDraft, *, expected_digest: str
+    ) -> LedgerEntry:
+        actual = self.values[-1].digest if self.values else LEDGER_GENESIS_DIGEST
+        if actual != expected_digest:
+            raise LedgerHeadChanged
+        return self.append(draft)
 
     def entries(self) -> tuple[LedgerEntry, ...]:
         return tuple(self.values)
@@ -34,6 +47,27 @@ def test_service_records_queries_and_selects_latest_entity_snapshot() -> None:
     assert service.latest(kind="changeset", entity_id="chg-1") == latest
     assert len(service.history(kind="changeset")) == 2
     assert len(service.history(entity_id="ev-1")) == 1
+
+
+def test_service_compare_and_append_uses_one_snapshot_head() -> None:
+    service = LedgerService(MemoryLedger())
+    assert service.snapshot() == ()
+    first = service.record_if_head(
+        kind="claim",
+        entity_id="claim-1",
+        payload={"state": "active"},
+        recorded_at=NOW,
+        expected_digest=LEDGER_GENESIS_DIGEST,
+    )
+    assert service.snapshot() == (first,)
+    with pytest.raises(LedgerHeadChanged):
+        service.record_if_head(
+            kind="claim",
+            entity_id="claim-2",
+            payload={"state": "active"},
+            recorded_at=NOW,
+            expected_digest=LEDGER_GENESIS_DIGEST,
+        )
 
 
 @pytest.mark.parametrize(

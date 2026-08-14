@@ -9,6 +9,7 @@ import pytest
 
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError, LedgerCorruption
 from weftmark.application.ledger import LedgerService
+from weftmark.application.ports.ledger import LEDGER_GENESIS_DIGEST, LedgerDraft, LedgerHeadChanged
 
 
 NOW = datetime(2026, 8, 14, 1, 0, tzinfo=timezone.utc)
@@ -56,6 +57,21 @@ def test_missing_ledger_reads_empty_without_creating_file(tmp_path: Path) -> Non
     path = tmp_path / "ledger.jsonl"
     assert JsonlLedger(path).entries() == ()
     assert not path.exists()
+
+
+def test_compare_and_append_refuses_a_stale_head_without_writing(tmp_path: Path) -> None:
+    path = tmp_path / "ledger.jsonl"
+    ledger = JsonlLedger(path)
+    first = ledger.append_if_head(
+        LedgerDraft("claim", "claim-1", '{"state":"active"}', NOW),
+        expected_digest=LEDGER_GENESIS_DIGEST,
+    )
+    with pytest.raises(LedgerHeadChanged, match="head changed"):
+        ledger.append_if_head(
+            LedgerDraft("claim", "claim-2", '{"state":"active"}', NOW),
+            expected_digest=LEDGER_GENESIS_DIGEST,
+        )
+    assert ledger.entries() == (first,)
 
 
 def test_adapter_refuses_symlink_target(tmp_path: Path) -> None:

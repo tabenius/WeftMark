@@ -10,7 +10,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO, Any
 
-from weftmark.application.ports.ledger import LedgerDraft, LedgerEntry, LedgerPort
+from weftmark.application.ports.ledger import (
+    LEDGER_GENESIS_DIGEST,
+    LedgerDraft,
+    LedgerEntry,
+    LedgerHeadChanged,
+    LedgerPort,
+)
 
 
 class JsonlLedgerError(RuntimeError):
@@ -21,9 +27,6 @@ class LedgerCorruption(JsonlLedgerError):
     """Raised when sequence, encoding, or digest-chain validation fails."""
 
 
-_GENESIS_DIGEST = "0" * 64
-
-
 class JsonlLedger(LedgerPort):
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -32,15 +35,18 @@ class JsonlLedger(LedgerPort):
         with self._open(create=True) as stream:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
             entries = self._read_locked(stream)
-            sequence = len(entries) + 1
-            previous = entries[-1].digest if entries else _GENESIS_DIGEST
-            digest = _entry_digest(sequence, previous, draft)
-            entry = LedgerEntry(sequence, previous, digest, draft)
-            stream.seek(0, os.SEEK_END)
-            stream.write(_encode(entry) + "\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-            return entry
+            return self._append_locked(stream, entries, draft)
+
+    def append_if_head(
+        self, draft: LedgerDraft, *, expected_digest: str
+    ) -> LedgerEntry:
+        with self._open(create=True) as stream:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            entries = self._read_locked(stream)
+            actual = entries[-1].digest if entries else LEDGER_GENESIS_DIGEST
+            if actual != expected_digest:
+                raise LedgerHeadChanged("ledger head changed before append")
+            return self._append_locked(stream, entries, draft)
 
     def entries(self) -> tuple[LedgerEntry, ...]:
         if self.path.is_symlink():
@@ -72,7 +78,7 @@ class JsonlLedger(LedgerPort):
         stream.seek(0)
         lines = stream.read().splitlines()
         entries: list[LedgerEntry] = []
-        previous = _GENESIS_DIGEST
+        previous = LEDGER_GENESIS_DIGEST
         for index, line in enumerate(lines, start=1):
             if not line:
                 raise LedgerCorruption(f"blank ledger record at sequence {index}")
@@ -87,6 +93,22 @@ class JsonlLedger(LedgerPort):
             entries.append(entry)
             previous = entry.digest
         return tuple(entries)
+
+    def _append_locked(
+        self,
+        stream: IO[str],
+        entries: tuple[LedgerEntry, ...],
+        draft: LedgerDraft,
+    ) -> LedgerEntry:
+        sequence = len(entries) + 1
+        previous = entries[-1].digest if entries else LEDGER_GENESIS_DIGEST
+        digest = _entry_digest(sequence, previous, draft)
+        entry = LedgerEntry(sequence, previous, digest, draft)
+        stream.seek(0, os.SEEK_END)
+        stream.write(_encode(entry) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+        return entry
 
 
 def _content(sequence: int, previous: str, draft: LedgerDraft) -> dict[str, Any]:
