@@ -185,7 +185,7 @@ tasks:
 
   - slug: frog-task-promotion
     title: Promote imported Frog task intent into a local Change Set
-    status: review
+    status: done
     priority: P0
     depends:
       - frog-snapshot-receipt-cli
