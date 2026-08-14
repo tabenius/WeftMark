@@ -14,6 +14,7 @@ from weftmark.application.ledger import LedgerService
 from weftmark.application.local_workflow import LocalWorkflowService
 from weftmark.application.workspace import WorkspaceService
 from weftmark.domain.evidence import EvidenceKind, EvidenceProducer, ProducerKind
+from weftmark.domain.review import ReviewOutcome
 from weftmark.domain.scope import Scope
 
 
@@ -106,3 +107,88 @@ def test_command_evidence_refuses_dirty_tree_before_execution(tmp_path: Path) ->
             "chg-1", request, observed_at=NOW + timedelta(minutes=1)
         )
     assert not marker.exists()
+
+
+def test_review_composes_persists_and_lists_current_evidence(tmp_path: Path) -> None:
+    repo, _, flow = setup(tmp_path)
+    flow.run_evidence(
+        "chg-1",
+        CommandEvidenceRequest(
+            id="ev-1",
+            kind=EvidenceKind.TEST,
+            argv=(sys.executable, "-c", "pass"),
+            cwd=str(repo),
+        ),
+        observed_at=NOW + timedelta(minutes=1),
+    )
+
+    summary = flow.review(
+        "chg-1",
+        decision_id="review-1",
+        author_id="reviewer",
+        required_kinds=(EvidenceKind.TEST,),
+        decided_at=NOW + timedelta(minutes=2),
+    )
+    assert summary.outcome is ReviewOutcome.READY
+    assert flow.get_review("review-1")["decision"]["outcome"] == "ready"
+    assert len(flow.list_reviews(change_set_id="chg-1")) == 1
+
+
+def test_handoff_captures_review_and_evidence_then_supersedes(tmp_path: Path) -> None:
+    repo, _, flow = setup(tmp_path)
+    flow.run_evidence(
+        "chg-1",
+        CommandEvidenceRequest(
+            id="ev-1",
+            kind=EvidenceKind.TEST,
+            argv=(sys.executable, "-c", "pass"),
+            cwd=str(repo),
+        ),
+        observed_at=NOW + timedelta(minutes=1),
+    )
+    flow.review(
+        "chg-1",
+        decision_id="review-1",
+        author_id="reviewer",
+        required_kinds=(EvidenceKind.TEST,),
+        decided_at=NOW + timedelta(minutes=2),
+    )
+
+    first = flow.create_handoff(
+        "chg-1",
+        id="handoff-1",
+        task_id="work-1",
+        next_action="Request merge",
+        created_by="worker-1",
+        created_at=NOW + timedelta(minutes=3),
+        intended_receiver_id="worker-2",
+    )
+    second = flow.create_handoff(
+        "chg-1",
+        id="handoff-2",
+        task_id="work-1",
+        next_action="Merge after approval",
+        created_by="worker-2",
+        created_at=NOW + timedelta(minutes=4),
+        supersedes_id="handoff-1",
+    )
+    assert first.evidence_ids == ("ev-1",)
+    assert first.decision_ids == ("review-1",)
+    assert second.supersedes_id == "handoff-1"
+    assert second.generation == 2
+    assert flow.get_handoff("handoff-2") == second
+
+
+def test_portable_handoff_refuses_dirty_worktree(tmp_path: Path) -> None:
+    repo, _, flow = setup(tmp_path)
+    (repo / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="clean worktree"):
+        flow.create_handoff(
+            "chg-1",
+            id="handoff-dirty",
+            task_id="task-1",
+            next_action="Continue",
+            created_by="worker",
+            created_at=NOW + timedelta(minutes=1),
+        )

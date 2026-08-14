@@ -21,6 +21,7 @@ from weftmark.application.local_workflow import (
     LocalWorkflowError,
     LocalWorkflowService,
     evidence_result_to_payload,
+    review_summary_to_payload,
     scope_audit_to_payload,
 )
 from weftmark.application.workspace import (
@@ -118,6 +119,46 @@ def build_parser() -> argparse.ArgumentParser:
     evidence_show.add_argument("id")
     evidence_list = evidence_commands.add_parser("list", help="list stored evidence")
     evidence_list.add_argument("--changeset")
+
+    review = commands.add_parser("review", help="produce and inspect readiness decisions")
+    review_commands = review.add_subparsers(dest="review_command", required=True)
+    review_create = review_commands.add_parser("create", help="evaluate current readiness")
+    review_create.add_argument("changeset_id")
+    review_create.add_argument("--id", required=True)
+    review_create.add_argument("--author", default="weftmark-cli")
+    review_create.add_argument(
+        "--require",
+        action="append",
+        default=[],
+        choices=tuple(kind.value for kind in EvidenceKind),
+    )
+    review_create.add_argument(
+        "--optional",
+        action="append",
+        default=[],
+        choices=tuple(kind.value for kind in EvidenceKind),
+    )
+    review_create.add_argument("--semantic-change", action="append", default=[])
+    review_show = review_commands.add_parser("show", help="show a stored review")
+    review_show.add_argument("id")
+    review_list = review_commands.add_parser("list", help="list stored reviews")
+    review_list.add_argument("--changeset")
+
+    handoff = commands.add_parser("handoff", help="create and inspect continuation records")
+    handoff_commands = handoff.add_subparsers(dest="handoff_command", required=True)
+    handoff_create = handoff_commands.add_parser("create", help="create a clean-head handoff")
+    handoff_create.add_argument("changeset_id")
+    handoff_create.add_argument("--id", required=True)
+    handoff_create.add_argument("--task", required=True)
+    handoff_create.add_argument("--next", required=True, dest="next_action")
+    handoff_create.add_argument("--created-by", default="weftmark-cli")
+    handoff_create.add_argument("--receiver")
+    handoff_create.add_argument("--known-failure", action="append", default=[])
+    handoff_create.add_argument("--supersedes")
+    handoff_show = handoff_commands.add_parser("show", help="show a stored handoff")
+    handoff_show.add_argument("id")
+    handoff_list = handoff_commands.add_parser("list", help="list stored handoffs")
+    handoff_list.add_argument("--changeset")
     return parser
 
 
@@ -215,6 +256,63 @@ def main(argv: Sequence[str] | None = None) -> int:
             results = workflow.list_evidence(change_set_id=args.changeset)
             payloads = [evidence_result_to_payload(result) for result in results]
             _emit_evidence_list(payloads, json_output=args.json)
+            return 0
+        if args.command == "review" and args.review_command == "create":
+            required = args.require or [EvidenceKind.TEST.value]
+            summary = workflow.review(
+                args.changeset_id,
+                decision_id=args.id,
+                author_id=args.author,
+                required_kinds=tuple(EvidenceKind(value) for value in required),
+                optional_kinds=tuple(EvidenceKind(value) for value in args.optional),
+                semantic_changes=tuple(
+                    Scope.parse(value) for value in args.semantic_change
+                ),
+                decided_at=_now(),
+            )
+            payload = review_summary_to_payload(summary)
+            _emit_review(payload, json_output=args.json)
+            return 0 if summary.is_releasable else EXIT_POLICY
+        if args.command == "review" and args.review_command == "show":
+            payload = workflow.get_review(args.id)
+            if payload is None:
+                _emit_error(f"Review not found: {args.id}", json_output=args.json)
+                return EXIT_NOT_FOUND
+            _emit_review(payload, json_output=args.json)
+            return 0
+        if args.command == "review" and args.review_command == "list":
+            payloads = list(workflow.list_reviews(change_set_id=args.changeset))
+            _emit_review_list(payloads, json_output=args.json)
+            return 0
+        if args.command == "handoff" and args.handoff_command == "create":
+            handoff = workflow.create_handoff(
+                args.changeset_id,
+                id=args.id,
+                task_id=args.task,
+                next_action=args.next_action,
+                created_by=args.created_by,
+                created_at=_now(),
+                intended_receiver_id=args.receiver,
+                known_failures=tuple(args.known_failure),
+                supersedes_id=args.supersedes,
+            )
+            _emit_handoff(handoff.to_dict(), json_output=args.json)
+            return 0
+        if args.command == "handoff" and args.handoff_command == "show":
+            handoff = workflow.get_handoff(args.id)
+            if handoff is None:
+                _emit_error(f"Handoff not found: {args.id}", json_output=args.json)
+                return EXIT_NOT_FOUND
+            _emit_handoff(handoff.to_dict(), json_output=args.json)
+            return 0
+        if args.command == "handoff" and args.handoff_command == "list":
+            payloads = [
+                handoff.to_dict()
+                for handoff in workflow.list_handoffs(
+                    change_set_id=args.changeset
+                )
+            ]
+            _emit_handoff_list(payloads, json_output=args.json)
             return 0
     except (JsonlLedgerError, LedgerServiceError) as error:
         _emit_error(str(error), json_output=args.json)
@@ -322,6 +420,50 @@ def _emit_evidence_list(payloads: list[dict[str, Any]], *, json_output: bool) ->
         return
     for payload in payloads:
         print(f"{payload['id']}  {payload['kind']}  {payload['state']}  {payload['subject']['id']}")
+
+
+def _emit_review(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": payload["is_releasable"], "review": payload}, sort_keys=True))
+        return
+    decision = payload["decision"]
+    print(f"{decision['id']}  {decision['outcome']}  {decision['head_sha']}")
+    for explanation in payload["explanations"]:
+        print(f"  {explanation}")
+
+
+def _emit_review_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "reviews": payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print("no reviews")
+        return
+    for payload in payloads:
+        decision = payload["decision"]
+        print(f"{decision['id']}  {decision['outcome']}  {decision['change_set_id']}")
+
+
+def _emit_handoff(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "handoff": payload}, sort_keys=True))
+        return
+    print(f"{payload['id']}  generation {payload['generation']}  {payload['head_sha']}")
+    print(f"  task: {payload['task_id']}")
+    print(f"  next: {payload['next_action']}")
+    if payload["intended_receiver_id"]:
+        print(f"  receiver: {payload['intended_receiver_id']}")
+
+
+def _emit_handoff_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "handoffs": payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print("no handoffs")
+        return
+    for payload in payloads:
+        print(f"{payload['id']}  gen {payload['generation']}  {payload['change_set_id']}  {payload['next_action']}")
 
 
 if __name__ == "__main__":
