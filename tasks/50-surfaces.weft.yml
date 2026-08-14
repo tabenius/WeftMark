@@ -11,6 +11,7 @@ tasks:
       - review-service
       - handoff-core-model
       - semantic-lock-model
+      - local-ledger-foundation
     purpose: Give humans a compact local workflow before adding a web interface.
     scope:
       files:
