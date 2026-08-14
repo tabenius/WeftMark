@@ -249,3 +249,41 @@ tasks:
       - kind: review
         required: true
         criterion: Eligibility is clearly distinguished from promotion and local claim acquisition.
+
+  - slug: frog-task-claim-workflow
+    title: Claim eligible imported Frog task intent natively
+    status: review
+    priority: P0
+    depends:
+      - frog-imported-task-eligibility
+      - frog-task-promotion
+      - native-claim-workflow
+    purpose: Turn a selected imported task into locally owned work without manual multi-command recovery.
+    scope:
+      files:
+        - src/weftmark/application/frog_task_claims.py
+        - src/weftmark/application/frog_planning.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_frog_task_claims.py
+        - tests/application/test_frog_planning.py
+        - tests/cli/test_cli_frog.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-task-claim-v0
+    deliverables:
+      - Application workflow composing snapshot eligibility, task promotion and native semantic claim acquisition.
+      - Strict CLI claim command with generated or explicit local identities and lease duration.
+    accept:
+      - Retrying after promotion or claim completion returns the same active local authority records.
+      - Native semantic scope conflicts still fail atomically at claim acquisition.
+    negative:
+      - Ineligible imported tasks cannot be promoted by the composed claim workflow.
+      - Imported locks and assignments never satisfy local claim ownership.
+      - A reused claim with different Change Set, agent or session identity is refused.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_frog_task_claims.py tests/application/test_frog_planning.py tests/cli/test_cli_frog.py
+      - kind: review
+        required: true
+        criterion: Partial completion and retry behavior preserve explicit local authority boundaries.

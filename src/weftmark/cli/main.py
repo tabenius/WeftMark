@@ -55,6 +55,11 @@ from weftmark.application.frog_planning import (
     FrogPlanningService,
     selection_to_payload,
 )
+from weftmark.application.frog_task_claims import (
+    FrogTaskClaimError,
+    FrogTaskClaimService,
+    frog_task_claim_result_to_payload,
+)
 from weftmark.application.lifecycle import (
     LifecycleError,
     LifecyclePolicyError,
@@ -166,6 +171,23 @@ def build_parser() -> argparse.ArgumentParser:
     frog_task_next.add_argument("digest")
     frog_task_next.add_argument("--repo-path")
     frog_task_next.add_argument("--limit", type=int, default=1)
+    frog_task_claim = frog_task_commands.add_parser(
+        "claim", help="promote eligible imported intent and acquire local scopes"
+    )
+    frog_task_claim.add_argument("digest")
+    frog_task_claim.add_argument("task_slug")
+    frog_task_claim.add_argument("--id", help="local Change Set ID")
+    frog_task_claim.add_argument("--claim-id")
+    frog_task_claim.add_argument("--base", default="HEAD")
+    frog_task_claim.add_argument("--agent", default="weftmark-cli")
+    frog_task_claim.add_argument("--session", default="local-session")
+    frog_task_claim.add_argument("--lease-seconds", type=int, default=1800)
+    frog_task_claim.add_argument(
+        "--scope",
+        action="append",
+        required=True,
+        help="operator-approved local scope; imported Frog scopes are not authoritative",
+    )
     frog_task_promote = frog_task_commands.add_parser(
         "promote", help="create local Change Set authority from imported intent"
     )
@@ -343,6 +365,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         frog_receipts = FrogReceiptService(ledger)
         frog_promotions = FrogPromotionService(frog_receipts, workspace, ledger)
         frog_planning = FrogPlanningService(frog_receipts)
+        frog_task_claims = FrogTaskClaimService(
+            frog_planning, frog_promotions, claims
+        )
 
         if args.command == "status":
             payload = status_to_payload(
@@ -492,6 +517,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit_frog_task_selection(
                 selection_to_payload(selection), json_output=args.json
+            )
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "task"
+            and args.frog_task_command == "claim"
+        ):
+            claimed_at = _now()
+            result = frog_task_claims.claim(
+                args.digest,
+                args.task_slug,
+                change_set_id=args.id,
+                claim_id=args.claim_id,
+                base_revision=args.base,
+                scopes=tuple(Scope.parse(value) for value in args.scope),
+                agent_id=args.agent,
+                session_id=args.session,
+                claimed_at=claimed_at,
+                lease_seconds=args.lease_seconds,
+            )
+            _emit_frog_task_claim(
+                frog_task_claim_result_to_payload(result, observed_at=claimed_at),
+                json_output=args.json,
             )
             return 0
 
@@ -722,6 +770,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         FrogPlanningError,
         FrogPromotionError,
         FrogReceiptError,
+        FrogTaskClaimError,
     ) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_INVALID
@@ -979,6 +1028,29 @@ def _emit_frog_task_selection(
         remaining = payload["skipped_count"] - len(shown)
         if remaining:
             print(f"    ... and {remaining} more")
+
+
+def _emit_frog_task_claim(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_task_claim": payload}, sort_keys=True))
+        return
+    action = "claimed" if payload["claimed"] else "already claimed"
+    promotion = payload["promotion"]
+    claim = payload["claim"]
+    print(
+        f"{action} {promotion['source_task_slug']}  "
+        f"{promotion['change_set']['id']}  {claim['id']}"
+    )
+    print(f"  expires: {claim['locks'][0]['expires_at']}")
+    print(
+        "  local scopes: "
+        + ", ".join(
+            f"{lock['scope']['kind']}:{lock['scope']['key']}"
+            for lock in claim["locks"]
+        )
+    )
 
 
 def _emit_claim(payload: dict[str, Any], *, json_output: bool) -> None:

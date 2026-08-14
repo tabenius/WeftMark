@@ -138,6 +138,8 @@ def test_next_ranks_dependency_eligible_intent_without_importing_authority(
     assert selection.eligible == 2
     assert selection.ignored_lock_observations == 1
     assert selection.ignored_assignment_observations == 1
+    assert planning.eligibility(digest, "eligible-high").eligible is True
+    assert planning.eligibility(digest, "unmet").eligible is False
     reasons = {value.task["slug"]: value.reasons for value in selection.skipped}
     assert reasons["unmet"] == ("dependencies not done: active-other",)
     assert reasons["conflicted"] == (

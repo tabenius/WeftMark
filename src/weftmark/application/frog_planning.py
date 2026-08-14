@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from weftmark.application.frog_receipts import FrogReceiptService
+from weftmark.application.frog_receipts import (
+    FrogReceiptService,
+    FrogSnapshotReceipt,
+)
 
 
 class FrogPlanningError(ValueError):
@@ -54,6 +57,48 @@ class FrogPlanningService:
     ) -> FrogTaskSelection:
         if limit < 1 or limit > 100:
             raise FrogPlanningError("limit must be between 1 and 100")
+        receipt, records, evaluated = self._evaluate(
+            snapshot_digest, repo_path=repo_path
+        )
+        eligible = sorted(
+            (value for value in evaluated if value.eligible),
+            key=lambda value: (
+                _priority_rank(value.task.get("priority")),
+                str(value.task.get("created_at") or ""),
+                str(value.task["slug"]),
+            ),
+        )
+        skipped = tuple(value for value in evaluated if not value.eligible)
+        return FrogTaskSelection(
+            snapshot_digest,
+            receipt.source_label,
+            repo_path,
+            len(evaluated),
+            len(eligible),
+            tuple(eligible[:limit]),
+            skipped,
+            len(records["locks"]),
+            len(records["task_assignments"]),
+        )
+
+    def eligibility(
+        self, snapshot_digest: str, task_slug: str
+    ) -> FrogTaskEligibility:
+        _, _, evaluated = self._evaluate(snapshot_digest, repo_path=None)
+        matches = tuple(
+            value for value in evaluated if value.task["slug"] == task_slug
+        )
+        if len(matches) != 1:
+            raise FrogPlanningError(f"Frog task not found: {task_slug}")
+        return matches[0]
+
+    def _evaluate(
+        self, snapshot_digest: str, *, repo_path: str | None
+    ) -> tuple[
+        FrogSnapshotReceipt,
+        Mapping[str, Any],
+        tuple[FrogTaskEligibility, ...],
+    ]:
         receipt = self._receipts.get(snapshot_digest)
         if receipt is None:
             raise FrogPlanningError(f"Frog snapshot not found: {snapshot_digest}")
@@ -121,26 +166,7 @@ class FrogPlanningService:
                 )
             evaluated.append(FrogTaskEligibility(task, not reasons, tuple(reasons)))
 
-        eligible = sorted(
-            (value for value in evaluated if value.eligible),
-            key=lambda value: (
-                _priority_rank(value.task.get("priority")),
-                str(value.task.get("created_at") or ""),
-                str(value.task["slug"]),
-            ),
-        )
-        skipped = tuple(value for value in evaluated if not value.eligible)
-        return FrogTaskSelection(
-            snapshot_digest,
-            receipt.source_label,
-            repo_path,
-            len(evaluated),
-            len(eligible),
-            tuple(eligible[:limit]),
-            skipped,
-            len(records["locks"]),
-            len(records["task_assignments"]),
-        )
+        return receipt, records, tuple(evaluated)
 
 
 def selection_to_payload(value: FrogTaskSelection) -> dict[str, Any]:

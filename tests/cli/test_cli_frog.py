@@ -196,3 +196,51 @@ def test_cli_records_and_inspects_frog_snapshot_receipt(
 
     assert main(["--repo", str(repo), "--json", "claim", "list"]) == 0
     assert json.loads(capsys.readouterr().out)["claims"] == []
+
+    claim = [
+        "--repo",
+        str(repo),
+        "--json",
+        "frog",
+        "task",
+        "claim",
+        value.digest,
+        "external-1",
+        "--id",
+        "promoted-1",
+        "--claim-id",
+        "promoted-claim-1",
+        "--agent",
+        "local-worker",
+        "--session",
+        "local-session",
+        "--scope",
+        "file:src/**",
+        "--scope",
+        "contract:migration-v1",
+    ]
+    assert main(claim) == 0
+    claimed = json.loads(capsys.readouterr().out)["frog_task_claim"]
+    assert claimed["claimed"] is True
+    assert claimed["claim"]["effective_state"] == "active"
+    assert claimed["authority"] == "local Change Set and semantic claim"
+
+    assert main(claim) == 0
+    repeated_claim = json.loads(capsys.readouterr().out)["frog_task_claim"]
+    assert repeated_claim["claimed"] is False
+    assert repeated_claim["claim"]["id"] == "promoted-claim-1"
+
+    refused = [
+        "--repo",
+        str(repo),
+        "--json",
+        "frog",
+        "task",
+        "claim",
+        value.digest,
+        "external-2",
+        "--scope",
+        "file:other/**",
+    ]
+    assert main(refused) == 2
+    assert "not eligible" in json.loads(capsys.readouterr().out)["error"]
