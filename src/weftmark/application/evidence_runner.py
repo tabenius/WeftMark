@@ -83,6 +83,32 @@ class CommandEvidenceResult:
     stderr_digest: str
     timed_out: bool = False
 
+    def __post_init__(self) -> None:
+        if self.duration_seconds < 0:
+            raise EvidenceRunnerError("duration_seconds must not be negative")
+        for name in ("stdout_digest", "stderr_digest"):
+            digest = getattr(self, name)
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise EvidenceRunnerError(f"{name} must be a SHA-256 hex digest")
+        if self.evidence.state is EvidenceState.PASSED and self.exit_code != 0:
+            raise EvidenceRunnerError("passed evidence requires exit status zero")
+        if self.evidence.state is EvidenceState.FAILED and (
+            self.exit_code is None or self.exit_code == 0
+        ):
+            raise EvidenceRunnerError("failed evidence requires a nonzero exit status")
+        if self.evidence.state is EvidenceState.UNAVAILABLE and self.exit_code is not None:
+            raise EvidenceRunnerError("unavailable evidence cannot have an exit status")
+        if self.evidence.state not in {
+            EvidenceState.PASSED,
+            EvidenceState.FAILED,
+            EvidenceState.UNAVAILABLE,
+        }:
+            raise EvidenceRunnerError("command result must contain terminal evidence")
+        if self.timed_out and self.evidence.state is not EvidenceState.UNAVAILABLE:
+            raise EvidenceRunnerError("timed out command must be unavailable")
+
     @property
     def passed(self) -> bool:
         return self.evidence.state is EvidenceState.PASSED
@@ -97,6 +123,10 @@ class LocalEvidenceRunner:
         binding: ChangeBinding,
         request: CommandEvidenceRequest,
     ) -> CommandEvidenceResult:
+        if binding.latest.dirty_paths:
+            raise EvidenceRunnerError(
+                "command evidence requires a clean worktree; refresh after committing changes"
+            )
         worktree = Path(binding.latest.worktree).resolve()
         cwd = Path(request.cwd).resolve()
         if not cwd.is_relative_to(worktree):

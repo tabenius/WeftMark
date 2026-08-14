@@ -10,6 +10,7 @@ import pytest
 from weftmark.application.change_binding import ChangeBinding, GitLineageObservation
 from weftmark.application.evidence_runner import (
     CommandEvidenceRequest,
+    CommandEvidenceResult,
     EvidenceRunnerError,
     LocalEvidenceRunner,
 )
@@ -221,6 +222,32 @@ def test_command_cwd_cannot_escape_bound_worktree(tmp_path: Path) -> None:
         )
 
 
+def test_command_evidence_refuses_dirty_source_binding(tmp_path: Path) -> None:
+    current = binding(tmp_path)
+    dirty_observation = GitLineageObservation(
+        id="chg-1:git:2",
+        repository_id="repo-1",
+        base_revision="main",
+        base_sha="a" * 40,
+        head_sha=HEAD,
+        branch="feature",
+        worktree=str(tmp_path),
+        changed_paths=(),
+        dirty_paths=("src/uncommitted.py",),
+        observed_at=NOW,
+    )
+    dirty = ChangeBinding(
+        current.change_set,
+        "main",
+        (*current.observations, dirty_observation),
+    )
+
+    with pytest.raises(EvidenceRunnerError, match="clean worktree"):
+        LocalEvidenceRunner(PRODUCER).run(
+            dirty, request(tmp_path, sys.executable, "-c", "pass")
+        )
+
+
 def test_request_validation_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(EvidenceRunnerError, match="argv"):
         request(tmp_path)
@@ -231,4 +258,26 @@ def test_request_validation_fails_closed(tmp_path: Path) -> None:
             tmp_path,
             sys.executable,
             environment=(("A", "1"), ("A", "2")),
+        )
+
+
+def test_result_metadata_must_agree_with_terminal_evidence(tmp_path: Path) -> None:
+    passed_result = LocalEvidenceRunner(PRODUCER).run(
+        binding(tmp_path), request(tmp_path, sys.executable, "-c", "pass")
+    )
+    with pytest.raises(EvidenceRunnerError, match="exit status zero"):
+        CommandEvidenceResult(
+            evidence=passed_result.evidence,
+            exit_code=1,
+            duration_seconds=0,
+            stdout_digest="a" * 64,
+            stderr_digest="b" * 64,
+        )
+    with pytest.raises(EvidenceRunnerError, match="SHA-256"):
+        CommandEvidenceResult(
+            evidence=passed_result.evidence,
+            exit_code=0,
+            duration_seconds=0,
+            stdout_digest="bad",
+            stderr_digest="b" * 64,
         )
