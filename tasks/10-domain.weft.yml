@@ -60,6 +60,39 @@ tasks:
         required: true
         criterion: Lifecycle reviewed against the Change Set figure in docs/weftmark.mdx.
 
+  - slug: native-task-intent-model
+    title: Define native Task Intent and plan relation model
+    status: review
+    priority: P0
+    depends:
+      - domain-package-skeleton
+      - semantic-scope-model
+    purpose: Let WeftMark originate durable task intent without depending on Frog records or YAML parser behavior.
+    scope:
+      files:
+        - src/weftmark/domain/task.py
+        - tests/domain/test_task.py
+        - tasks/10-domain.weft.yml
+      contracts:
+        - contract:task-intent-v0
+    deliverables:
+      - Immutable Task Intent with portable identity, priority, lifecycle, canonical scopes and append-only state events.
+      - Directed dependency and canonical symmetric conflict relation values.
+    accept:
+      - Task lifecycle transitions and histories fail closed when discontinuous or time-reversed.
+      - Dependency direction and conflict symmetry are explicit.
+    negative:
+      - Terminal done and abandoned tasks cannot silently return to active planning states.
+      - Task intent does not import repository paths, forge identities, assignments or locks.
+      - New tasks cannot begin as done, blocked or in progress without an explicit transition.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_task.py
+      - kind: review
+        required: true
+        criterion: Task lifecycle remains distinct from Change Set evidence and review readiness.
+
   - slug: changeset-lifecycle-workflow
     title: Persist evidence-gated Change Set lifecycle transitions
     status: done
