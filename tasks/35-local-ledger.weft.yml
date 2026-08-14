@@ -69,7 +69,7 @@ tasks:
 
   - slug: native-task-ledger-service
     title: Persist native Task Intent and plan relations
-    status: review
+    status: done
     priority: P0
     depends:
       - native-task-intent-model
