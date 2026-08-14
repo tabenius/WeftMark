@@ -7,9 +7,10 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from weftmark.adapters.git_local import LocalGit, LocalGitError
+from weftmark.adapters.frog import FrogImportError, read_frog_snapshot
 from weftmark.adapters.bundle_file import (
     BundleFileError,
     read_bundle,
@@ -37,6 +38,13 @@ from weftmark.application.claims import (
 )
 from weftmark.application.ledger import LedgerService, LedgerServiceError
 from weftmark.application.identifiers import new_id
+from weftmark.application.frog_receipts import (
+    FrogReceiptError,
+    FrogReceiptService,
+    receipt_result_to_payload,
+    receipt_summary_to_payload,
+    receipt_to_payload,
+)
 from weftmark.application.lifecycle import (
     LifecycleError,
     LifecyclePolicyError,
@@ -113,6 +121,35 @@ def build_parser() -> argparse.ArgumentParser:
     bundle_commands.add_parser("list", help="list imported external bundles")
     bundle_show = bundle_commands.add_parser("show", help="show an imported bundle")
     bundle_show.add_argument("digest")
+
+    frog = commands.add_parser("frog", help="import and inspect Frog plan snapshots")
+    frog_commands = frog.add_subparsers(dest="frog_command", required=True)
+    frog_snapshot = frog_commands.add_parser(
+        "snapshot", help="manage read-only Frog snapshot receipts"
+    )
+    frog_snapshot_commands = frog_snapshot.add_subparsers(
+        dest="frog_snapshot_command", required=True
+    )
+    frog_import = frog_snapshot_commands.add_parser(
+        "import", help="capture and record one Frog database snapshot"
+    )
+    frog_import.add_argument("path")
+    frog_import.add_argument("--source-label", required=True)
+    frog_snapshot_commands.add_parser("list", help="list Frog snapshot receipts")
+    frog_show = frog_snapshot_commands.add_parser(
+        "show", help="show one Frog snapshot receipt"
+    )
+    frog_show.add_argument("digest")
+    frog_task = frog_commands.add_parser("task", help="inspect imported Frog tasks")
+    frog_task_commands = frog_task.add_subparsers(
+        dest="frog_task_command", required=True
+    )
+    frog_task_list = frog_task_commands.add_parser(
+        "list", help="list tasks from one Frog snapshot"
+    )
+    frog_task_list.add_argument("digest")
+    frog_task_list.add_argument("--repo-path")
+    frog_task_list.add_argument("--workflow-status")
 
     changeset = commands.add_parser("changeset", help="manage Change Sets")
     changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
@@ -274,6 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         lifecycle = LifecycleService(workspace, workflow)
         bundles = BundleService(workspace, claims, workflow)
         bundle_imports = BundleImportService(ledger)
+        frog_receipts = FrogReceiptService(ledger)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -328,6 +366,71 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(json.dumps({"ok": True, "imported_bundle": payload}, sort_keys=True))
             else:
                 print(json.dumps(payload, sort_keys=True, indent=2))
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "snapshot"
+            and args.frog_snapshot_command == "import"
+        ):
+            captured_at = _now()
+            snapshot = read_frog_snapshot(
+                args.path,
+                source_label=args.source_label,
+                captured_at=captured_at,
+            )
+            result = frog_receipts.record(
+                snapshot.to_payload(), imported_at=_now()
+            )
+            _emit_frog_receipt_result(
+                receipt_result_to_payload(result), json_output=args.json
+            )
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "snapshot"
+            and args.frog_snapshot_command == "list"
+        ):
+            payloads = [
+                receipt_summary_to_payload(receipt)
+                for receipt in frog_receipts.list()
+            ]
+            _emit_frog_receipt_list(payloads, json_output=args.json)
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "snapshot"
+            and args.frog_snapshot_command == "show"
+        ):
+            receipt = frog_receipts.get(args.digest)
+            if receipt is None:
+                _emit_error(
+                    f"Frog snapshot not found: {args.digest}",
+                    json_output=args.json,
+                )
+                return EXIT_NOT_FOUND
+            payload = receipt_to_payload(receipt)
+            if args.json:
+                print(json.dumps({"ok": True, "frog_snapshot": payload}, sort_keys=True))
+            else:
+                _emit_frog_receipt_summary(payload)
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "task"
+            and args.frog_task_command == "list"
+        ):
+            tasks = frog_receipts.tasks(
+                args.digest,
+                repo_path=args.repo_path,
+                workflow_status=args.workflow_status,
+            )
+            if tasks is None:
+                _emit_error(
+                    f"Frog snapshot not found: {args.digest}",
+                    json_output=args.json,
+                )
+                return EXIT_NOT_FOUND
+            _emit_frog_task_list(list(tasks), json_output=args.json)
             return 0
 
         if args.command == "changeset" and args.changeset_command == "create":
@@ -552,6 +655,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (BundleError, BundleFileError, BundleImportError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_BUNDLE
+    except (FrogImportError, FrogReceiptError) as error:
+        _emit_error(str(error), json_output=args.json)
+        return EXIT_INVALID
     except (JsonlLedgerError, LedgerServiceError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_LEDGER
@@ -702,6 +808,55 @@ def _emit_bundle_import_list(
         print(
             f"{payload['change_set_id']}  {payload['digest']}  "
             f"{payload['imported_at']}"
+        )
+
+
+def _emit_frog_receipt_result(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_import": payload}, sort_keys=True))
+        return
+    action = "imported" if payload["imported"] else "already imported"
+    print(f"{action} {payload['source_label']}  {payload['digest']}")
+    print(f"  tasks:{payload['counts'].get('tasks', 0)}  sequence:{payload['sequence']}")
+
+
+def _emit_frog_receipt_list(
+    payloads: list[dict[str, Any]], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_snapshots": payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print("no Frog snapshots")
+        return
+    for payload in payloads:
+        _emit_frog_receipt_summary(payload)
+
+
+def _emit_frog_receipt_summary(payload: dict[str, Any]) -> None:
+    print(f"{payload['source_label']}  {payload['digest']}")
+    print(
+        f"  captured:{payload['captured_at']}  "
+        f"tasks:{payload['counts'].get('tasks', 0)}  "
+        f"locks:{payload['counts'].get('locks', 0)}"
+    )
+
+
+def _emit_frog_task_list(
+    payloads: list[Mapping[str, Any]], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_tasks": payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print("no matching Frog tasks")
+        return
+    for payload in payloads:
+        print(
+            f"{payload['slug']}  {payload['workflow_status']}  "
+            f"{payload['priority']}  {payload['title']}"
         )
 
 

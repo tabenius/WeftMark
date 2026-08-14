@@ -149,3 +149,34 @@ tasks:
       - kind: test
         required: true
         command: python -m pytest tests/application/test_bundle_import.py tests/cli/test_cli_bundle.py
+
+  - slug: frog-snapshot-receipt-cli
+    title: Persist and inspect Frog snapshot receipts
+    status: done
+    priority: P0
+    depends:
+      - frog-plan-importer
+      - local-ledger-foundation
+    purpose: Make existing Frog plan intent locally inspectable through WeftMark without promoting external state into runtime authority.
+    scope:
+      files:
+        - src/weftmark/application/frog_receipts.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_frog_receipts.py
+        - tests/cli/test_cli_frog.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-snapshot-receipt-v0
+    deliverables:
+      - Atomic idempotent persistence for validated Frog snapshots.
+      - CLI snapshot import/list/show and filtered external task listing.
+    accept:
+      - Repeated import returns the original receipt sequence without appending.
+      - Imported tasks can be filtered by source repo path and workflow status.
+    negative:
+      - Imported task status never creates or transitions a local Change Set.
+      - Imported locks never become local active claims.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_frog_receipts.py tests/cli/test_cli_frog.py
