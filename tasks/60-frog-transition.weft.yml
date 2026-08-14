@@ -218,7 +218,7 @@ tasks:
 
   - slug: frog-imported-task-eligibility
     title: Select dependency-eligible imported Frog task intent
-    status: review
+    status: done
     priority: P0
     depends:
       - frog-snapshot-receipt-cli
