@@ -38,7 +38,7 @@ tasks:
 
   - slug: native-task-next-service
     title: Select next eligible native task
-    status: review
+    status: done
     priority: P0
     depends:
       - native-task-cli-surface
