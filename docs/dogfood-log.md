@@ -59,6 +59,12 @@ and environment values do not.
 
 ### Result
 
-The final head, evidence IDs, review outcomes, handoff ID, and resulting design
-corrections will be recorded after the stale-evidence and fresh-evidence paths
-have both been exercised.
+The first scoped commit was
+`5b6f038f55289aa2d4f18ccec863cb1a0a3b1807`. Evidence
+`dogfood-001-test-1` ran the complete pytest suite successfully against that
+exact head; its stdout and stderr were stored only as SHA-256 digests.
+
+This result update intentionally creates a later Change Set head. The next
+review must therefore refuse to treat `dogfood-001-test-1` as current proof.
+The final head, replacement evidence, review outcomes, handoff ID, and design
+corrections will be recorded after that refusal has been observed.
