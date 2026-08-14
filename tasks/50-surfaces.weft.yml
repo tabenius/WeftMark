@@ -5,7 +5,7 @@ summary: Expose the same application model to humans and agents without duplicat
 tasks:
   - slug: native-task-cli-surface
     title: Expose native task planning CLI
-    status: review
+    status: done
     priority: P0
     depends:
       - native-task-ledger-service
