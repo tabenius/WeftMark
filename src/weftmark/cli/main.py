@@ -77,6 +77,13 @@ from weftmark.application.local_workflow import (
     scope_audit_to_payload,
 )
 from weftmark.application.status import StatusService, status_to_payload
+from weftmark.application.tasks import (
+    TaskService,
+    TaskServiceError,
+    conflict_to_payload,
+    dependency_to_payload,
+    task_to_payload,
+)
 from weftmark.application.workspace import (
     WorkspaceError,
     WorkspaceService,
@@ -90,6 +97,7 @@ from weftmark.domain.evidence import (
     ProducerKind,
 )
 from weftmark.domain.scope import Scope, ScopeError
+from weftmark.domain.task import TaskError, TaskIntent, TaskPriority, TaskState
 
 
 EXIT_INVALID = 2
@@ -136,6 +144,75 @@ def build_parser() -> argparse.ArgumentParser:
     bundle_commands.add_parser("list", help="list imported external bundles")
     bundle_show = bundle_commands.add_parser("show", help="show an imported bundle")
     bundle_show.add_argument("digest")
+
+    task = commands.add_parser("task", help="manage native local task intent")
+    task_commands = task.add_subparsers(dest="task_command", required=True)
+    task_create = task_commands.add_parser("create", help="create native task intent")
+    task_create.add_argument("id")
+    task_create.add_argument("--title", required=True)
+    task_create.add_argument("--why", required=True)
+    task_create.add_argument("--what", required=True, dest="what_text")
+    task_create.add_argument("--roi-note")
+    task_create.add_argument(
+        "--priority",
+        choices=tuple(value.value for value in TaskPriority),
+        default=TaskPriority.P2.value,
+    )
+    task_create.add_argument(
+        "--state",
+        choices=(TaskState.IDEA.value, TaskState.TODO.value),
+        default=TaskState.TODO.value,
+    )
+    task_create.add_argument("--scope", action="append", default=[])
+    task_show = task_commands.add_parser("show", help="show native task intent")
+    task_show.add_argument("id")
+    task_list = task_commands.add_parser("list", help="list native task intent")
+    task_list.add_argument(
+        "--state", choices=tuple(value.value for value in TaskState)
+    )
+    task_transition = task_commands.add_parser(
+        "transition", help="record a non-terminal native task transition"
+    )
+    task_transition.add_argument("id")
+    task_transition.add_argument(
+        "state",
+        choices=tuple(
+            value.value for value in TaskState if value is not TaskState.DONE
+        ),
+    )
+    task_transition.add_argument("--actor", default="weftmark-cli")
+    task_transition.add_argument("--reason", required=True)
+    task_dependency = task_commands.add_parser(
+        "dependency", help="manage directed native task prerequisites"
+    )
+    task_dependency_commands = task_dependency.add_subparsers(
+        dest="task_dependency_command", required=True
+    )
+    task_dependency_add = task_dependency_commands.add_parser(
+        "add", help="declare TASK depends on DEPENDENCY"
+    )
+    task_dependency_add.add_argument("task_id")
+    task_dependency_add.add_argument("depends_on_task_id")
+    task_dependency_list = task_dependency_commands.add_parser(
+        "list", help="list native task dependencies"
+    )
+    task_dependency_list.add_argument("--task")
+    task_conflict = task_commands.add_parser(
+        "conflict", help="manage symmetric native task conflicts"
+    )
+    task_conflict_commands = task_conflict.add_subparsers(
+        dest="task_conflict_command", required=True
+    )
+    task_conflict_add = task_conflict_commands.add_parser(
+        "add", help="declare a symmetric task scheduling conflict"
+    )
+    task_conflict_add.add_argument("left_task_id")
+    task_conflict_add.add_argument("right_task_id")
+    task_conflict_add.add_argument("--reason", required=True)
+    task_conflict_list = task_conflict_commands.add_parser(
+        "list", help="list native task conflicts"
+    )
+    task_conflict_list.add_argument("--task")
 
     frog = commands.add_parser("frog", help="import and inspect Frog plan snapshots")
     frog_commands = frog.add_subparsers(dest="frog_command", required=True)
@@ -368,6 +445,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         frog_task_claims = FrogTaskClaimService(
             frog_planning, frog_promotions, claims
         )
+        tasks = TaskService(ledger)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -376,6 +454,112 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             _emit_status(payload, json_output=args.json)
+            return 0
+        if args.command == "task" and args.task_command == "create":
+            created_at = _now()
+            value = tasks.create(
+                TaskIntent.create(
+                    id=args.id,
+                    title=args.title,
+                    why=args.why,
+                    what=args.what_text,
+                    roi_note=args.roi_note,
+                    priority=TaskPriority(args.priority),
+                    state=TaskState(args.state),
+                    scopes=tuple(Scope.parse(value) for value in args.scope),
+                    created_at=created_at,
+                )
+            )
+            _emit_task(task_to_payload(value), json_output=args.json, action="created")
+            return 0
+        if args.command == "task" and args.task_command == "show":
+            value = tasks.get(args.id)
+            if value is None:
+                _emit_error(f"Task not found: {args.id}", json_output=args.json)
+                return EXIT_NOT_FOUND
+            _emit_task(task_to_payload(value), json_output=args.json)
+            return 0
+        if args.command == "task" and args.task_command == "list":
+            state = None if args.state is None else TaskState(args.state)
+            payloads = [
+                task_to_payload(value)
+                for value in tasks.list()
+                if state is None or value.state is state
+            ]
+            _emit_task_list(payloads, json_output=args.json)
+            return 0
+        if args.command == "task" and args.task_command == "transition":
+            value = tasks.transition(
+                args.id,
+                state=TaskState(args.state),
+                actor_id=args.actor,
+                rationale=args.reason,
+                occurred_at=_now(),
+            )
+            _emit_task(
+                task_to_payload(value), json_output=args.json, action="transitioned"
+            )
+            return 0
+        if (
+            args.command == "task"
+            and args.task_command == "dependency"
+            and args.task_dependency_command == "add"
+        ):
+            result = tasks.add_dependency(
+                args.task_id, args.depends_on_task_id, created_at=_now()
+            )
+            _emit_task_relation(
+                dependency_to_payload(result.relation),
+                relation="dependency",
+                created=result.created,
+                json_output=args.json,
+            )
+            return 0
+        if (
+            args.command == "task"
+            and args.task_command == "dependency"
+            and args.task_dependency_command == "list"
+        ):
+            payloads = [
+                dependency_to_payload(value)
+                for value in tasks.dependencies()
+                if args.task is None or value.task_id == args.task
+            ]
+            _emit_task_relation_list(
+                payloads, relation="dependencies", json_output=args.json
+            )
+            return 0
+        if (
+            args.command == "task"
+            and args.task_command == "conflict"
+            and args.task_conflict_command == "add"
+        ):
+            result = tasks.add_conflict(
+                args.left_task_id,
+                args.right_task_id,
+                reason=args.reason,
+                created_at=_now(),
+            )
+            _emit_task_relation(
+                conflict_to_payload(result.relation),
+                relation="conflict",
+                created=result.created,
+                json_output=args.json,
+            )
+            return 0
+        if (
+            args.command == "task"
+            and args.task_command == "conflict"
+            and args.task_conflict_command == "list"
+        ):
+            payloads = [
+                conflict_to_payload(value)
+                for value in tasks.conflicts()
+                if args.task is None or value.includes(args.task)
+            ]
+            _emit_task_relation_list(
+                payloads, relation="conflicts", json_output=args.json
+            )
             return 0
         if args.command == "bundle" and args.bundle_command == "export":
             payload = bundles.export(args.changeset_id, exported_at=_now())
@@ -784,6 +968,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         LifecycleError,
         LocalGitError,
         ScopeError,
+        TaskError,
+        TaskServiceError,
         WorkspaceError,
         EvidenceRunnerError,
         LocalWorkflowError,
@@ -830,6 +1016,84 @@ def _emit(payload: dict[str, Any], *, json_output: bool, action: str | None = No
     print(f"  base: {payload['base_sha']}")
     print(f"  head: {payload['head_sha']}")
     print("  scopes: " + ", ".join(f"{scope['kind']}:{scope['key']}" for scope in payload["scopes"]))
+
+
+def _emit_task(
+    payload: dict[str, Any], *, json_output: bool, action: str | None = None
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "task": payload}, sort_keys=True))
+        return
+    prefix = f"{action} " if action else ""
+    print(f"{prefix}{payload['id']}  {payload['state']}  {payload['priority']}")
+    print(f"  title: {payload['title']}")
+    print(
+        "  scopes: "
+        + (
+            ", ".join(
+                f"{scope['kind']}:{scope['key']}" for scope in payload["scopes"]
+            )
+            or "(none)"
+        )
+    )
+
+
+def _emit_task_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "tasks": payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print("no native tasks")
+        return
+    for payload in payloads:
+        print(
+            f"{payload['id']}  {payload['state']}  "
+            f"{payload['priority']}  {payload['title']}"
+        )
+
+
+def _emit_task_relation(
+    payload: dict[str, Any],
+    *,
+    relation: str,
+    created: bool,
+    json_output: bool,
+) -> None:
+    if json_output:
+        print(
+            json.dumps(
+                {"ok": True, relation: payload, "created": created}, sort_keys=True
+            )
+        )
+        return
+    action = "created" if created else "already exists"
+    print(f"{action} {relation}")
+    if relation == "dependency":
+        print(f"  {payload['task_id']} depends on {payload['depends_on_task_id']}")
+    else:
+        print(
+            f"  {payload['first_task_id']} conflicts with "
+            f"{payload['second_task_id']}: {payload['reason']}"
+        )
+
+
+def _emit_task_relation_list(
+    payloads: list[dict[str, Any]], *, relation: str, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, relation: payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print(f"no task {relation}")
+        return
+    for payload in payloads:
+        if relation == "dependencies":
+            print(f"{payload['task_id']} -> {payload['depends_on_task_id']}")
+        else:
+            print(
+                f"{payload['first_task_id']} x {payload['second_task_id']}  "
+                f"{payload['reason']}"
+            )
 
 
 def _emit_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:

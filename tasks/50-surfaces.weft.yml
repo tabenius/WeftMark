@@ -3,6 +3,39 @@ phase: surfaces
 summary: Expose the same application model to humans and agents without duplicating semantics.
 
 tasks:
+  - slug: native-task-cli-surface
+    title: Expose native task planning CLI
+    status: review
+    priority: P0
+    depends:
+      - native-task-ledger-service
+      - cli-surface
+    purpose: Let operators originate and relate new task intent without Python calls, Frog, or direct ledger edits.
+    scope:
+      files:
+        - src/weftmark/cli/main.py
+        - tests/cli/test_cli_tasks.py
+        - tasks/50-surfaces.weft.yml
+      contracts:
+        - surface:cli-native-tasks
+    deliverables:
+      - Strict task create, show, list and non-terminal transition commands.
+      - Strict dependency and conflict add/list commands with human and JSON output.
+    accept:
+      - Native task records and relations round-trip through a real repository CLI ledger.
+      - State filters and relation filters are deterministic.
+    negative:
+      - CLI cannot mark a task done through the generic transition command.
+      - Interface code never writes ledger records directly.
+      - Native commands do not invoke Frog or import external authority.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/cli/test_cli_tasks.py
+      - kind: review
+        required: true
+        criterion: Strict grammar and completion refusal are visible at the CLI boundary.
+
   - slug: cli-surface
     title: Implement the first WeftMark CLI
     status: done
