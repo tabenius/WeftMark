@@ -1,0 +1,41 @@
+format: weft-task-v0
+phase: local-ledger
+summary: Persist coordination facts locally behind a replaceable application boundary.
+
+tasks:
+  - slug: local-ledger-foundation
+    title: Add an append-only local workspace ledger
+    status: done
+    priority: P0
+    depends:
+      - review-service
+      - handoff-core-model
+    purpose: Give CLI and later MCP surfaces durable state without embedding filesystem writes in interface code.
+    scope:
+      files:
+        - src/weftmark/application/ports/ledger.py
+        - src/weftmark/application/ledger.py
+        - src/weftmark/adapters/jsonl_ledger.py
+        - tests/contracts/test_ledger_port.py
+        - tests/application/test_ledger_service.py
+        - tests/adapters/test_jsonl_ledger.py
+      contracts:
+        - port:ledger-v0
+        - adapter:jsonl-ledger-v0
+    deliverables:
+      - JSON-safe append-only ledger port and application service.
+      - Process-locked local JSONL adapter with monotonic sequence and digest chaining.
+    accept:
+      - Change Set, evidence, review, and handoff snapshots can share one ordered local record stream.
+      - Tampered, truncated, malformed, or non-monotonic records fail closed.
+    negative:
+      - Interface code does not write ledger files directly.
+      - Appends never rewrite or silently repair prior records.
+      - Secret-bearing payload keys are rejected before persistence.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/contracts/test_ledger_port.py tests/application/test_ledger_service.py tests/adapters/test_jsonl_ledger.py
+      - kind: security
+        required: true
+        criterion: Symlink, tamper, corruption, and secret-key refusal paths are reviewed.
