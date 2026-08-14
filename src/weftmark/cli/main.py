@@ -23,6 +23,12 @@ from weftmark.application.bundle import (
     verification_to_payload,
     verify_bundle,
 )
+from weftmark.application.bundle_import import (
+    BundleImportError,
+    BundleImportService,
+    import_result_to_payload,
+    imported_bundle_to_payload,
+)
 from weftmark.application.claims import (
     ClaimConflict,
     ClaimService,
@@ -100,6 +106,13 @@ def build_parser() -> argparse.ArgumentParser:
         "verify", help="verify an exported bundle offline"
     )
     bundle_verify.add_argument("path")
+    bundle_import = bundle_commands.add_parser(
+        "import", help="record a verified external bundle idempotently"
+    )
+    bundle_import.add_argument("path")
+    bundle_commands.add_parser("list", help="list imported external bundles")
+    bundle_show = bundle_commands.add_parser("show", help="show an imported bundle")
+    bundle_show.add_argument("digest")
 
     changeset = commands.add_parser("changeset", help="manage Change Sets")
     changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
@@ -243,6 +256,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "bundle" and args.bundle_command == "verify":
+            verification = verification_to_payload(verify_bundle(read_bundle(args.path)))
+            _emit_bundle_verification(verification, json_output=args.json)
+            return 0
         git = LocalGit(args.repo)
         repository = git.repository()
         ledger_path = _ledger_path(args.ledger, repository.id)
@@ -256,6 +273,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         lifecycle = LifecycleService(workspace, workflow)
         bundles = BundleService(workspace, claims, workflow)
+        bundle_imports = BundleImportService(ledger)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -278,9 +296,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 print(json.dumps(payload, sort_keys=True, indent=None if args.json else 2))
             return 0
-        if args.command == "bundle" and args.bundle_command == "verify":
-            verification = verification_to_payload(verify_bundle(read_bundle(args.path)))
-            _emit_bundle_verification(verification, json_output=args.json)
+        if args.command == "bundle" and args.bundle_command == "import":
+            result = bundle_imports.import_bundle(
+                read_bundle(args.path), imported_at=_now()
+            )
+            _emit_bundle_import(
+                import_result_to_payload(result), json_output=args.json
+            )
+            return 0
+        if args.command == "bundle" and args.bundle_command == "list":
+            payloads = [
+                {
+                    "digest": value.digest,
+                    "change_set_id": value.change_set_id,
+                    "imported_at": value.imported_at.isoformat(),
+                }
+                for value in bundle_imports.list()
+            ]
+            _emit_bundle_import_list(payloads, json_output=args.json)
+            return 0
+        if args.command == "bundle" and args.bundle_command == "show":
+            value = bundle_imports.get(args.digest)
+            if value is None:
+                _emit_error(
+                    f"Imported bundle not found: {args.digest}",
+                    json_output=args.json,
+                )
+                return EXIT_NOT_FOUND
+            payload = imported_bundle_to_payload(value)
+            if args.json:
+                print(json.dumps({"ok": True, "imported_bundle": payload}, sort_keys=True))
+            else:
+                print(json.dumps(payload, sort_keys=True, indent=2))
             return 0
 
         if args.command == "changeset" and args.changeset_command == "create":
@@ -502,7 +549,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ClaimConflict as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_CONFLICT
-    except (BundleError, BundleFileError) as error:
+    except (BundleError, BundleFileError, BundleImportError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_BUNDLE
     except (JsonlLedgerError, LedgerServiceError) as error:
@@ -631,6 +678,31 @@ def _emit_bundle_verification(
         f"  claims:{counts['claims']} evidence:{counts['evidence']} "
         f"reviews:{counts['reviews']} handoffs:{counts['handoffs']}"
     )
+
+
+def _emit_bundle_import(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "import": payload}, sort_keys=True))
+        return
+    action = "imported" if payload["imported"] else "already imported"
+    print(f"{action} {payload['change_set_id']}  {payload['digest']}")
+    print(f"  ledger sequence: {payload['sequence']}")
+
+
+def _emit_bundle_import_list(
+    payloads: list[dict[str, Any]], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "imports": payloads}, sort_keys=True))
+        return
+    if not payloads:
+        print("no imported bundles")
+        return
+    for payload in payloads:
+        print(
+            f"{payload['change_set_id']}  {payload['digest']}  "
+            f"{payload['imported_at']}"
+        )
 
 
 def _emit_claim(payload: dict[str, Any], *, json_output: bool) -> None:

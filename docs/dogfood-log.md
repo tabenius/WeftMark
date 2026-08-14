@@ -240,3 +240,34 @@ The overall dogfood task remains in progress: no handoff has yet crossed an
 actual agent or model-vendor boundary, and the new portable format has export
 and verification but not idempotent import. Those claims must not be inferred
 from a successful same-worker offline verification.
+
+## Session 006: idempotent bundle receipt
+
+- Change Set: `dogfood-006`
+- Goal: verify bundles without Git and import them idempotently as read-only
+  received records.
+- Base: `fc9ae6652a5fbfa887ee835282273f573fd0d1ca`
+- Native claim: `claim-20260814T104552314863Z-cfa56b70a8b4`
+- Worker/session: `codex` / `unattended-20260814`
+- Declared semantic scope: `contract:bundle-import-v1`
+- Status: implementation verified; transfer dogfood pending
+
+Verification now dispatches before repository discovery, so an offline
+recipient can validate a bundle without a Git checkout or local WeftMark
+ledger. Import remains repository-bound because the receipt is written to the
+receiving repository's append-only ledger.
+
+The receiver records a verified bundle under the distinct `imported_bundle`
+kind. It never reconstructs the foreign Change Set as local authoritative
+state, and therefore `changeset list` remains empty in a receiver containing
+only an import. Import uses compare-and-append against the observed ledger
+head; a concurrent head change retries, while a repeat digest returns the
+original receipt sequence without a second record. `bundle list` provides a
+compact receipt index and `bundle show` returns the full verified value.
+
+Application and CLI tests cover tamper refusal, timezone validation, offline
+verification against a nonexistent repository, cross-repository receipt, and
+repeat-import idempotency. The final session evidence will additionally move
+the real session 004 bundle into a disposable receiver repository. This is a
+same-worker transport exercise, not the still-required cross-agent or
+cross-vendor handoff.

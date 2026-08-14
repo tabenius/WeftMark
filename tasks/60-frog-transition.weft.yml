@@ -115,3 +115,33 @@ tasks:
       - kind: test
         required: true
         command: python -m pytest tests/application/test_bundle.py tests/adapters/test_bundle_file.py tests/cli/test_cli_bundle.py
+
+  - slug: portable-bundle-receipt
+    title: Import verified bundles as read-only external receipts
+    status: done
+    priority: P0
+    depends:
+      - portable-changeset-bundle
+      - local-ledger-foundation
+    purpose: Complete a local sender-to-receiver transport loop without granting foreign records authority over local Change Sets.
+    scope:
+      files:
+        - src/weftmark/application/bundle_import.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_bundle_import.py
+        - tests/cli/test_cli_bundle.py
+      contracts:
+        - contract:bundle-import-v1
+    deliverables:
+      - Offline verification that does not initialize Git or open a repository ledger.
+      - Atomic idempotent receipt plus list and show commands for verified external bundles.
+    accept:
+      - Repeated import returns the original ledger sequence without appending a duplicate.
+      - A receiver can inspect the complete verified bundle after import.
+    negative:
+      - Imported bundles do not become authoritative local Change Sets.
+      - Tampered bundles are rejected without changing the receiver ledger.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_bundle_import.py tests/cli/test_cli_bundle.py
