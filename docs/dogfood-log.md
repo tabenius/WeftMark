@@ -100,3 +100,33 @@ Session 001 satisfies one of the five required real Change Sets and exercises
 the required stale-evidence distinction. It does not satisfy the separate
 cross-agent or cross-vendor handoff acceptance case; those remain future
 sessions.
+
+## Session 002: native claims and workspace status
+
+- Change Set: `dogfood-002`
+- Goal: add a concise local workspace status summary for Change Sets, claims,
+  evidence, reviews, and handoffs.
+- Base: `e7d1874ac94cf3173dc347987ca682d0aa33f26e`
+- Native claim: `dogfood-002-claim`
+- Worker/session: `codex` / `unattended-20260814`
+- Declared semantic scope: `contract:status-v0`
+- Status: in progress
+
+This is the first development slice to acquire all declared file and semantic
+scopes through WeftMark itself. The atomic claim succeeded before editing and
+has an eight-hour lease. Frog remains the outer workspace authority during the
+transition because `/data/src/AGENTS.md` still mandates its coordination
+protocol, but it is no longer the only durable representation of ownership.
+
+The first usability observation was immediate: structured claim acquisition
+correctly exposes every lock and event, but its JSON is intentionally detailed
+and too verbose for routine orientation. This session responds with a compact
+`weftmark status` read model while retaining full claim records for inspection.
+
+The real status output then exposed a second gap: session 001 has current test
+evidence, a ready review, and a clean-head handoff, but its Change Set lifecycle
+still reads `active`. WeftMark has lifecycle transitions in the domain model but
+does not yet expose them through an application service or CLI. A lifecycle
+close command is therefore the next correction after this status slice; status
+will continue to report the durable lifecycle honestly rather than inferring
+`closed` from readiness.

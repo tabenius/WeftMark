@@ -60,6 +60,35 @@ tasks:
         required: true
         criterion: Write tools reviewed for least-privilege permission grouping.
 
+  - slug: workspace-status-summary
+    title: Summarize current local coordination records
+    status: done
+    priority: P0
+    depends:
+      - cli-surface
+      - native-claim-workflow
+    purpose: Make current Change Set readiness and ownership visible in one command.
+    scope:
+      files:
+        - src/weftmark/application/status.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_status.py
+        - tests/cli/test_cli_status.py
+      contracts:
+        - surface:status-v0
+    deliverables:
+      - Application read model for Change Sets, claims, evidence, reviews, and handoffs.
+      - Compact human status and stable JSON output.
+    accept:
+      - Obsolete review and handoff heads are never presented as current readiness.
+      - Status identifies its observed Git head and observation time.
+    negative:
+      - Status does not silently refresh or mutate historical Change Sets.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_status.py tests/cli/test_cli_status.py
+
   - slug: terminal-review-ui
     title: Add a compact terminal reviewer view
     status: todo

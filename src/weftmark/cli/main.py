@@ -30,6 +30,7 @@ from weftmark.application.local_workflow import (
     review_summary_to_payload,
     scope_audit_to_payload,
 )
+from weftmark.application.status import StatusService, status_to_payload
 from weftmark.application.workspace import (
     WorkspaceError,
     WorkspaceService,
@@ -67,6 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ledger", help="override the local JSONL ledger path")
     parser.add_argument("--json", action="store_true", help="emit structured JSON")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("status", help="summarize current local workspace records")
 
     changeset = commands.add_parser("changeset", help="manage Change Sets")
     changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
@@ -209,6 +212,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             ledger,
             EvidenceProducer(ProducerKind.WORKER, "weftmark-cli"),
         )
+
+        if args.command == "status":
+            payload = status_to_payload(
+                StatusService(workspace, claims, workflow).summarize(
+                    observed_at=_now()
+                )
+            )
+            _emit_status(payload, json_output=args.json)
+            return 0
 
         if args.command == "changeset" and args.changeset_command == "create":
             result = _create_changeset(args, workspace)
@@ -477,6 +489,32 @@ def _emit_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:
         return
     for payload in payloads:
         print(f"{payload['id']}  {payload['state']}  {payload['branch']}  {payload['goal']}")
+
+
+def _emit_status(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "status": payload}, sort_keys=True))
+        return
+    counts = payload["counts"]
+    print(
+        f"{counts['change_sets']} Change Sets  "
+        f"{counts['active_claims']} active claims  "
+        f"{counts['expired_claims']} expired  "
+        f"{counts['released_claims']} released"
+    )
+    if not payload["change_sets"]:
+        print("no Change Sets")
+        return
+    for value in payload["change_sets"]:
+        dirty = f"  dirty:{len(value['dirty_paths'])}" if value["dirty_paths"] else ""
+        claims = ",".join(value["active_claim_ids"]) or "unclaimed"
+        evidence = value["evidence"]
+        print(
+            f"{value['id']}  {value['lifecycle_state']}  {value['readiness']}  "
+            f"claim:{claims}  evidence:{evidence['current']}/{evidence['total']}"
+            f"{dirty}"
+        )
+        print(f"  observed head: {value['observed_head_sha']}  {value['observed_at']}")
 
 
 def _emit_claim(payload: dict[str, Any], *, json_output: bool) -> None:
