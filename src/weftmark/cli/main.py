@@ -19,6 +19,7 @@ from weftmark.application.claims import (
     claim_to_payload,
 )
 from weftmark.application.ledger import LedgerService, LedgerServiceError
+from weftmark.application.identifiers import new_id
 from weftmark.application.lifecycle import (
     LifecycleError,
     LifecyclePolicyError,
@@ -80,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
 
     create = changeset_commands.add_parser("create", help="create and activate a Change Set")
-    create.add_argument("id")
+    create.add_argument("id", nargs="?")
     create.add_argument("--goal", required=True)
     create.add_argument("--base", default="HEAD", help="base Git revision")
     create.add_argument(
@@ -117,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
         "acquire", help="atomically acquire every declared Change Set scope"
     )
     claim_acquire.add_argument("changeset_id")
-    claim_acquire.add_argument("--id", required=True)
+    claim_acquire.add_argument("--id")
     claim_acquire.add_argument("--agent", default="weftmark-cli")
     claim_acquire.add_argument("--session", default="local-session")
     claim_acquire.add_argument("--lease-seconds", type=int, default=1800)
@@ -151,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
     evidence_commands = evidence.add_subparsers(dest="evidence_command", required=True)
     evidence_run = evidence_commands.add_parser("run", help="run commit-bound local evidence")
     evidence_run.add_argument("changeset_id")
-    evidence_run.add_argument("--id", required=True)
+    evidence_run.add_argument("--id")
     evidence_run.add_argument(
         "--kind",
         choices=tuple(kind.value for kind in EvidenceKind),
@@ -176,7 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_commands = review.add_subparsers(dest="review_command", required=True)
     review_create = review_commands.add_parser("create", help="evaluate current readiness")
     review_create.add_argument("changeset_id")
-    review_create.add_argument("--id", required=True)
+    review_create.add_argument("--id")
     review_create.add_argument("--author", default="weftmark-cli")
     review_create.add_argument(
         "--require",
@@ -200,7 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
     handoff_commands = handoff.add_subparsers(dest="handoff_command", required=True)
     handoff_create = handoff_commands.add_parser("create", help="create a clean-head handoff")
     handoff_create.add_argument("changeset_id")
-    handoff_create.add_argument("--id", required=True)
+    handoff_create.add_argument("--id")
     handoff_create.add_argument("--task", required=True)
     handoff_create.add_argument("--next", required=True, dest="next_action")
     handoff_create.add_argument("--created-by", default="weftmark-cli")
@@ -286,7 +287,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             observed_at = _now()
             value = claims.acquire(
                 args.changeset_id,
-                id=args.id,
+                id=args.id or new_id("claim", at=observed_at),
                 agent_id=args.agent,
                 session_id=args.session,
                 acquired_at=observed_at,
@@ -359,17 +360,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "evidence" and args.evidence_command == "run":
             argv = tuple(args.argv)
             binding = workspace.require_change_set(args.changeset_id)
+            observed_at = _now()
             result = workflow.run_evidence(
                 args.changeset_id,
                 CommandEvidenceRequest(
-                    id=args.id,
+                    id=args.id or new_id("evidence", at=observed_at),
                     kind=EvidenceKind(args.kind),
                     argv=argv,
                     cwd=args.cwd or binding.latest.worktree,
                     redact_argv_indexes=frozenset(args.redact_index),
                     timeout_seconds=args.timeout,
                 ),
-                observed_at=_now(),
+                observed_at=observed_at,
             )
             _emit_evidence(
                 evidence_result_to_payload(result), json_output=args.json
@@ -395,16 +397,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "review" and args.review_command == "create":
             required = args.require or [EvidenceKind.TEST.value]
+            decided_at = _now()
             summary = workflow.review(
                 args.changeset_id,
-                decision_id=args.id,
+                decision_id=args.id or new_id("review", at=decided_at),
                 author_id=args.author,
                 required_kinds=tuple(EvidenceKind(value) for value in required),
                 optional_kinds=tuple(EvidenceKind(value) for value in args.optional),
                 semantic_changes=tuple(
                     Scope.parse(value) for value in args.semantic_change
                 ),
-                decided_at=_now(),
+                decided_at=decided_at,
             )
             payload = review_summary_to_payload(summary)
             _emit_review(payload, json_output=args.json)
@@ -421,13 +424,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit_review_list(payloads, json_output=args.json)
             return 0
         if args.command == "handoff" and args.handoff_command == "create":
+            created_at = _now()
             handoff = workflow.create_handoff(
                 args.changeset_id,
-                id=args.id,
+                id=args.id or new_id("handoff", at=created_at),
                 task_id=args.task,
                 next_action=args.next_action,
                 created_by=args.created_by,
-                created_at=_now(),
+                created_at=created_at,
                 intended_receiver_id=args.receiver,
                 known_failures=tuple(args.known_failure),
                 supersedes_id=args.supersedes,
@@ -484,7 +488,7 @@ def _create_changeset(
     scopes = tuple(Scope.parse(value) for value in args.scope)
     timestamp = _now()
     binding = workspace.create_change_set(
-        id=args.id,
+        id=args.id or new_id("chg", at=timestamp),
         goal=args.goal,
         base_revision=args.base,
         scopes=scopes,

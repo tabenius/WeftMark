@@ -173,3 +173,20 @@ explicit `review`, `merged`, and `closed` transitions and release of
 `dogfood-003-claim`. This satisfies the third of five required real Change
 Sets. Sessions 001 and 002 can now be closed against their already recorded
 current reviews and handoffs without inventing new proof.
+
+## Session 004: generated local identifiers
+
+- Change Set: `dogfood-004`
+- Goal: generate safe sortable identifiers by default across local workflow
+  commands.
+- Base: `b081332404ffeafdf4f45ffd43f68086be67a84f`
+- Native claim: `dogfood-004-claim`
+- Worker/session: `codex` / `unattended-20260814`
+- Declared semantic scope: `contract:identifier-v0`
+- Status: in progress
+
+This session implements the repeated friction recorded in session 001. Local
+commands generate readable kind-prefixed IDs when the caller omits one, while
+explicit IDs remain authoritative for scripts, imports, and deterministic
+fixtures. Generation is offline, UTC-sortable, and includes random collision
+space rather than a shared machine counter.

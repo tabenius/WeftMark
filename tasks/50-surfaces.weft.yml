@@ -89,6 +89,34 @@ tasks:
         required: true
         command: python -m pytest tests/application/test_status.py tests/cli/test_cli_status.py
 
+  - slug: generated-local-identifiers
+    title: Generate safe local workflow identifiers by default
+    status: done
+    priority: P0
+    depends:
+      - cli-surface
+    purpose: Remove repetitive identifier invention without weakening explicit automation.
+    scope:
+      files:
+        - src/weftmark/application/identifiers.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_identifiers.py
+        - tests/cli/test_cli_generated_ids.py
+      contracts:
+        - contract:identifier-v0
+    deliverables:
+      - Dependency-free, UTC-sortable IDs with random collision space.
+      - Generated defaults for Change Sets, claims, evidence, reviews, and handoffs.
+    accept:
+      - Generated IDs identify their record kind and sort by generation time.
+      - Every command continues to accept caller-supplied IDs.
+    negative:
+      - ID generation does not depend on a network service or machine-local counter.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_identifiers.py tests/cli/test_cli_generated_ids.py
+
   - slug: terminal-review-ui
     title: Add a compact terminal reviewer view
     status: todo
