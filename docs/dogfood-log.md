@@ -17,7 +17,7 @@ handoff record.
 - Declared semantic scope: `contract:dogfood-v0`
 - Worker: Codex, using the local `weftmark` CLI
 - Frog transition task: `weftmark-dogfood-session-001`
-- Status: in progress
+- Status: completed locally
 
 The Change Set was created before either scoped file changed. The first commit
 will deliberately receive valid test evidence and then be superseded by a
@@ -64,7 +64,39 @@ The first scoped commit was
 `dogfood-001-test-1` ran the complete pytest suite successfully against that
 exact head; its stdout and stderr were stored only as SHA-256 digests.
 
-This result update intentionally creates a later Change Set head. The next
-review must therefore refuse to treat `dogfood-001-test-1` as current proof.
-The final head, replacement evidence, review outcomes, handoff ID, and design
-corrections will be recorded after that refusal has been observed.
+That result update intentionally created the later head
+`5a5d97d4d23bcda851f027635616487c0528512c`. Review
+`dogfood-001-review-stale` returned policy exit code 5 with outcome `stale`:
+the passed `dogfood-001-test-1` remained valid history but was correctly
+identified as obsolete proof.
+
+Evidence `dogfood-001-test-2` then passed on the later head. The explicit scope
+audit found both changed paths and `contract:dogfood-v0` within the declaration.
+Review `dogfood-001-review-ready` returned `ready`, and handoff
+`dogfood-001-handoff-1` captured both evidence records and both decisions at a
+clean head.
+
+This final documentation commit advances the head once more. The completed
+session therefore uses `dogfood-001-test-3`,
+`dogfood-001-review-ready-final`, and superseding handoff
+`dogfood-001-handoff-2` as the current proof and continuation chain. The local
+ledger retains every prior observation and outcome rather than rewriting the
+history.
+
+### Design corrections
+
+The observed workflow makes these follow-up priorities concrete:
+
+1. Expose semantic claim acquisition, renewal, release, and conflict checks in
+   the application service and CLI so a dogfood session no longer needs Frog
+   for its workspace lock.
+2. Add safe default ID generation while retaining explicit IDs for automation
+   and import workflows.
+3. Add a privacy-preserving ledger export and import path so evidence and
+   handoffs can cross machines without publishing raw command output or local
+   credentials.
+
+Session 001 satisfies one of the five required real Change Sets and exercises
+the required stale-evidence distinction. It does not satisfy the separate
+cross-agent or cross-vendor handoff acceptance case; those remain future
+sessions.
