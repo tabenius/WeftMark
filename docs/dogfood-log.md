@@ -250,7 +250,7 @@ from a successful same-worker offline verification.
 - Native claim: `claim-20260814T104552314863Z-cfa56b70a8b4`
 - Worker/session: `codex` / `unattended-20260814`
 - Declared semantic scope: `contract:bundle-import-v1`
-- Status: implementation verified; transfer dogfood pending
+- Status: completed locally
 
 Verification now dispatches before repository discovery, so an offline
 recipient can validate a bundle without a Git checkout or local WeftMark
@@ -267,7 +267,17 @@ compact receipt index and `bundle show` returns the full verified value.
 
 Application and CLI tests cover tamper refusal, timezone validation, offline
 verification against a nonexistent repository, cross-repository receipt, and
-repeat-import idempotency. The final session evidence will additionally move
-the real session 004 bundle into a disposable receiver repository. This is a
-same-worker transport exercise, not the still-required cross-agent or
-cross-vendor handoff.
+repeat-import idempotency.
+
+The real session 004 bundle was then verified with `--repo` pointing at a
+nonexistent path and imported into a fresh disposable Git repository at
+`/tmp/weftmark-receiver.nx9w8b`. Digest
+`sha256:c392c803583e55ac5d264955211a9713f091de45e64421a3e3b54a371cd97f38`
+was stored at receiver ledger sequence 1. Repeating the same command returned
+`imported: false` and sequence 1; the ledger still contained exactly one line.
+`bundle show` reconstructed the stored bundle, while both `changeset list` and
+`status` reported zero local Change Sets.
+
+This completes the same-worker sender-to-receiver product loop, but it is not
+the still-required cross-agent or cross-vendor handoff. The overall dogfood
+task therefore remains in progress.
