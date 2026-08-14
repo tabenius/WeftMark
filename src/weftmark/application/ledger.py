@@ -22,7 +22,10 @@ _SENSITIVE_KEYS = frozenset(
     {"api_key", "credential", "credentials", "password", "private_key", "secret", "token"}
 )
 _SECRET_TEXT = re.compile(
-    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|(?:github_pat_|gh[oprsu]_|sk-[a-z0-9])|(?:password|secret|token|api[_-]?key|credential)\s*[:=]\s*(?!<redacted>|redacted|\*\*\*)\S+",
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|"
+    r"(?:github_pat_|gh[oprsu]_|(?<![a-z0-9])sk-[a-z0-9])|"
+    r"(?:password|secret|token|api[_-]?key|credential)"
+    r"\s*[:=]\s*(?!<redacted>|redacted|\*\*\*)\S+",
     re.IGNORECASE,
 )
 

@@ -98,3 +98,23 @@ def test_service_refuses_secret_material_hidden_in_text_values() -> None:
             payload={"notes": "connect with password=hunter2"},
             recorded_at=NOW,
         )
+
+
+def test_service_allows_secret_prefix_inside_normal_identifier() -> None:
+    entry = LedgerService(MemoryLedger()).record(
+        kind="evidence",
+        entity_id="ev-1",
+        payload={"id": "dogfood-007-task-validation-1"},
+        recorded_at=NOW,
+    )
+    assert entry.payload["id"] == "dogfood-007-task-validation-1"
+
+
+def test_service_still_refuses_secret_prefix_at_token_boundary() -> None:
+    with pytest.raises(LedgerServiceError, match=r"\$.notes"):
+        LedgerService(MemoryLedger()).record(
+            kind="unsafe",
+            entity_id="1",
+            payload={"notes": "remove leaked sk-example from the task"},
+            recorded_at=NOW,
+        )

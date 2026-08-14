@@ -39,3 +39,30 @@ tasks:
       - kind: security
         required: true
         criterion: Symlink, tamper, corruption, and secret-key refusal paths are reviewed.
+
+  - slug: ledger-secret-prefix-boundary
+    title: Avoid false secret-prefix matches in ledger values
+    status: done
+    priority: P0
+    depends:
+      - local-ledger-foundation
+    purpose: Preserve fail-closed secret refusal without blocking ordinary workflow identifiers containing the letters sk-.
+    scope:
+      files:
+        - src/weftmark/application/ledger.py
+        - tests/application/test_ledger_service.py
+        - tasks/35-local-ledger.weft.yml
+      contracts:
+        - contract:ledger-secret-scan-v1
+    deliverables:
+      - Token-boundary recognition for sk- credential prefixes in ledger text values.
+      - Regression coverage for both normal identifiers and real prefix-shaped values.
+    accept:
+      - An evidence ID containing task-validation is accepted.
+      - A text value containing sk-example at a token boundary is rejected.
+    negative:
+      - Existing secret-bearing key and assignment refusal remains unchanged.
+    evidence:
+      - kind: security
+        required: true
+        command: python -m pytest tests/application/test_ledger_service.py
