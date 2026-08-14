@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,6 +14,15 @@ from typing import Any, Mapping
 
 class FrogImportError(ValueError):
     """Raised when Frog state cannot be read safely and deterministically."""
+
+
+_SENSITIVE_TEXT = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|"
+    r"(?:github_pat_|gh[oprsu]_|(?<![a-z0-9])sk-[a-z0-9])|"
+    r"(?:password|secret|token|api[_-]?key|credential)"
+    r"\s*[:=]\s*(?!<redacted>|redacted|\*\*\*)\S+",
+    re.IGNORECASE,
+)
 
 
 SUPPORTED_MIGRATIONS = tuple(f"{index:03d}_{name}.sql" for index, name in (
@@ -219,8 +229,20 @@ def _normalise_row(table: str, row: dict[str, Any]) -> Mapping[str, Any]:
             ):
                 raise FrogImportError(f"Frog lock {source} must be a string list")
             row[target] = value
+    row = _redact_sensitive(row)
     json.dumps(row, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return row
+
+
+def _redact_sensitive(value: Any) -> Any:
+    if isinstance(value, str) and _SENSITIVE_TEXT.search(value):
+        digest = hashlib.sha256(value.encode()).hexdigest()
+        return f"<redacted:sha256:{digest}>"
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_sensitive(item) for key, item in value.items()}
+    return value
 
 
 def _validate_relations(

@@ -170,12 +170,14 @@ tasks:
     deliverables:
       - Atomic idempotent persistence for validated Frog snapshots.
       - CLI snapshot import/list/show and filtered external task listing.
+      - Digest-marked redaction of secret-shaped external text before snapshot hashing.
     accept:
       - Repeated import returns the original receipt sequence without appending.
       - Imported tasks can be filtered by source repo path and workflow status.
     negative:
       - Imported task status never creates or transitions a local Change Set.
       - Imported locks never become local active claims.
+      - Secret-shaped source prose is never copied raw into the local ledger.
     evidence:
       - kind: test
         required: true

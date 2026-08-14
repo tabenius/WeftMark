@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -222,3 +223,26 @@ def test_snapshot_requires_identity_and_timezone(tmp_path: Path) -> None:
             source_label="main",
             captured_at=NOW.replace(tzinfo=None),
         )
+
+
+def test_snapshot_redacts_secret_shaped_source_text_before_digesting(
+    tmp_path: Path,
+) -> None:
+    source = database(tmp_path / "AGENTS.db")
+    connection = sqlite3.connect(source)
+    connection.execute(
+        "UPDATE tasks SET why = ? WHERE slug = 'task-1'",
+        ("historical report mentions leaked sk-example",),
+    )
+    connection.commit()
+    connection.close()
+
+    captured = read_frog_snapshot(
+        source,
+        source_label="main",
+        captured_at=NOW,
+    )
+    reason = captured.records["tasks"][0]["why"]
+    assert isinstance(reason, str)
+    assert reason.startswith("<redacted:sha256:")
+    assert "sk-example" not in json.dumps(captured.to_payload())
