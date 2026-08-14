@@ -32,7 +32,7 @@ tasks:
 
   - slug: frog-plan-importer
     title: Import Frog task-plan data into WeftMark plan/runtime forms
-    status: todo
+    status: done
     priority: P2
     depends:
       - frog-state-inventory
@@ -42,14 +42,17 @@ tasks:
       files:
         - src/weftmark/adapters/frog.py
         - tests/adapters/test_frog.py
+        - tasks/60-frog-transition.weft.yml
       contracts:
         - adapter:frog-import-v0
     deliverables:
-      - Read-only importer for selected Frog task, repo, agent and lock metadata.
+      - Read-only importer for selected Frog task, relation, repo, agent, file and lock metadata.
+      - Schema-pinned source snapshot with canonical digest and capture provenance.
     accept:
       - Import is idempotent and records source identity/version.
     negative:
       - Import never takes write ownership of a live Frog database.
+      - Imported task status and locks never become local runtime authority.
     evidence:
       - kind: test
         required: true
