@@ -182,3 +182,36 @@ tasks:
       - kind: test
         required: true
         command: python -m pytest tests/application/test_frog_receipts.py tests/cli/test_cli_frog.py
+
+  - slug: frog-task-promotion
+    title: Promote imported Frog task intent into a local Change Set
+    status: review
+    priority: P0
+    depends:
+      - frog-snapshot-receipt-cli
+    purpose: Continue imported work natively without manually recreating its intent or confusing historical Frog state with local authority.
+    scope:
+      files:
+        - src/weftmark/application/frog_promotions.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_frog_promotions.py
+        - tests/cli/test_cli_frog.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-task-promotion-v0
+    deliverables:
+      - Explicit, retry-safe promotion from one snapshot task into one new local Change Set.
+      - Durable provenance linking the local Change Set to the source snapshot digest, task slug and repository path.
+    accept:
+      - Repeating the same promotion returns the original local Change Set without duplicating it.
+      - The operator declares the local scopes used by the new Change Set.
+    negative:
+      - Imported workflow status, assignments and locks do not create local lifecycle state, ownership or claims.
+      - Conflicting retries cannot silently change the target Change Set ID, base or scopes.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_frog_promotions.py tests/cli/test_cli_frog.py
+      - kind: review
+        required: true
+        criterion: Promotion provenance and authority boundaries are reviewed against docs/frog-transition.md.

@@ -45,6 +45,11 @@ from weftmark.application.frog_receipts import (
     receipt_summary_to_payload,
     receipt_to_payload,
 )
+from weftmark.application.frog_promotions import (
+    FrogPromotionError,
+    FrogPromotionService,
+    promotion_result_to_payload,
+)
 from weftmark.application.lifecycle import (
     LifecycleError,
     LifecyclePolicyError,
@@ -150,6 +155,19 @@ def build_parser() -> argparse.ArgumentParser:
     frog_task_list.add_argument("digest")
     frog_task_list.add_argument("--repo-path")
     frog_task_list.add_argument("--workflow-status")
+    frog_task_promote = frog_task_commands.add_parser(
+        "promote", help="create local Change Set authority from imported intent"
+    )
+    frog_task_promote.add_argument("digest")
+    frog_task_promote.add_argument("task_slug")
+    frog_task_promote.add_argument("--id")
+    frog_task_promote.add_argument("--base", default="HEAD")
+    frog_task_promote.add_argument(
+        "--scope",
+        action="append",
+        required=True,
+        help="operator-approved local scope; imported Frog scopes are not authoritative",
+    )
 
     changeset = commands.add_parser("changeset", help="manage Change Sets")
     changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
@@ -312,6 +330,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         bundles = BundleService(workspace, claims, workflow)
         bundle_imports = BundleImportService(ledger)
         frog_receipts = FrogReceiptService(ledger)
+        frog_promotions = FrogPromotionService(frog_receipts, workspace, ledger)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -431,6 +450,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 return EXIT_NOT_FOUND
             _emit_frog_task_list(list(tasks), json_output=args.json)
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "task"
+            and args.frog_task_command == "promote"
+        ):
+            result = frog_promotions.promote(
+                args.digest,
+                args.task_slug,
+                change_set_id=args.id,
+                base_revision=args.base,
+                scopes=tuple(Scope.parse(value) for value in args.scope),
+                promoted_at=_now(),
+            )
+            _emit_frog_promotion(
+                promotion_result_to_payload(result), json_output=args.json
+            )
             return 0
 
         if args.command == "changeset" and args.changeset_command == "create":
@@ -655,7 +691,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (BundleError, BundleFileError, BundleImportError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_BUNDLE
-    except (FrogImportError, FrogReceiptError) as error:
+    except (FrogImportError, FrogPromotionError, FrogReceiptError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_INVALID
     except (JsonlLedgerError, LedgerServiceError) as error:
@@ -858,6 +894,25 @@ def _emit_frog_task_list(
             f"{payload['slug']}  {payload['workflow_status']}  "
             f"{payload['priority']}  {payload['title']}"
         )
+
+
+def _emit_frog_promotion(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_promotion": payload}, sort_keys=True))
+        return
+    action = "promoted" if payload["promoted"] else "already promoted"
+    change_set = payload["change_set"]
+    print(f"{action} {payload['source_task_slug']}  {change_set['id']}")
+    print(f"  source snapshot: {payload['source_snapshot_digest']}")
+    print(f"  source repo: {payload['source_repo_path']}")
+    print(
+        "  local scopes: "
+        + ", ".join(
+            f"{scope['kind']}:{scope['key']}" for scope in change_set["scopes"]
+        )
+    )
 
 
 def _emit_claim(payload: dict[str, Any], *, json_output: bool) -> None:

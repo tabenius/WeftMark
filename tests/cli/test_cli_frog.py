@@ -141,3 +141,34 @@ def test_cli_records_and_inspects_frog_snapshot_receipt(
 
     assert main(["--repo", str(repo), "--json", "changeset", "list"]) == 0
     assert json.loads(capsys.readouterr().out)["changesets"] == []
+
+    promote = [
+        "--repo",
+        str(repo),
+        "--json",
+        "frog",
+        "task",
+        "promote",
+        value.digest,
+        "external-1",
+        "--id",
+        "promoted-1",
+        "--scope",
+        "file:src/**",
+        "--scope",
+        "contract:migration-v1",
+    ]
+    assert main(promote) == 0
+    promoted = json.loads(capsys.readouterr().out)["frog_promotion"]
+    assert promoted["promoted"] is True
+    assert promoted["source_task_slug"] == "external-1"
+    assert promoted["change_set"]["id"] == "promoted-1"
+    assert promoted["change_set"]["state"] == "active"
+
+    assert main(promote) == 0
+    repeated = json.loads(capsys.readouterr().out)["frog_promotion"]
+    assert repeated["promoted"] is False
+    assert repeated["change_set"]["id"] == "promoted-1"
+
+    assert main(["--repo", str(repo), "--json", "claim", "list"]) == 0
+    assert json.loads(capsys.readouterr().out)["claims"] == []
