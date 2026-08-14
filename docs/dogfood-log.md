@@ -110,7 +110,7 @@ sessions.
 - Native claim: `dogfood-002-claim`
 - Worker/session: `codex` / `unattended-20260814`
 - Declared semantic scope: `contract:status-v0`
-- Status: in progress
+- Status: completed locally
 
 This is the first development slice to acquire all declared file and semantic
 scopes through WeftMark itself. The atomic claim succeeded before editing and
@@ -130,3 +130,15 @@ does not yet expose them through an application service or CLI. A lifecycle
 close command is therefore the next correction after this status slice; status
 will continue to report the durable lifecycle honestly rather than inferring
 `closed` from readiness.
+
+The implemented status read model is application-owned and read-only. It
+reports the recorded observation time and head, active/expired/released claim
+counts, current versus obsolete evidence, and whether the newest review and
+handoff still match the observed head. Human output stays compact while JSON
+preserves the structured details.
+
+Session 002 closes with evidence `dogfood-002-test-1`, review
+`dogfood-002-review-ready`, and handoff `dogfood-002-handoff-1`. Native claim
+`dogfood-002-claim` is explicitly released only after the exact final head is
+proven and handed off. This satisfies the second of five required real Change
+Sets; it does not yet satisfy the cross-agent or cross-vendor handoff case.
