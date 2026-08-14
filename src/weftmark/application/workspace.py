@@ -97,6 +97,23 @@ class WorkspaceService:
         self._record(refreshed, recorded_at=observed_at)
         return refreshed
 
+    def transition_change_set(
+        self,
+        id: str,
+        *,
+        state: ChangeSetState,
+        transitioned_at: datetime,
+    ) -> ChangeBinding:
+        current = self.require_change_set(id)
+        changed = current.change_set.transition(state, at=transitioned_at)
+        transitioned = ChangeBinding(
+            changed,
+            current.base_revision,
+            current.observations,
+        )
+        self._record(transitioned, recorded_at=transitioned_at)
+        return transitioned
+
     def _record(self, binding: ChangeBinding, *, recorded_at: datetime) -> None:
         self._ledger.record(
             kind="changeset",

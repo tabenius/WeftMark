@@ -8,7 +8,7 @@ from weftmark.adapters.git_local import LocalGit
 from weftmark.adapters.jsonl_ledger import JsonlLedger
 from weftmark.application.ledger import LedgerService
 from weftmark.application.workspace import WorkspaceService, binding_from_payload
-from weftmark.domain.changeset import LineageEventKind
+from weftmark.domain.changeset import ChangeSetState, LineageEventKind
 from weftmark.domain.scope import Scope
 
 
@@ -80,6 +80,29 @@ def test_refresh_appends_observation_and_head_lineage(tmp_path: Path) -> None:
     assert refreshed.latest.dirty_paths == ("dirty.txt",)
     assert refreshed.change_set.lineage[-1].kind is LineageEventKind.HEAD_ADVANCED
     assert service(repo, ledger_path).require_change_set("chg-1") == refreshed
+
+
+def test_transition_persists_state_without_rewriting_git_observations(
+    tmp_path: Path,
+) -> None:
+    repo = repository(tmp_path)
+    ledger_path = tmp_path / "state" / "ledger.jsonl"
+    workspace = service(repo, ledger_path)
+    created = workspace.create_change_set(
+        id="chg-1",
+        goal="Persist lifecycle",
+        base_revision="HEAD",
+        scopes=(Scope.file("**"),),
+        created_at=NOW,
+    )
+    transitioned = workspace.transition_change_set(
+        "chg-1",
+        state=ChangeSetState.REVIEW,
+        transitioned_at=NOW + timedelta(minutes=1),
+    )
+    assert transitioned.change_set.state is ChangeSetState.REVIEW
+    assert transitioned.observations == created.observations
+    assert service(repo, ledger_path).require_change_set("chg-1") == transitioned
 
 
 def test_initial_cli_flat_snapshot_is_migrated_on_read() -> None:

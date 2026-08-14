@@ -19,6 +19,11 @@ from weftmark.application.claims import (
     claim_to_payload,
 )
 from weftmark.application.ledger import LedgerService, LedgerServiceError
+from weftmark.application.lifecycle import (
+    LifecycleError,
+    LifecyclePolicyError,
+    LifecycleService,
+)
 from weftmark.application.evidence_runner import (
     CommandEvidenceRequest,
     EvidenceRunnerError,
@@ -36,7 +41,7 @@ from weftmark.application.workspace import (
     WorkspaceService,
     binding_to_payload,
 )
-from weftmark.domain.changeset import ChangeSetError
+from weftmark.domain.changeset import ChangeSetError, ChangeSetState
 from weftmark.domain.evidence import (
     EvidenceKind,
     EvidenceProducer,
@@ -93,6 +98,18 @@ def build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("id")
     refresh.add_argument("--base", help="replace the tracked base revision")
     changeset_commands.add_parser("list", help="list latest Change Set snapshots")
+    transition = changeset_commands.add_parser(
+        "transition", help="record a validated lifecycle transition"
+    )
+    transition.add_argument("id")
+    transition.add_argument(
+        "state",
+        choices=tuple(
+            state.value
+            for state in ChangeSetState
+            if state is not ChangeSetState.PLANNED
+        ),
+    )
 
     claim = commands.add_parser("claim", help="manage semantic Change Set leases")
     claim_commands = claim.add_subparsers(dest="claim_command", required=True)
@@ -212,6 +229,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ledger,
             EvidenceProducer(ProducerKind.WORKER, "weftmark-cli"),
         )
+        lifecycle = LifecycleService(workspace, workflow)
 
         if args.command == "status":
             payload = status_to_payload(
@@ -251,6 +269,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for binding in workspace.list_change_sets()
             ]
             _emit_list(result, json_output=args.json)
+            return 0
+        if args.command == "changeset" and args.changeset_command == "transition":
+            binding = lifecycle.transition(
+                args.id,
+                state=ChangeSetState(args.state),
+                transitioned_at=_now(),
+            )
+            _emit(
+                binding_to_payload(binding),
+                json_output=args.json,
+                action="transitioned",
+            )
             return 0
         if args.command == "claim" and args.claim_command == "acquire":
             observed_at = _now()
@@ -420,6 +450,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             ]
             _emit_handoff_list(payloads, json_output=args.json)
             return 0
+    except LifecyclePolicyError as error:
+        _emit_error(str(error), json_output=args.json)
+        return EXIT_POLICY
     except ClaimConflict as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_CONFLICT
@@ -430,6 +463,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ChangeBindingError,
         ChangeSetError,
         ClaimServiceError,
+        LifecycleError,
         LocalGitError,
         ScopeError,
         WorkspaceError,

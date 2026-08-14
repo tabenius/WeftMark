@@ -142,3 +142,20 @@ Session 002 closes with evidence `dogfood-002-test-1`, review
 `dogfood-002-claim` is explicitly released only after the exact final head is
 proven and handed off. This satisfies the second of five required real Change
 Sets; it does not yet satisfy the cross-agent or cross-vendor handoff case.
+
+## Session 003: gated lifecycle completion
+
+- Change Set: `dogfood-003`
+- Goal: expose durable gated Change Set lifecycle transitions and close
+  completed sessions.
+- Base: `c32594d5d507d84457901e5c57e52de9a39c9678`
+- Native claim: `dogfood-003-claim`
+- Worker/session: `codex` / `unattended-20260814`
+- Declared semantic scope: `contract:lifecycle-v0`
+- Status: in progress
+
+This session follows the correction discovered by real `weftmark status`
+output. Lifecycle transitions are explicit declarations, not inferred from a
+green test. Moving to `merged` requires a releasable review bound to the exact
+observed head, while moving to `closed` requires a clean-head handoff for that
+same observation. Invalid domain transitions remain refused.

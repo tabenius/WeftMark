@@ -60,6 +60,38 @@ tasks:
         required: true
         criterion: Lifecycle reviewed against the Change Set figure in docs/weftmark.mdx.
 
+  - slug: changeset-lifecycle-workflow
+    title: Persist evidence-gated Change Set lifecycle transitions
+    status: done
+    priority: P0
+    depends:
+      - changeset-core-model
+      - review-service
+      - handoff-core-model
+    purpose: Let completed local work leave the active set without treating intent as proof.
+    scope:
+      files:
+        - src/weftmark/application/workspace.py
+        - src/weftmark/application/lifecycle.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_lifecycle.py
+        - tests/cli/test_cli_lifecycle.py
+      contracts:
+        - contract:lifecycle-v0
+    deliverables:
+      - Durable transitions through review, merged, closed, and abandoned states.
+      - Current-review and current-handoff gates for terminal success states.
+    accept:
+      - Merged requires a current releasable review.
+      - Closed requires a current clean-head handoff.
+    negative:
+      - Lifecycle state is never inferred from a passing command alone.
+      - Invalid domain transitions remain invalid at the CLI.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_lifecycle.py tests/cli/test_cli_lifecycle.py
+
   - slug: evidence-core-model
     title: Define typed evidence and evidence-state semantics
     status: done
