@@ -52,6 +52,7 @@ tasks:
       files:
         - src/weftmark/application/handoff_context.py
         - tests/application/test_handoff_context.py
+        - docs/contracts/handoff-context-budget-v0.md
       contracts:
         - surface:handoff-context-materializer-v0
     deliverables:
