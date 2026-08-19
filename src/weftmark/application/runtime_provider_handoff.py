@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from typing import Callable, Mapping, Protocol, runtime_checkable
 
 from weftmark.application.handoff_context import (
-    HandoffMaterialization,
     TokenCounter,
     materialize_handoff_context,
 )
@@ -171,7 +170,16 @@ def _validate_source(handoff: Handoff, workspace: RuntimeChangeWorkspace) -> Non
         raise RuntimeProviderHandoffError("source runtime base differs from handoff base")
 
 
-def _validate_destination(handoff: Handoff, workspace: RuntimeChangeWorkspace) -> None:
+def _validate_destination(
+    handoff: Handoff,
+    workspace: RuntimeChangeWorkspace,
+    *,
+    expected_provider: str,
+) -> None:
+    if workspace.provider != expected_provider:
+        raise RuntimeProviderHandoffError(
+            "destination runtime returned a different provider identity"
+        )
     if workspace.change_set_id != handoff.change_set_id:
         raise RuntimeProviderHandoffError("destination runtime returned another Change Set")
     if workspace.task_id != handoff.change_set_id:
@@ -222,6 +230,7 @@ class RuntimeProviderHandoffService:
         source_runtime: RuntimePort,
         source_workspace: RuntimeChangeWorkspace,
         destination_runtime: RuntimePort,
+        destination_provider_id: str,
         destination_repo_path: str,
         destination_agent_id: str,
         evidence_by_id: Mapping[str, Evidence] | None = None,
@@ -234,8 +243,15 @@ class RuntimeProviderHandoffService:
         rows: int | None = None,
     ) -> RuntimeProviderHandoffResult:
         switch_id = _validate_text("switch_id", switch_id)
-        destination_repo_path = _validate_text("destination_repo_path", destination_repo_path)
-        destination_agent_id = _validate_text("destination_agent_id", destination_agent_id)
+        destination_provider_id = _validate_text(
+            "destination_provider_id", destination_provider_id
+        )
+        destination_repo_path = _validate_text(
+            "destination_repo_path", destination_repo_path
+        )
+        destination_agent_id = _validate_text(
+            "destination_agent_id", destination_agent_id
+        )
         _validate_source(handoff, source_workspace)
 
         # Materialize before stopping the source. A budget failure therefore has
@@ -249,7 +265,9 @@ class RuntimeProviderHandoffService:
             variant=variant,
             token_counter=token_counter,
         )
-        context_digest = hashlib.sha256(materialized.content.encode("utf-8")).hexdigest()
+        context_digest = hashlib.sha256(
+            materialized.content.encode("utf-8")
+        ).hexdigest()
 
         source_summary = source_runtime.worker_summary(source_workspace)
         source = RuntimeAttachmentProvenance.capture(source_workspace, source_summary)
@@ -265,13 +283,7 @@ class RuntimeProviderHandoffService:
                         "handoff_id": handoff.id,
                         "change_set_id": handoff.change_set_id,
                         "source": source.to_dict(),
-                        "destination_provider": _validate_text(
-                            "destination provider",
-                            # Attach only after this durable request exists.
-                            # RuntimePort does not expose a provider property, so
-                            # the provider is verified from its returned workspace.
-                            "pending",
-                        ),
+                        "destination_provider": destination_provider_id,
                         "destination_agent_id": destination_agent_id,
                         "context_variant": materialized.variant.value,
                         "context_tokens": materialized.token_count,
@@ -305,12 +317,20 @@ class RuntimeProviderHandoffService:
             destination_workspace = destination_runtime.attach_workspace(
                 destination_repo_path
             )
+            if destination_workspace.provider != destination_provider_id:
+                raise RuntimeProviderHandoffError(
+                    "destination workspace provider does not match switch intent"
+                )
             destination_change_workspace = destination_runtime.ensure_change_workspace(
                 destination_workspace,
                 handoff.change_set_id,
                 GitObjectId(handoff.base_sha),
             )
-            _validate_destination(handoff, destination_change_workspace)
+            _validate_destination(
+                handoff,
+                destination_change_workspace,
+                expected_provider=destination_provider_id,
+            )
 
             stage = "start_destination"
             destination_summary = destination_runtime.start_worker(
@@ -323,6 +343,13 @@ class RuntimeProviderHandoffService:
             destination = RuntimeAttachmentProvenance.capture(
                 destination_change_workspace, destination_summary
             )
+            if destination.worker_state not in {
+                RuntimeWorkerState.RUNNING,
+                RuntimeWorkerState.AWAITING_INPUT,
+            }:
+                raise RuntimeProviderHandoffError(
+                    "destination worker did not enter an active state"
+                )
 
             evidence_map = evidence_by_id or {}
             revalidation_ids = tuple(
