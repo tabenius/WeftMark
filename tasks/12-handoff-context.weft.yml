@@ -1,0 +1,101 @@
+format: weft-task-v0
+phase: handoff-context
+summary: Bound provider-switch context costs without making chat history canonical.
+
+tasks:
+  - slug: handoff-context-budget-v0
+    title: Define token-budgeted handoff materialization profiles
+    status: done
+    priority: P1
+    depends:
+      - handoff-core-model
+    purpose: Make provider and agent handoffs economically predictable while preserving durable, addressable context.
+    scope:
+      files:
+        - src/weftmark/domain/handoff_context.py
+        - tests/domain/test_handoff_context.py
+        - docs/contracts/handoff-context-budget-v0.md
+        - tasks/12-handoff-context.weft.yml
+      contracts:
+        - contract:handoff-context-budget-v0
+    deliverables:
+      - Provider-neutral compact, standard and deep budget profiles.
+      - Standard as the default profile.
+      - Retrieval-only defaults for chat transcripts, terminal history and full source files.
+      - Bounded focused diff excerpts only in the deep profile.
+    accept:
+      - Compact defaults to target 800 / hard max 1200 tokens.
+      - Standard defaults to target 1600 / hard max 2500 tokens.
+      - Deep defaults to target 4000 / hard max 6500 tokens.
+      - Unknown variants fail closed rather than falling back silently.
+      - Mandatory goal, next-action, lineage, scope and known-failure context cannot be made retrieval-only.
+    negative:
+      - A materialization profile never mutates or truncates the durable handoff record.
+      - No default profile automatically injects full chat transcript, terminal history or source files.
+      - Token budgeting does not imply evidence is valid in a new runtime environment.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_handoff_context.py tests/domain/test_handoff.py
+      - kind: review
+        required: true
+        criterion: Budget defaults keep state transfer cheaper than transcript replay and preserve fail-closed readiness context.
+
+  - slug: handoff-context-materializer
+    title: Materialize handoffs under a selected token budget
+    status: todo
+    priority: P1
+    depends:
+      - handoff-context-budget-v0
+    purpose: Turn durable handoff references into bounded receiving-worker context without replaying history by default.
+    scope:
+      files:
+        - src/weftmark/application/handoff_context.py
+        - tests/application/test_handoff_context.py
+      contracts:
+        - surface:handoff-context-materializer-v0
+    deliverables:
+      - Deterministic mandatory orientation capsule.
+      - Token accounting and optional provider tokenizer hook.
+      - Ordered omission/truncation of optional summaries before hard-max failure.
+      - Retrieval references for deferred diff/file/history context.
+    accept:
+      - Materialization reports selected variant and estimated/actual token count.
+      - Mandatory context exceeding hard max fails closed.
+      - Optional expansion is deterministic for the same ledger snapshot and profile.
+    negative:
+      - Materializer does not summarize or inject prior chat by default.
+      - Materializer does not silently omit blockers or stale evidence to fit a budget.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_handoff_context.py
+
+  - slug: runtime-provider-handoff-budget
+    title: Apply handoff budgets when switching runtime providers
+    status: todo
+    priority: P1
+    depends:
+      - handoff-context-materializer
+      - kanban-client-architecture-spike
+    purpose: Make provider hot-swap an explicit checkpoint/materialize/attach operation with bounded receiving context.
+    scope:
+      contracts:
+        - boundary:runtime-provider-handoff
+    deliverables:
+      - Provider switch request selecting compact, standard or deep context.
+      - Durable source and destination runtime attachment provenance.
+      - Revalidation policy hook when runtime/environment changes affect evidence.
+    accept:
+      - The same durable handoff can be materialized under different variants without mutation.
+      - Provider switch never replays the source provider transcript unless explicitly retrieved.
+    negative:
+      - Active PTY/process state is not represented as portable across providers.
+      - Switching provider never promotes evidence or readiness.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_handoff_context.py
+      - kind: review
+        required: true
+        criterion: Provider switching preserves source/destination provenance and does not imply process-state portability or evidence promotion.
