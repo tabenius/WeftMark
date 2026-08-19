@@ -85,7 +85,7 @@ tasks:
 
   - slug: kanban-client-architecture-spike
     title: Map upstream Kanban internals onto the WeftMark projection
-    status: todo
+    status: done
     priority: P1
     depends:
       - kanban-http-read-surface
