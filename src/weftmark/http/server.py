@@ -165,46 +165,46 @@ def make_handler(
                     },
                 )
                 return
+
+            prefix = "/v0/kanban/changes/"
+            is_workspace = path == "/v0/kanban"
+            is_single = path.startswith(prefix) and len(path) > len(prefix)
+            if not is_workspace and not is_single:
+                self._send_json(404, {"ok": False, "error": "not_found"})
+                return
             if self._refuse_if_unauthorized():
                 return
 
             projection = provider(_now())
-            if path == "/v0/kanban":
+            if is_workspace:
                 self._send_json(200, kanban_projection_to_payload(projection))
                 return
 
-            prefix = "/v0/kanban/changes/"
-            if path.startswith(prefix):
-                change_set_id = unquote(path[len(prefix) :])
-                card = next(
-                    (
-                        value
-                        for value in kanban_projection_to_payload(projection)["cards"]
-                        if value["id"] == change_set_id
-                    ),
-                    None,
-                )
-                if card is None:
-                    self._send_json(
-                        404,
-                        {"ok": False, "error": "change_set_not_found"},
-                    )
-                    return
+            change_set_id = unquote(path[len(prefix) :])
+            workspace_payload = kanban_projection_to_payload(projection)
+            card = next(
+                (
+                    value
+                    for value in workspace_payload["cards"]
+                    if value["id"] == change_set_id
+                ),
+                None,
+            )
+            if card is None:
                 self._send_json(
-                    200,
-                    {
-                        "schema": KANBAN_PROJECTION_SCHEMA,
-                        "generated_at": projection.generated_at.isoformat(),
-                        "authority": {
-                            "coordination": "weftmark",
-                            "projection": "read_only",
-                        },
-                        "card": card,
-                    },
+                    404,
+                    {"ok": False, "error": "change_set_not_found"},
                 )
                 return
-
-            self._send_json(404, {"ok": False, "error": "not_found"})
+            self._send_json(
+                200,
+                {
+                    "schema": KANBAN_PROJECTION_SCHEMA,
+                    "generated_at": projection.generated_at.isoformat(),
+                    "authority": workspace_payload["authority"],
+                    "card": card,
+                },
+            )
 
         def _method_not_allowed(self) -> None:
             self._send_json(
@@ -282,8 +282,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     address, port = server.server_address[:2]
+    display_address = f"[{address}]" if ":" in address else address
     auth = " bearer-token" if token is not None else ""
-    print(f"weftmark read surface: http://{address}:{port}{auth}")
+    print(f"weftmark read surface: http://{display_address}:{port}{auth}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
