@@ -38,6 +38,8 @@ is still prototype software, not a production or released control plane.
   evidence requirements.
 - `assurance/facts.json` records machine-readable capability state used to keep
   public claims from silently outrunning implementation and verification.
+- `THIRD_PARTY_NOTICES.md` records the policy and inventory point for upstream
+  license and attribution obligations.
 - `AGENTS.md` specifies the small YAML-compatible task dialect used by the task
   plan.
 - `assets/weftmark.svg` is the canonical white-background vector mark;
@@ -173,6 +175,26 @@ python scripts/check_assurance_docs.py
 
 ## License
 
-No project license has been selected yet. The implementation plan contains an
-explicit `open-source-license` gate. Until a `LICENSE` file is committed, do not
-assume that the repository itself grants open-source redistribution rights.
+WeftMark is licensed under the **Apache License, Version 2.0**. See `LICENSE`.
+The license permits use, modification, redistribution, and commercial use subject
+to its terms, and includes an express patent license from contributors for patent
+claims necessarily infringed by their contributions.
+
+For inbound contributions, WeftMark currently follows Apache-2.0 section 5:
+unless a contributor explicitly states otherwise, a contribution intentionally
+submitted for inclusion in WeftMark is submitted under Apache-2.0 without
+additional terms. This repository does not currently impose a separate
+Contributor License Agreement. A contribution may be explicitly designated
+"Not a Contribution" as described by the license, and a future separate written
+agreement may supersede this default for parties that enter one.
+
+Redistributors and downstream adaptations must preserve the license and
+applicable notices, retain relevant attribution, and mark modified files where
+the license requires it. Third-party code and assets retain their own license
+obligations; see `THIRD_PARTY_NOTICES.md` for the repository policy. This is
+particularly relevant to planned integration with Apache-2.0 projects such as
+Cline Kanban: upstream license and `NOTICE` obligations remain applicable even
+when the licenses are compatible.
+
+Apache-2.0 does not grant trademark rights except for the limited descriptive
+uses stated in the license.
