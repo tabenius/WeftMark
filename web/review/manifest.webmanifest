@@ -1,0 +1,10 @@
+{
+  "name": "WeftMark Review",
+  "short_name": "WeftMark",
+  "description": "Read-only Change Set, evidence, review, and blocker surface for WeftMark.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d131c",
+  "theme_color": "#101722"
+}
