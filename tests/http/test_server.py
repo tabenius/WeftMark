@@ -13,7 +13,7 @@ from weftmark.application.kanban_projection import (
     KanbanLane,
     KanbanProjection,
 )
-from weftmark.http.server import HttpReadError, create_server
+from weftmark.http.server import HttpReadError, _require_loopback, create_server
 
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
@@ -99,13 +99,27 @@ def test_workspace_and_single_change_routes_share_projection() -> None:
         thread.join(timeout=2)
 
 
-def test_unknown_change_is_404() -> None:
-    _, server, thread, base = start_server()
+def test_unknown_change_is_404_after_one_authorized_projection_read() -> None:
+    provider, server, thread, base = start_server()
     try:
         with pytest.raises(HTTPError) as exc:
             read_json(f"{base}/v0/kanban/changes/missing")
         assert exc.value.code == 404
         assert json.loads(exc.value.read())["error"] == "change_set_not_found"
+        assert provider.calls == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_unknown_route_is_workspace_blind() -> None:
+    provider, server, thread, base = start_server()
+    try:
+        with pytest.raises(HTTPError) as exc:
+            read_json(f"{base}/not-a-route")
+        assert exc.value.code == 404
+        assert provider.calls == 0
     finally:
         server.shutdown()
         server.server_close()
@@ -128,17 +142,20 @@ def test_mutating_methods_are_refused_without_calling_provider() -> None:
 
 
 def test_optional_bearer_token_protects_projection_but_not_health() -> None:
-    _, server, thread, base = start_server(token="secret-token")
+    provider, server, thread, base = start_server(token="secret-token")
     try:
         assert read_json(f"{base}/healthz")["ok"] is True
+        assert provider.calls == 0
 
         with pytest.raises(HTTPError) as exc:
             read_json(f"{base}/v0/kanban")
         assert exc.value.code == 401
         assert exc.value.headers["WWW-Authenticate"] == "Bearer"
+        assert provider.calls == 0
 
         payload = read_json(f"{base}/v0/kanban", token="secret-token")
         assert payload["cards"][0]["id"] == "chg-1"
+        assert provider.calls == 1
     finally:
         server.shutdown()
         server.server_close()
@@ -153,3 +170,13 @@ def test_v0_refuses_non_loopback_binding() -> None:
 
     with pytest.raises(HttpReadError, match="only binds to loopback"):
         create_server("::", 0, provider, token="still-not-enough")
+
+
+def test_loopback_policy_accepts_ipv4_ipv6_and_localhost() -> None:
+    _require_loopback("127.0.0.1")
+    _require_loopback("127.42.0.1")
+    _require_loopback("::1")
+    _require_loopback("localhost")
+
+    with pytest.raises(HttpReadError, match="literal loopback"):
+        _require_loopback("example.invalid")
