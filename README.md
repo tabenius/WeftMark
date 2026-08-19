@@ -21,24 +21,46 @@ question that becomes scarce when many agents can write code at once:
 
 ## Repository status
 
-This repository begins as an **executable design and implementation plan**.
-There is not yet a WeftMark runtime. The current contents are intentionally
-honest about that distinction:
+This repository now contains a **prototype WeftMark runtime** as well as its
+executable design and implementation record. Local Change Sets, semantic claims,
+Git lineage, evidence, review, handoff, CLI/status surfaces, and the read-only
+Kanban/mobile projection are implemented; this is still prototype software, not
+a production or released control plane.
 
-- `docs/weftmark.mdx` is the editable source of truth for the product and
+- `src/weftmark/` contains the local runtime and application/domain layers.
+- `tests/` contains executable runtime and contract evidence used by CI.
+- `docs/weftmark.mdx` remains the editable source of truth for the product and
   architecture paper.
 - `docs/artifacts/weftmark_rev0.html` and `weftmark_rev0.pdf` preserve the
-  revision-0 report. The bootstrap workflow creates this immutable snapshot from
-  the MDX source on the first successful `main` build.
-- `tasks/*.weft.yml` contain the dependency-aware initial implementation plan.
-- `AGENTS.md` specifies the small YAML-compatible task dialect used by those
-  files.
+  immutable revision-0 design report.
+- `tasks/*.weft.yml` contain the dependency-aware implementation plan and task
+  evidence requirements.
+- `assurance/facts.json` records machine-readable capability state used to keep
+  public claims from silently outrunning implementation and verification.
+- `AGENTS.md` specifies the small YAML-compatible task dialect used by the task
+  plan.
 - `assets/weftmark.svg` is the canonical white-background vector mark;
   `assets/weftmark-on-black.svg` is the dark-background variant.
-- `scripts/` contains deterministic documentation, logo, and task-validation
-  tooling.
-- `ragbaz.component.json` follows the RAGBAZ component-manifest convention used
-  by Frog while marking WeftMark as a **prototype**, not production software.
+- `ragbaz.component.json` follows the RAGBAZ component-manifest convention while
+  continuing to mark WeftMark as a **prototype**, not production software.
+
+<!-- assurance:begin -->
+### Assurance snapshot
+
+This table is generated from `assurance/facts.json`; `implemented` is not
+treated as `verified`, and nothing is marked releasable without explicit
+release evidence.
+
+| Capability | Implemented | Verified | Reviewed | Releasable |
+| --- | --- | --- | --- | --- |
+| Change Set lifecycle and Git lineage | yes | yes | — | — |
+| Semantic scopes and local claims | yes | yes | — | — |
+| Evidence, review, and handoff workflow | yes | yes | yes | — |
+| Kanban/mobile read projection | yes | yes | yes | — |
+| Loopback-only HTTP read surface | yes | yes | yes | — |
+| Semantic scope blockers in board status | yes | yes | yes | — |
+
+<!-- assurance:end -->
 
 ## From Frog to WeftMark
 
@@ -127,6 +149,7 @@ Validate the graph with:
 
 ```bash
 python scripts/validate_tasks.py
+python scripts/check_assurance_docs.py
 ```
 
 ## Design principles

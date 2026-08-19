@@ -33,6 +33,9 @@ jobs:
       - name: Validate task graph
         run: python scripts/validate_tasks.py
 
+      - name: Validate assurance claims
+        run: python scripts/check_assurance_docs.py
+
       - name: Build figures and logo derivatives
         run: |
           python scripts/build_figures.py

@@ -1,0 +1,101 @@
+{
+  "schema": "weftmark.assurance-facts.v0",
+  "facts": [
+    {
+      "id": "changeset-lineage",
+      "label": "Change Set lifecycle and Git lineage",
+      "planned": true,
+      "implemented": true,
+      "verified": true,
+      "reviewed": false,
+      "releasable": false,
+      "evidence": [
+        {"kind": "test", "ref": "tests/domain/test_changeset.py"},
+        {"kind": "test", "ref": "tests/application/test_change_binding.py"}
+      ]
+    },
+    {
+      "id": "semantic-claims",
+      "label": "Semantic scopes and local claims",
+      "planned": true,
+      "implemented": true,
+      "verified": true,
+      "reviewed": false,
+      "releasable": false,
+      "evidence": [
+        {"kind": "test", "ref": "tests/domain/test_lock.py"},
+        {"kind": "test", "ref": "tests/application/test_claims.py"}
+      ]
+    },
+    {
+      "id": "evidence-review-handoff",
+      "label": "Evidence, review, and handoff workflow",
+      "planned": true,
+      "implemented": true,
+      "verified": true,
+      "reviewed": true,
+      "releasable": false,
+      "evidence": [
+        {"kind": "test", "ref": "tests/application/test_local_workflow.py"},
+        {"kind": "review", "ref": "tasks/40-evidence-review.weft.yml#review-service"}
+      ]
+    },
+    {
+      "id": "kanban-read-projection",
+      "label": "Kanban/mobile read projection",
+      "planned": true,
+      "implemented": true,
+      "verified": true,
+      "reviewed": true,
+      "releasable": false,
+      "evidence": [
+        {"kind": "test", "ref": "tests/application/test_kanban_projection.py"},
+        {"kind": "review", "ref": "tasks/55-kanban-integration.weft.yml#kanban-read-model-v0"}
+      ]
+    },
+    {
+      "id": "http-read-surface",
+      "label": "Loopback-only HTTP read surface",
+      "planned": true,
+      "implemented": true,
+      "verified": true,
+      "reviewed": true,
+      "releasable": false,
+      "evidence": [
+        {"kind": "test", "ref": "tests/http/test_server.py"},
+        {"kind": "review", "ref": "tasks/55-kanban-integration.weft.yml#kanban-http-read-surface"}
+      ]
+    },
+    {
+      "id": "semantic-collision-projection",
+      "label": "Semantic scope blockers in board status",
+      "planned": true,
+      "implemented": true,
+      "verified": true,
+      "reviewed": true,
+      "releasable": false,
+      "evidence": [
+        {"kind": "test", "ref": "tests/application/test_status.py"},
+        {"kind": "test", "ref": "tests/application/test_kanban_projection.py"},
+        {"kind": "review", "ref": "tasks/55-kanban-integration.weft.yml#kanban-scope-collision-projection"}
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "target": "ragbaz.component.json",
+      "path": "metadata.runtimeImplemented",
+      "equals": true
+    },
+    {
+      "target": "ragbaz.component.json",
+      "path": "identity.lifecycle",
+      "equals": "prototype"
+    },
+    {
+      "target": "ragbaz.component.json",
+      "path": "capabilities.provides.0.description",
+      "contains": "Prototype runtime"
+    }
+  ]
+}

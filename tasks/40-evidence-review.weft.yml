@@ -90,7 +90,7 @@ tasks:
 
   - slug: docs-assurance-facts
     title: Define machine-readable product assurance facts
-    status: todo
+    status: done
     priority: P1
     depends:
       - evidence-policy-model
@@ -99,16 +99,33 @@ tasks:
       files:
         - assurance/**
         - scripts/check_assurance_docs.py
+        - README.md
+        - ragbaz.component.json
+        - .github/workflows/ci.yml
+        - tasks/40-evidence-review.weft.yml
       contracts:
         - contract:assurance-facts-v0
+        - surface:public-capability-claims
     deliverables:
-      - Facts describing feature state as planned, implemented, verified, reviewed, and releasable.
-      - Validation hooks for README/component manifest claims.
+      - Facts independently recording planned, implemented, verified, reviewed, and releasable state.
+      - Generated README assurance snapshot covering at least three implemented capabilities.
+      - Validation of selected component-manifest claims against the same facts bundle.
+      - CI refusal when facts, evidence references, README snapshot, or manifest claims drift.
     accept:
       - A manifest/document claim can be checked against its supporting fact/evidence state.
+      - Verified state requires explicit test/CI evidence rather than following implemented automatically.
+      - Reviewed state requires explicit review/security evidence.
+      - Releasable state requires verified, reviewed, and release/deployment evidence.
+      - Existing stale claims that no runtime exists are corrected without claiming production readiness.
     negative:
       - Implemented is never automatically promoted to verified.
+      - Prototype lifecycle is not promoted to production or releasable by this task.
+      - Missing local evidence references fail validation.
     evidence:
       - kind: docs
         required: true
-        criterion: At least three README claims are generated or validated from assurance facts.
+        command: python scripts/check_assurance_docs.py
+        criterion: README assurance claims and selected component-manifest claims validate from assurance/facts.json.
+      - kind: ci
+        required: true
+        criterion: Assurance validation runs in the normal CI job.
