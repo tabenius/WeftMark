@@ -72,7 +72,7 @@ tasks:
 
   - slug: native-task-claim-service
     title: Claim eligible native task intent
-    status: review
+    status: done
     priority: P0
     depends:
       - native-task-next-service
