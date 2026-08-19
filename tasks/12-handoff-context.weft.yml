@@ -92,3 +92,10 @@ tasks:
     negative:
       - Active PTY/process state is not represented as portable across providers.
       - Switching provider never promotes evidence or readiness.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_handoff_context.py
+      - kind: review
+        required: true
+        criterion: Provider switching preserves source/destination provenance and does not imply process-state portability or evidence promotion.
