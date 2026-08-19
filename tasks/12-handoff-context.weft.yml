@@ -43,7 +43,7 @@ tasks:
 
   - slug: handoff-context-materializer
     title: Materialize handoffs under a selected token budget
-    status: review
+    status: done
     priority: P1
     depends:
       - handoff-context-budget-v0
