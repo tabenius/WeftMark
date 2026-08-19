@@ -22,7 +22,7 @@
     <div class="source-actions">
       <span id="source-status" class="source-status" role="status">Connecting…</span>
       <button id="refresh-button" type="button">Refresh</button>
-      <label class="file-button" for="file-input">Open projection</label>
+      <button id="file-button" class="file-button" type="button">Open projection</button>
       <input id="file-input" type="file" accept="application/json,.json" hidden>
     </div>
   </header>
@@ -43,7 +43,6 @@
     </section>
 
     <section id="message" class="message" hidden role="alert"></section>
-
     <section id="board" class="board" aria-label="Change Sets by board lane"></section>
   </main>
 
@@ -59,10 +58,6 @@
       <div id="detail-content" class="detail-content"></div>
     </div>
   </dialog>
-
-  <template id="empty-lane-template">
-    <p class="empty-lane">No Change Sets in this lane.</p>
-  </template>
 
   <script type="module" src="app.js"></script>
 </body>
