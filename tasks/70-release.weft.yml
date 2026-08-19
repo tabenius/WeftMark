@@ -62,7 +62,7 @@ tasks:
 
   - slug: open-source-license
     title: Select and document the open-source license
-    status: todo
+    status: in_progress
     priority: P0
     depends:
       - repo-bootstrap
@@ -71,6 +71,8 @@ tasks:
       files:
         - LICENSE
         - README.md
+        - THIRD_PARTY_NOTICES.md
+        - tasks/70-release.weft.yml
       contracts:
         - policy:license
     deliverables:
