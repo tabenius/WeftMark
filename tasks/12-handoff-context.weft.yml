@@ -74,7 +74,7 @@ tasks:
 
   - slug: runtime-provider-handoff-budget
     title: Apply handoff budgets when switching runtime providers
-    status: review
+    status: done
     priority: P1
     depends:
       - handoff-context-materializer
