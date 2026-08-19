@@ -8,8 +8,10 @@ or another transport boundary outside this process.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import secrets
+import socket
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,8 +19,8 @@ from threading import Lock
 from typing import Callable, Sequence
 from urllib.parse import unquote, urlsplit
 
-from weftmark.adapters.git_local import LocalGit
-from weftmark.adapters.jsonl_ledger import JsonlLedger
+from weftmark.adapters.git_local import LocalGit, LocalGitError
+from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
 from weftmark.application.claims import ClaimService
 from weftmark.application.kanban_projection import (
     KANBAN_PROJECTION_SCHEMA,
@@ -56,9 +58,15 @@ def _ledger_path(override: str | None, repository_id: str) -> Path:
 
 def _require_loopback(host: str) -> None:
     normalized = host.strip().lower()
-    if normalized in {"localhost", "127.0.0.1", "::1"}:
+    if normalized == "localhost":
         return
-    if normalized.startswith("127."):
+    try:
+        address = ipaddress.ip_address(normalized)
+    except ValueError as exc:
+        raise HttpReadError(
+            "v0 HTTP surface accepts only localhost or a literal loopback address"
+        ) from exc
+    if address.is_loopback:
         return
     raise HttpReadError(
         "v0 HTTP surface only binds to loopback; expose it remotely through an "
@@ -224,6 +232,15 @@ def make_handler(
     return Handler
 
 
+class IPv6ThreadingHTTPServer(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+    daemon_threads = True
+
+
+class IPv4ThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+
 def create_server(
     host: str,
     port: int,
@@ -234,7 +251,8 @@ def create_server(
     _require_loopback(host)
     if not (0 <= port <= 65535):
         raise HttpReadError("port must be between 0 and 65535")
-    return ThreadingHTTPServer((host, port), make_handler(provider, token=token))
+    server_type = IPv6ThreadingHTTPServer if ":" in host else IPv4ThreadingHTTPServer
+    return server_type((host, port), make_handler(provider, token=token))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -259,7 +277,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         token = _read_token(args.token_file)
         provider = LocalProjectionProvider(args.repo, args.ledger)
         server = create_server(args.host, args.port, provider, token=token)
-    except (HttpReadError, OSError, ValueError) as exc:
+    except (HttpReadError, LocalGitError, JsonlLedgerError, OSError) as exc:
         print(f"error: {exc}")
         return 2
 
