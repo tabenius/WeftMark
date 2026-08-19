@@ -46,7 +46,7 @@ tasks:
 
   - slug: kanban-http-read-surface
     title: Serve the Kanban projection through a minimal local HTTP interface
-    status: in_progress
+    status: done
     priority: P1
     depends:
       - kanban-read-model-v0
@@ -70,7 +70,7 @@ tasks:
       - HTTP output is semantically equivalent to the application projection.
       - Read requests never refresh or mutate Change Sets implicitly.
       - Mutation methods are explicitly refused.
-      - Health checks do not expose workspace state.
+      - Health checks and unknown routes do not expose or read workspace state.
     negative:
       - First HTTP slice exposes no mutation endpoint.
       - Non-loopback binding is refused even when a bearer token is configured.
