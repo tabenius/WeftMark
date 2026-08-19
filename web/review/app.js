@@ -17,6 +17,7 @@ const elements = {
   message: document.querySelector("#message"),
   sourceStatus: document.querySelector("#source-status"),
   refresh: document.querySelector("#refresh-button"),
+  fileButton: document.querySelector("#file-button"),
   file: document.querySelector("#file-input"),
   countCards: document.querySelector("#count-cards"),
   countClaims: document.querySelector("#count-claims"),
@@ -105,46 +106,35 @@ function statusBadge(readiness) {
 function renderCard(card) {
   const button = el("button", { className: "card", type: "button" });
   button.append(el("span", { className: "card-title", text: card.title }));
-
   const badges = el("span", { className: "badges" });
   badges.append(statusBadge(card.readiness));
   for (const attention of card.attention || []) badges.append(attentionBadge(attention));
   button.append(badges);
-
   const evidence = card.evidence || {};
-  button.append(
-    el("span", { className: "evidence-mini" }, [
-      el("span", { text: `${evidence.current ?? 0} current` }),
-      el("span", { text: `${evidence.failed ?? 0} failed` }),
-      el("span", { text: `${evidence.obsolete ?? 0} stale` }),
-    ]),
-  );
-
-  button.append(
-    el("span", { className: "card-meta" }, [
-      el("span", { text: card.git?.branch || "no branch" }),
-      el("span", { className: "mono", text: shortSha(card.git?.head_sha) }),
-    ]),
-  );
+  button.append(el("span", { className: "evidence-mini" }, [
+    el("span", { text: `${evidence.current ?? 0} current` }),
+    el("span", { text: `${evidence.failed ?? 0} failed` }),
+    el("span", { text: `${evidence.obsolete ?? 0} stale` }),
+  ]));
+  button.append(el("span", { className: "card-meta" }, [
+    el("span", { text: card.git?.branch || "no branch" }),
+    el("span", { className: "mono", text: shortSha(card.git?.head_sha) }),
+  ]));
   button.addEventListener("click", () => openDetail(card));
   return button;
 }
 
 function renderBoard() {
   elements.board.replaceChildren();
-  const cards = projection.cards;
   const byLane = Object.fromEntries(LANES.map((lane) => [lane, []]));
-  for (const card of cards) byLane[card.lane].push(card);
-
+  for (const card of projection.cards) byLane[card.lane].push(card);
   for (const lane of LANES) {
     const laneCards = byLane[lane];
     const section = el("section", { className: "lane", "aria-labelledby": `lane-${lane}` });
-    section.append(
-      el("header", { className: "lane-header" }, [
-        el("h2", { id: `lane-${lane}`, className: "lane-title", text: lane }),
-        el("span", { className: "lane-count", text: String(laneCards.length) }),
-      ]),
-    );
+    section.append(el("header", { className: "lane-header" }, [
+      el("h2", { id: `lane-${lane}`, className: "lane-title", text: lane }),
+      el("span", { className: "lane-count", text: String(laneCards.length) }),
+    ]));
     const list = el("div", { className: "cards" });
     if (laneCards.length === 0) list.append(el("p", { className: "empty-lane", text: "No Change Sets in this lane." }));
     for (const card of laneCards) list.append(renderCard(card));
@@ -181,16 +171,12 @@ function renderCollisions(card) {
   for (const collision of collisions) {
     const requested = collision.requested_scope || {};
     const owned = collision.owned_scope || {};
-    container.append(
-      el("div", { className: "collision" }, [
-        definitionRows([
-          ["Blocked by", collision.competing_change_set_id, true],
-          ["Claim", collision.claim_id, true],
-          ["Requested", `${requested.kind || "scope"}:${requested.key || "?"}`, true],
-          ["Owned", `${owned.kind || "scope"}:${owned.key || "?"}`, true],
-        ]),
-      ]),
-    );
+    container.append(el("div", { className: "collision" }, [definitionRows([
+      ["Blocked by", collision.competing_change_set_id, true],
+      ["Claim", collision.claim_id, true],
+      ["Requested", `${requested.kind || "scope"}:${requested.key || "?"}`, true],
+      ["Owned", `${owned.kind || "scope"}:${owned.key || "?"}`, true],
+    ])]));
   }
   return container;
 }
@@ -199,60 +185,34 @@ function openDetail(card) {
   elements.detailLane.textContent = `${card.lane} · ${humanize(card.readiness)}`;
   elements.detailTitle.textContent = card.title;
   elements.detailContent.replaceChildren();
-
-  elements.detailContent.append(
-    detailSection("State", definitionRows([
-      ["Change Set", card.id, true],
-      ["Lifecycle", humanize(card.lifecycle_state)],
-      ["Readiness", humanize(card.readiness)],
-      ["Active claims", (card.claims?.active_ids || []).join(", ") || "none", true],
-    ])),
-  );
+  elements.detailContent.append(detailSection("State", definitionRows([
+    ["Change Set", card.id, true],
+    ["Lifecycle", humanize(card.lifecycle_state)],
+    ["Readiness", humanize(card.readiness)],
+    ["Active claims", (card.claims?.active_ids || []).join(", ") || "none", true],
+  ])));
   elements.detailContent.append(detailSection("Scope blockers", renderCollisions(card)));
-
   const evidence = card.evidence || {};
-  elements.detailContent.append(
-    detailSection("Evidence", definitionRows([
-      ["Total", evidence.total ?? 0],
-      ["Current", evidence.current ?? 0],
-      ["Failed", evidence.failed ?? 0],
-      ["Unavailable", evidence.unavailable ?? 0],
-      ["Obsolete", evidence.obsolete ?? 0],
-    ])),
-  );
-
+  elements.detailContent.append(detailSection("Evidence", definitionRows([
+    ["Total", evidence.total ?? 0], ["Current", evidence.current ?? 0],
+    ["Failed", evidence.failed ?? 0], ["Unavailable", evidence.unavailable ?? 0],
+    ["Obsolete", evidence.obsolete ?? 0],
+  ])));
   const review = card.review;
-  elements.detailContent.append(
-    detailSection("Review", review
-      ? definitionRows([
-        ["Decision", review.id, true],
-        ["Outcome", humanize(review.outcome)],
-        ["Head", shortSha(review.head_sha), true],
-        ["Current", review.is_current ? "yes" : "no"],
-      ])
-      : el("p", { text: "No review decision recorded." })),
-  );
-
+  elements.detailContent.append(detailSection("Review", review ? definitionRows([
+    ["Decision", review.id, true], ["Outcome", humanize(review.outcome)],
+    ["Head", shortSha(review.head_sha), true], ["Current", review.is_current ? "yes" : "no"],
+  ]) : el("p", { text: "No review decision recorded." })));
   const handoff = card.handoff;
-  elements.detailContent.append(
-    detailSection("Handoff", handoff
-      ? definitionRows([
-        ["Handoff", handoff.id, true],
-        ["Head", shortSha(handoff.head_sha), true],
-        ["Current", handoff.is_current ? "yes" : "no"],
-      ])
-      : el("p", { text: "No handoff recorded." })),
-  );
-
-  elements.detailContent.append(
-    detailSection("Git observation", definitionRows([
-      ["Branch", card.git?.branch, true],
-      ["Head", card.git?.head_sha, true],
-      ["Observed", formatTime(card.git?.observed_at)],
-      ["Dirty paths", (card.git?.dirty_paths || []).join(", ") || "none", true],
-    ])),
-  );
-
+  elements.detailContent.append(detailSection("Handoff", handoff ? definitionRows([
+    ["Handoff", handoff.id, true], ["Head", shortSha(handoff.head_sha), true],
+    ["Current", handoff.is_current ? "yes" : "no"],
+  ]) : el("p", { text: "No handoff recorded." })));
+  elements.detailContent.append(detailSection("Git observation", definitionRows([
+    ["Branch", card.git?.branch, true], ["Head", card.git?.head_sha, true],
+    ["Observed", formatTime(card.git?.observed_at)],
+    ["Dirty paths", (card.git?.dirty_paths || []).join(", ") || "none", true],
+  ])));
   if (!elements.dialog.open) elements.dialog.showModal();
 }
 
@@ -279,8 +239,7 @@ async function loadFromUrl(url) {
 }
 
 async function loadFromFile(file) {
-  const text = await file.text();
-  projection = validateProjection(JSON.parse(text));
+  projection = validateProjection(JSON.parse(await file.text()));
   source = { kind: "file", value: file.name };
   elements.refresh.disabled = true;
   elements.sourceStatus.textContent = `File · ${file.name}`;
@@ -297,6 +256,7 @@ async function loadCurrentSource() {
 }
 
 elements.refresh.addEventListener("click", loadCurrentSource);
+elements.fileButton.addEventListener("click", () => elements.file.click());
 elements.file.addEventListener("change", async () => {
   const [file] = elements.file.files;
   if (!file) return;
