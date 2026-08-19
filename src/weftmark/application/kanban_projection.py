@@ -29,6 +29,8 @@ class KanbanLane(StrEnum):
 class KanbanAttention(StrEnum):
     DIRTY_WORKTREE = "dirty_worktree"
     OBSOLETE_EVIDENCE = "obsolete_evidence"
+    FAILED_EVIDENCE = "failed_evidence"
+    UNAVAILABLE_EVIDENCE = "unavailable_evidence"
     BLOCKED = "blocked"
     EVIDENCE_INCOMPLETE = "evidence_incomplete"
     STALE_REVIEW = "stale_review"
@@ -102,6 +104,10 @@ def _attention_for(status: ChangeSetStatus) -> tuple[KanbanAttention, ...]:
         values.append(KanbanAttention.DIRTY_WORKTREE)
     if status.obsolete_evidence_count:
         values.append(KanbanAttention.OBSOLETE_EVIDENCE)
+    if status.failed_evidence_count:
+        values.append(KanbanAttention.FAILED_EVIDENCE)
+    if status.unavailable_evidence_count:
+        values.append(KanbanAttention.UNAVAILABLE_EVIDENCE)
     if status.readiness == "blocked":
         values.append(KanbanAttention.BLOCKED)
     if status.readiness == "evidence_incomplete":
