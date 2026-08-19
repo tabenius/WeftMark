@@ -1,6 +1,6 @@
 """Token-budgeted handoff materialization policy.
 
-A durable :class:`Handoff` remains lossless.  These profiles describe how much
+A durable :class:`Handoff` remains lossless. These profiles describe how much
 of its addressable context a receiving worker may expand automatically.
 """
 
@@ -51,6 +51,10 @@ class HandoffContextBudget:
     strict ceiling: a materializer must fail closed rather than deliberately
     exceed it. Token counting may use the target provider's tokenizer when one
     is available.
+
+    Known failures deliberately have no count limit: they are readiness-critical
+    mandatory context. If all mandatory context cannot fit below ``hard_max_tokens``,
+    materialization must fail rather than hide a failure.
     """
 
     variant: HandoffContextVariant
@@ -58,7 +62,6 @@ class HandoffContextBudget:
     hard_max_tokens: int
     max_evidence_summaries: int
     max_decision_summaries: int
-    max_known_failures: int
     max_changed_paths: int
     focused_excerpt_tokens: int
     source_modes: Mapping[HandoffContextSource, HandoffExpansionMode]
@@ -73,7 +76,6 @@ class HandoffContextBudget:
         for name in (
             "max_evidence_summaries",
             "max_decision_summaries",
-            "max_known_failures",
             "max_changed_paths",
             "focused_excerpt_tokens",
         ):
@@ -141,7 +143,6 @@ class HandoffContextBudget:
             "limits": {
                 "evidence_summaries": self.max_evidence_summaries,
                 "decision_summaries": self.max_decision_summaries,
-                "known_failures": self.max_known_failures,
                 "changed_paths": self.max_changed_paths,
                 "focused_excerpt_tokens": self.focused_excerpt_tokens,
             },
@@ -181,7 +182,6 @@ _HANDOFF_CONTEXT_BUDGETS: Mapping[HandoffContextVariant, HandoffContextBudget] =
             hard_max_tokens=1_200,
             max_evidence_summaries=6,
             max_decision_summaries=4,
-            max_known_failures=6,
             max_changed_paths=12,
             focused_excerpt_tokens=0,
             source_modes=_source_modes(deep=False),
@@ -192,7 +192,6 @@ _HANDOFF_CONTEXT_BUDGETS: Mapping[HandoffContextVariant, HandoffContextBudget] =
             hard_max_tokens=2_500,
             max_evidence_summaries=12,
             max_decision_summaries=8,
-            max_known_failures=10,
             max_changed_paths=30,
             focused_excerpt_tokens=0,
             source_modes=_source_modes(deep=False),
@@ -203,7 +202,6 @@ _HANDOFF_CONTEXT_BUDGETS: Mapping[HandoffContextVariant, HandoffContextBudget] =
             hard_max_tokens=6_500,
             max_evidence_summaries=30,
             max_decision_summaries=20,
-            max_known_failures=20,
             max_changed_paths=80,
             focused_excerpt_tokens=1_400,
             source_modes=_source_modes(deep=True),
