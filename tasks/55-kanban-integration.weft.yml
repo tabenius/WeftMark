@@ -114,7 +114,7 @@ tasks:
 
   - slug: kanban-scope-collision-projection
     title: Expose semantic scope collisions to board clients
-    status: in_progress
+    status: done
     priority: P1
     depends:
       - kanban-read-model-v0
