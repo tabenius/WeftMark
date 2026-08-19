@@ -277,9 +277,13 @@ class ControlService:
         execute: Callable[[], Mapping[str, Any]],
     ) -> ControlResult:
         key = _require_idempotency_key(idempotency_key)
+        key_entity_id = "idem-" + hashlib.sha256(key.encode("utf-8")).hexdigest()
         request_sha256 = hashlib.sha256(_canonical_json(request).encode()).hexdigest()
         with self._lock:
-            prior = self._ledger.latest(kind=self._IDEMPOTENCY_KIND, entity_id=key)
+            prior = self._ledger.latest(
+                kind=self._IDEMPOTENCY_KIND,
+                entity_id=key_entity_id,
+            )
             if prior is not None:
                 payload = prior.payload
                 if (
@@ -301,7 +305,7 @@ class ControlService:
             response = dict(execute())
             self._ledger.record(
                 kind=self._IDEMPOTENCY_KIND,
-                entity_id=key,
+                entity_id=key_entity_id,
                 payload={
                     "schema_version": 1,
                     "operation": operation,
