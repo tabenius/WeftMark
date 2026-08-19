@@ -74,29 +74,42 @@ tasks:
 
   - slug: runtime-provider-handoff-budget
     title: Apply handoff budgets when switching runtime providers
-    status: todo
+    status: done
     priority: P1
     depends:
       - handoff-context-materializer
       - kanban-client-architecture-spike
     purpose: Make provider hot-swap an explicit checkpoint/materialize/attach operation with bounded receiving context.
     scope:
+      files:
+        - src/weftmark/application/runtime_provider_handoff.py
+        - tests/application/test_runtime_provider_handoff.py
+        - docs/contracts/runtime-provider-handoff-v0.md
+        - tasks/12-handoff-context.weft.yml
       contracts:
         - boundary:runtime-provider-handoff
+        - surface:runtime-provider-handoff-v0
     deliverables:
       - Provider switch request selecting compact, standard or deep context.
-      - Durable source and destination runtime attachment provenance.
+      - Durable request/completion/failure records with source and destination attachment provenance.
+      - Context digest/token metadata without prompt duplication in the ledger.
       - Revalidation policy hook when runtime/environment changes affect evidence.
     accept:
       - The same durable handoff can be materialized under different variants without mutation.
+      - Provider switch materializes before source stop, so budget failure has no runtime side effects.
+      - Active source workers are explicitly stopped before a fresh destination session is started.
+      - Destination provider identity and immutable base SHA are verified.
       - Provider switch never replays the source provider transcript unless explicitly retrieved.
+      - Environment-bound evidence can be selected for revalidation without mutating Evidence state.
     negative:
       - Active PTY/process state is not represented as portable across providers.
       - Switching provider never promotes evidence or readiness.
+      - Materialized prompt content is not duplicated in runtime-switch ledger records.
+      - Arbitrary provider exception text is not copied to the ledger.
     evidence:
       - kind: test
         required: true
-        command: python -m pytest tests/application/test_handoff_materializer.py
+        command: python -m pytest tests/application/test_runtime_provider_handoff.py tests/application/test_handoff_materializer.py
       - kind: review
         required: true
-        criterion: Provider switching preserves source/destination provenance and does not imply process-state portability or evidence promotion.
+        criterion: Provider switching preserves source/destination provenance and does not imply process-state portability, evidence promotion, or hidden prompt persistence.
