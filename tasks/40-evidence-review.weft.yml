@@ -90,7 +90,7 @@ tasks:
 
   - slug: docs-assurance-facts
     title: Define machine-readable product assurance facts
-    status: in_progress
+    status: done
     priority: P1
     depends:
       - evidence-policy-model
