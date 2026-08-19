@@ -23,6 +23,8 @@ def status(
     readiness: str = "unreviewed",
     dirty_paths: tuple[str, ...] = (),
     obsolete_evidence_count: int = 0,
+    failed_evidence_count: int = 0,
+    unavailable_evidence_count: int = 0,
     latest_review_id: str | None = None,
     latest_review_outcome: str | None = None,
     latest_review_is_current: bool = False,
@@ -41,8 +43,8 @@ def status(
         evidence_count=2,
         current_evidence_count=2 - obsolete_evidence_count,
         obsolete_evidence_count=obsolete_evidence_count,
-        failed_evidence_count=0,
-        unavailable_evidence_count=0,
+        failed_evidence_count=failed_evidence_count,
+        unavailable_evidence_count=unavailable_evidence_count,
         latest_review_id=latest_review_id,
         latest_review_outcome=latest_review_outcome,
         latest_review_head_sha=(
@@ -77,6 +79,14 @@ def test_projection_maps_domain_lifecycle_to_small_board_lane_set() -> None:
             latest_review_outcome="ready",
             latest_review_is_current=True,
         ),
+        status(
+            id="ready-follow-up",
+            lifecycle_state="review",
+            readiness="ready_with_follow_up",
+            latest_review_id="review-ready-follow-up",
+            latest_review_outcome="ready_with_follow_up",
+            latest_review_is_current=True,
+        ),
         status(id="merged", lifecycle_state="merged"),
     )
 
@@ -86,6 +96,7 @@ def test_projection_maps_domain_lifecycle_to_small_board_lane_set() -> None:
         KanbanLane.BACKLOG,
         KanbanLane.ACTIVE,
         KanbanLane.REVIEW,
+        KanbanLane.READY,
         KanbanLane.READY,
         KanbanLane.DONE,
     )
@@ -98,6 +109,8 @@ def test_projection_preserves_authoritative_status_and_marks_attention() -> None
         readiness="stale",
         dirty_paths=("src/auth.py",),
         obsolete_evidence_count=1,
+        failed_evidence_count=1,
+        unavailable_evidence_count=1,
         latest_review_id="review-stale",
         latest_review_outcome="ready",
         latest_review_is_current=False,
@@ -111,9 +124,28 @@ def test_projection_preserves_authoritative_status_and_marks_attention() -> None
     assert card.attention == (
         KanbanAttention.DIRTY_WORKTREE,
         KanbanAttention.OBSOLETE_EVIDENCE,
+        KanbanAttention.FAILED_EVIDENCE,
+        KanbanAttention.UNAVAILABLE_EVIDENCE,
         KanbanAttention.STALE_REVIEW,
         KanbanAttention.STALE_HANDOFF,
     )
+
+
+def test_failed_evidence_is_visible_before_formal_review() -> None:
+    card = project_change_set(
+        status(
+            id="failing",
+            lifecycle_state="active",
+            readiness="unreviewed",
+            failed_evidence_count=1,
+            unavailable_evidence_count=1,
+        )
+    )
+
+    assert card.lane is KanbanLane.ACTIVE
+    assert card.readiness == "unreviewed"
+    assert KanbanAttention.FAILED_EVIDENCE in card.attention
+    assert KanbanAttention.UNAVAILABLE_EVIDENCE in card.attention
 
 
 def test_unknown_lifecycle_fails_safe_into_review_attention() -> None:
