@@ -209,7 +209,7 @@ tasks:
 
   - slug: tablet-web-read-model
     title: Prototype a tablet-friendly read-only review web surface
-    status: todo
+    status: in_progress
     priority: P2
     depends:
       - cli-surface
@@ -217,17 +217,30 @@ tasks:
     purpose: Explore the product as an evidence/review instrument without prematurely building a full SaaS control plane.
     scope:
       files:
-        - web/**
+        - web/review/**
+        - tests/web/**
+        - tasks/50-surfaces.weft.yml
       contracts:
         - surface:web-review-v0
+        - integration:kanban-v0
     deliverables:
-      - Responsive Change Set/evidence/review pages optimized for tablet widths.
+      - Responsive board and detail views optimized for tablet and phone widths.
+      - Live same-origin consumption of `weftmark.kanban-projection.v0`.
+      - Exported-projection file mode requiring no API connection or proprietary cloud service.
+      - Reviewer views for lifecycle/readiness, evidence, semantic blockers, review/handoff, and Git observation.
     accept:
       - Read-only view can be produced from exported local state.
-      - No proprietary cloud dependency is required for local use.
+      - Live mode consumes the existing WeftMark projection rather than Git/ledger state directly.
+      - Semantic scope collisions and failed/unavailable/stale evidence remain visible on small screens.
+      - Surface has no external JavaScript/CSS dependency and uses touch-sized controls.
     negative:
       - The prototype does not become an alternate source of truth for task or evidence state.
+      - The browser client does not issue mutation requests or access Git/ledger files directly.
+      - The prototype does not require a proprietary cloud dependency or permissive CORS.
     evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/web/test_review_surface.py
       - kind: review
         required: true
-        criterion: Tablet view supports reviewer questions described in docs/weftmark.mdx.
+        criterion: Tablet/phone view answers intent, current state, proof, blockers, review, handoff, and lineage questions without agent chat transcripts.
