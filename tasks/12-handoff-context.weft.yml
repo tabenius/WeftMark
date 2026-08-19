@@ -51,7 +51,7 @@ tasks:
     scope:
       files:
         - src/weftmark/application/handoff_context.py
-        - tests/application/test_handoff_context.py
+        - tests/application/test_handoff_materializer.py
         - docs/contracts/handoff-context-budget-v0.md
       contracts:
         - surface:handoff-context-materializer-v0
@@ -70,7 +70,7 @@ tasks:
     evidence:
       - kind: test
         required: true
-        command: python -m pytest tests/application/test_handoff_context.py
+        command: python -m pytest tests/application/test_handoff_materializer.py
 
   - slug: runtime-provider-handoff-budget
     title: Apply handoff budgets when switching runtime providers
@@ -96,7 +96,7 @@ tasks:
     evidence:
       - kind: test
         required: true
-        command: python -m pytest tests/application/test_handoff_context.py
+        command: python -m pytest tests/application/test_handoff_materializer.py
       - kind: review
         required: true
         criterion: Provider switching preserves source/destination provenance and does not imply process-state portability or evidence promotion.
