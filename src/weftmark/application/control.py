@@ -9,24 +9,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from threading import Lock
 from typing import Any, Callable, Mapping
 
-from weftmark.application.claims import (
-    Claim,
-    ClaimService,
-    ClaimServiceError,
-    claim_to_payload,
-)
+from weftmark.application.claims import Claim, ClaimService, claim_to_payload
 from weftmark.application.ledger import LedgerService
-from weftmark.application.local_workflow import LocalWorkflowError, LocalWorkflowService
-from weftmark.application.task_claims import (
-    TaskClaimError,
-    TaskClaimService,
-    task_claim_result_to_payload,
-)
+from weftmark.application.local_workflow import LocalWorkflowService
+from weftmark.application.task_claims import TaskClaimService, task_claim_result_to_payload
 from weftmark.domain.lock import LockEventKind, LockState
 
 
@@ -54,6 +46,18 @@ class ControlResult:
             "replayed": self.replayed,
             "result": dict(self.payload),
         }
+
+
+_IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
+_SECRETLIKE_ID_PREFIXES = (
+    "github_pat_",
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "sk-",
+)
 
 
 class ControlService:
@@ -342,8 +346,15 @@ def _require_time(value: datetime) -> None:
 
 def _require_idempotency_key(value: str) -> str:
     normalized = _require_text("idempotency_key", value)
-    if len(normalized) > 200:
-        raise ControlServiceError("idempotency_key must not exceed 200 characters")
+    if not _IDEMPOTENCY_KEY.fullmatch(normalized):
+        raise ControlServiceError(
+            "idempotency_key must be 8-128 identifier characters"
+        )
+    lower = normalized.casefold()
+    if lower.startswith(_SECRETLIKE_ID_PREFIXES):
+        raise ControlServiceError("idempotency_key must not look like a credential")
+    if any(marker in lower for marker in ("password=", "secret=", "token=", "api_key=")):
+        raise ControlServiceError("idempotency_key must not contain credential material")
     return normalized
 
 
@@ -388,14 +399,3 @@ def _same_handoff_request(
         and tuple(payload.get("known_failures", ())) == known_failures
         and payload.get("supersedes_id") == supersedes_id
     )
-
-
-# Re-exported exception types make interface layers able to map failures without
-# importing deeper implementation modules solely for exception classification.
-CONTROL_MUTATION_ERRORS = (
-    ControlServiceError,
-    ControlConflict,
-    TaskClaimError,
-    ClaimServiceError,
-    LocalWorkflowError,
-)
