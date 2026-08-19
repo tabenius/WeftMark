@@ -5,7 +5,7 @@ summary: Bound provider-switch context costs without making chat history canonic
 tasks:
   - slug: handoff-context-budget-v0
     title: Define token-budgeted handoff materialization profiles
-    status: review
+    status: done
     priority: P1
     depends:
       - handoff-core-model
