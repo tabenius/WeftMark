@@ -5,7 +5,7 @@ summary: Project WeftMark coordination state into a replaceable Kanban-style con
 tasks:
   - slug: kanban-read-model-v0
     title: Define the stable read-only Kanban projection
-    status: review
+    status: done
     priority: P0
     depends:
       - workspace-status-summary
@@ -22,7 +22,7 @@ tasks:
     deliverables:
       - Versioned read-only projection over StatusService.
       - Deterministic mapping to backlog, active, review, ready and done lanes.
-      - Attention flags for dirty, stale, blocked and evidence-incomplete work.
+      - Attention flags for dirty, stale, failed, unavailable, blocked and evidence-incomplete work.
       - Contract documentation suitable for a separate board client.
     accept:
       - Projection does not read Git or ledger adapters directly.
