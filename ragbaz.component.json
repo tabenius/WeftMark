@@ -32,7 +32,7 @@
         "label": "WeftMark product and implementation design",
         "version": "0",
         "supportTier": "prototype",
-        "description": "Repository-grounded product architecture, task graph, documentation build, and brand assets. Runtime coordination capabilities are planned, not yet implemented."
+        "description": "Prototype runtime and repository-grounded architecture for local Change Sets, semantic claims, Git lineage, evidence, review, handoff, CLI/status, and read-only board/mobile projections."
       }
     ]
   },
@@ -75,7 +75,7 @@
       "public"
     ],
     "secretAccess": "none",
-    "revocation": "No runtime access surface exists in the prototype repository.",
+    "revocation": "No remote mutation surface exists in the prototype. The HTTP read surface is loopback-only; its optional local bearer token is replaced by restarting with a different token file.",
     "auditEvents": []
   },
   "health": {
@@ -111,6 +111,6 @@
   "metadata": {
     "origin": "RAGBAZ Frog evolution",
     "sourceSnapshot": "2026-08-11",
-    "runtimeImplemented": false
+    "runtimeImplemented": true
   }
 }
