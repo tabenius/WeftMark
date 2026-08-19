@@ -6,11 +6,22 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from weftmark.application.claims import ClaimService
+from weftmark.application.claims import Claim, ClaimService
 from weftmark.application.local_workflow import LocalWorkflowService
 from weftmark.application.workspace import WorkspaceService
 from weftmark.domain.evidence import EvidenceState, SubjectKind
-from weftmark.domain.lock import LockState
+from weftmark.domain.lock import LockState, scopes_overlap
+from weftmark.domain.scope import Scope
+
+
+@dataclass(frozen=True, slots=True)
+class ScopeCollision:
+    """A declared Change Set scope blocked by another active claim."""
+
+    claim_id: str
+    competing_change_set_id: str
+    requested_scope: Scope
+    owned_scope: Scope
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +46,7 @@ class ChangeSetStatus:
     latest_handoff_id: str | None
     latest_handoff_head_sha: str | None
     latest_handoff_is_current: bool
+    scope_collisions: tuple[ScopeCollision, ...] = ()
 
     @property
     def readiness(self) -> str:
@@ -52,6 +64,54 @@ class WorkspaceStatus:
     active_claim_count: int
     expired_claim_count: int
     released_claim_count: int
+
+
+def _scope_collisions(
+    *,
+    change_set_id: str,
+    declared_scopes: tuple[str, ...],
+    claims: tuple[Claim, ...],
+    observed_at: datetime,
+) -> tuple[ScopeCollision, ...]:
+    """Find active ownership that would prevent this Change Set from claiming scope.
+
+    This is intentionally asymmetric: a Change Set is not reported as colliding
+    with its own active claim. The result answers what currently blocks this
+    Change Set, rather than reconstructing an impossible pair of conflicting
+    successful claims.
+    """
+
+    requested = tuple(Scope.parse(value) for value in declared_scopes)
+    collisions: list[ScopeCollision] = []
+    for claim in claims:
+        if claim.change_set_id == change_set_id:
+            continue
+        if claim.state_at(observed_at) is not LockState.ACTIVE:
+            continue
+        for requested_scope in requested:
+            for lock in claim.locks:
+                if not lock.owns_scope_at(observed_at):
+                    continue
+                if scopes_overlap(requested_scope, lock.scope):
+                    collisions.append(
+                        ScopeCollision(
+                            claim_id=claim.id,
+                            competing_change_set_id=claim.change_set_id,
+                            requested_scope=requested_scope,
+                            owned_scope=lock.scope,
+                        )
+                    )
+    return tuple(
+        sorted(
+            collisions,
+            key=lambda value: (
+                value.competing_change_set_id,
+                value.claim_id,
+                value.requested_scope.canonical,
+                value.owned_scope.canonical,
+            ),
+        )
+    )
 
 
 class StatusService:
@@ -151,6 +211,12 @@ class StatusService:
                         latest_handoff is not None
                         and latest_handoff.head_sha == binding.latest.head_sha
                     ),
+                    scope_collisions=_scope_collisions(
+                        change_set_id=change_set_id,
+                        declared_scopes=binding.change_set.scopes,
+                        claims=claims,
+                        observed_at=observed_at,
+                    ),
                 )
             )
         states = tuple(claim.state_at(observed_at) for claim in claims)
@@ -161,6 +227,15 @@ class StatusService:
             expired_claim_count=states.count(LockState.EXPIRED),
             released_claim_count=states.count(LockState.RELEASED),
         )
+
+
+def _scope_collision_to_payload(value: ScopeCollision) -> dict[str, Any]:
+    return {
+        "claim_id": value.claim_id,
+        "competing_change_set_id": value.competing_change_set_id,
+        "requested_scope": value.requested_scope.to_dict(),
+        "owned_scope": value.owned_scope.to_dict(),
+    }
 
 
 def status_to_payload(status: WorkspaceStatus) -> dict[str, Any]:
@@ -182,6 +257,10 @@ def status_to_payload(status: WorkspaceStatus) -> dict[str, Any]:
                 "observed_at": value.observed_at.isoformat(),
                 "dirty_paths": list(value.dirty_paths),
                 "active_claim_ids": list(value.active_claim_ids),
+                "scope_collisions": [
+                    _scope_collision_to_payload(collision)
+                    for collision in value.scope_collisions
+                ],
                 "evidence": {
                     "total": value.evidence_count,
                     "current": value.current_evidence_count,
