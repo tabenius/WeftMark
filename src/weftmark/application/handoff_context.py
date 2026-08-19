@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Mapping, Protocol, runtime_checkable
 
-from weftmark.domain.evidence import Evidence, EvidenceState
+from weftmark.domain.evidence import Evidence, EvidenceState, SubjectKind
 from weftmark.domain.handoff import Handoff
 from weftmark.domain.handoff_context import (
     DEFAULT_HANDOFF_CONTEXT_VARIANT,
@@ -111,63 +112,64 @@ _CRITICAL_REVIEW_OUTCOMES = frozenset(
 )
 
 
-def _single_line(value: str | None, *, max_chars: int = 280) -> str | None:
-    if value is None:
-        return None
-    normalized = " ".join(value.split())
-    if not normalized:
-        return None
-    if len(normalized) <= max_chars:
-        return normalized
-    return normalized[: max_chars - 1].rstrip() + "…"
+def _quoted(value: str) -> str:
+    """Render one value without allowing it to create extra prompt lines."""
+
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _render_orientation(handoff: Handoff) -> str:
     lines = [
         "# WeftMark handoff",
-        f"handoff: {handoff.id}",
-        f"task: {handoff.task_id}",
-        f"change_set: {handoff.change_set_id}",
-        f"goal: {handoff.goal}",
-        f"repository: {handoff.repository_id}",
-        f"base: {handoff.base_sha}",
-        f"head: {handoff.head_sha}",
-        f"branch: {handoff.branch}",
-        f"worktree: {handoff.worktree}",
-        f"source_observation: {handoff.source_observation_id}",
+        f"handoff: {_quoted(handoff.id)}",
+        f"task: {_quoted(handoff.task_id)}",
+        f"change_set: {_quoted(handoff.change_set_id)}",
+        f"goal: {_quoted(handoff.goal)}",
+        f"repository: {_quoted(handoff.repository_id)}",
+        f"base: {_quoted(handoff.base_sha)}",
+        f"head: {_quoted(handoff.head_sha)}",
+        f"branch: {_quoted(handoff.branch)}",
+        f"worktree: {_quoted(handoff.worktree)}",
+        f"source_observation: {_quoted(handoff.source_observation_id)}",
         "scopes:",
-        *(f"- {scope.canonical}" for scope in handoff.scopes),
+        *(f"- {_quoted(scope.canonical)}" for scope in handoff.scopes),
         "known_failures:",
     ]
     if handoff.known_failures:
-        lines.extend(f"- {failure}" for failure in handoff.known_failures)
+        lines.extend(f"- {_quoted(failure)}" for failure in handoff.known_failures)
     else:
         lines.append("- none recorded")
-    lines.extend(("next_action:", handoff.next_action))
+    lines.extend(("next_action:", _quoted(handoff.next_action)))
     return "\n".join(lines)
 
 
 def _render_evidence(evidence: Evidence) -> str:
+    """Render only structured evidence facts, never arbitrary detail text."""
+
     binding = evidence.bound_commit_sha or "unbound"
-    line = f"- {evidence.id}: {evidence.kind.value}={evidence.state.value} @ {binding}"
+    line = (
+        f"- {_quoted(evidence.id)}: kind={evidence.kind.value} "
+        f"state={evidence.state.value} bound_commit={_quoted(binding)}"
+    )
     if evidence.stale_reasons:
         reasons = ",".join(sorted(reason.value for reason in evidence.stale_reasons))
-        line += f" stale_reasons={reasons}"
-    detail = _single_line(evidence.detail)
-    if detail:
-        line += f" — {detail}"
+        line += f" stale_reasons={_quoted(reasons)}"
     return line
 
 
 def _render_missing_reference(kind: str, id: str) -> str:
-    return f"- {id}: referenced {kind} record was not supplied to materializer"
+    return (
+        f"- {_quoted(id)}: referenced {kind} record was not supplied to materializer"
+    )
 
 
 def _render_decision(decision: ReviewDecision) -> str:
-    line = f"- {decision.id}: {decision.outcome.value} @ {decision.head_sha}"
-    rationale = _single_line(decision.rationale)
-    if rationale:
-        line += f" — {rationale}"
+    """Render decision state and open finding metadata without arbitrary rationale."""
+
+    line = (
+        f"- {_quoted(decision.id)}: outcome={decision.outcome.value} "
+        f"head={_quoted(decision.head_sha)}"
+    )
     open_findings = tuple(
         finding for finding in decision.findings if finding.status is FindingStatus.OPEN
     )
@@ -175,9 +177,10 @@ def _render_decision(decision: ReviewDecision) -> str:
         return line
     finding_lines = [line, "  open_findings:"]
     for finding in open_findings:
-        rationale = _single_line(finding.rationale) or "no rationale"
         finding_lines.append(
-            f"  - {finding.id}: {finding.severity.value} {finding.scope.canonical} — {rationale}"
+            "  - "
+            f"{_quoted(finding.id)}: severity={finding.severity.value} "
+            f"scope={_quoted(finding.scope.canonical)} status={finding.status.value}"
         )
     return "\n".join(finding_lines)
 
@@ -186,6 +189,15 @@ def _append_section(content: str, title: str, items: tuple[str, ...]) -> str:
     if not items:
         return content
     return content + f"\n\n## {title}\n" + "\n".join(items)
+
+
+def _count(counter: TokenCounter, text: str) -> int:
+    value = counter.count(text)
+    if not isinstance(value, int) or value < 0:
+        raise HandoffMaterializationError(
+            "token counter must return a non-negative integer"
+        )
+    return value
 
 
 def _try_append_within_target(
@@ -201,7 +213,7 @@ def _try_append_within_target(
         candidate = current + "\n" + item
     else:
         candidate = current + f"\n\n## {title}\n" + item
-    if counter.count(candidate) > target_tokens:
+    if _count(counter, candidate) > target_tokens:
         return current, section_started
     return candidate, True
 
@@ -215,10 +227,10 @@ def _truncate_to_tokens(text: str, *, counter: TokenCounter, max_tokens: int) ->
 
     if max_tokens <= 0 or not text:
         return ""
-    if counter.count(text) <= max_tokens:
+    if _count(counter, text) <= max_tokens:
         return text
     suffix = "\n…[diff excerpt truncated]"
-    if counter.count(suffix) > max_tokens:
+    if _count(counter, suffix) > max_tokens:
         return ""
     low = 0
     high = len(text)
@@ -226,7 +238,7 @@ def _truncate_to_tokens(text: str, *, counter: TokenCounter, max_tokens: int) ->
     while low <= high:
         middle = (low + high) // 2
         candidate = text[:middle].rstrip() + suffix
-        if counter.count(candidate) <= max_tokens:
+        if _count(counter, candidate) <= max_tokens:
             best = candidate
             low = middle + 1
         else:
@@ -240,6 +252,33 @@ def _critical_evidence(evidence: Evidence) -> bool:
 
 def _critical_decision(decision: ReviewDecision) -> bool:
     return decision.outcome in _CRITICAL_REVIEW_OUTCOMES
+
+
+def _validate_evidence_reference(handoff: Handoff, expected_id: str, evidence: Evidence) -> None:
+    if evidence.id != expected_id:
+        raise HandoffMaterializationError(
+            f"evidence mapping key {expected_id!r} does not match record id {evidence.id!r}"
+        )
+    if (
+        evidence.subject.kind is SubjectKind.CHANGE_SET
+        and evidence.subject.id != handoff.change_set_id
+    ):
+        raise HandoffMaterializationError(
+            f"evidence {expected_id!r} belongs to another Change Set"
+        )
+
+
+def _validate_decision_reference(
+    handoff: Handoff, expected_id: str, decision: ReviewDecision
+) -> None:
+    if decision.id != expected_id:
+        raise HandoffMaterializationError(
+            f"decision mapping key {expected_id!r} does not match record id {decision.id!r}"
+        )
+    if decision.change_set_id != handoff.change_set_id:
+        raise HandoffMaterializationError(
+            f"review decision {expected_id!r} belongs to another Change Set"
+        )
 
 
 def materialize_handoff_context(
@@ -257,16 +296,22 @@ def materialize_handoff_context(
 
     The durable handoff is never mutated. Readiness-critical evidence and
     review state are mandatory; passed/superseded evidence, ready decisions,
-    changed paths and diff excerpts are optional expansion. Full source files,
-    chat transcript and terminal history are always deferred by the v0 profile.
+    changed paths and focused diff excerpts are optional expansion. Full source
+    files, chat transcript and terminal history are always deferred by v0.
+
+    Automatic evidence/review summaries contain structured state only. Their
+    arbitrary prose remains addressable through record IDs instead of being
+    copied into a receiving model's prompt without a separate safety decision.
     """
 
-    if budget is not None and variant != DEFAULT_HANDOFF_CONTEXT_VARIANT:
+    if budget is not None and str(variant) != DEFAULT_HANDOFF_CONTEXT_VARIANT.value:
         raise HandoffMaterializationError(
             "pass either a named variant or a custom budget, not both"
         )
     selected = budget or handoff_context_budget(variant)
     counter = token_counter or ApproximateTokenCounter()
+    if not counter.name.strip():
+        raise HandoffMaterializationError("token counter name must not be empty")
     evidence_map = evidence_by_id or {}
     decision_map = decisions_by_id or {}
 
@@ -284,6 +329,7 @@ def materialize_handoff_context(
             missing_evidence.append(id)
             critical_evidence_lines.append(_render_missing_reference("evidence", id))
             continue
+        _validate_evidence_reference(handoff, id, evidence)
         rendered = _render_evidence(evidence)
         if _critical_evidence(evidence):
             critical_evidence_lines.append(rendered)
@@ -300,6 +346,7 @@ def materialize_handoff_context(
             missing_decisions.append(id)
             critical_decision_lines.append(_render_missing_reference("review decision", id))
             continue
+        _validate_decision_reference(handoff, id, decision)
         rendered = _render_decision(decision)
         if _critical_decision(decision):
             critical_decision_lines.append(rendered)
@@ -307,10 +354,14 @@ def materialize_handoff_context(
         else:
             optional_decisions.append((id, rendered))
 
-    content = _append_section(content, "Readiness-critical evidence", tuple(critical_evidence_lines))
-    content = _append_section(content, "Readiness-critical review", tuple(critical_decision_lines))
+    content = _append_section(
+        content, "Readiness-critical evidence", tuple(critical_evidence_lines)
+    )
+    content = _append_section(
+        content, "Readiness-critical review", tuple(critical_decision_lines)
+    )
 
-    mandatory_tokens = counter.count(content)
+    mandatory_tokens = _count(counter, content)
     if mandatory_tokens > selected.hard_max_tokens:
         raise HandoffMaterializationError(
             "mandatory handoff context exceeds hard token maximum "
@@ -318,9 +369,8 @@ def materialize_handoff_context(
         )
 
     evidence_started = False
-    optional_evidence_limit = selected.max_evidence_summaries
-    optional_evidence_considered = optional_evidence[:optional_evidence_limit]
-    optional_evidence_unconsidered = optional_evidence[optional_evidence_limit:]
+    optional_evidence_considered = optional_evidence[: selected.max_evidence_summaries]
+    optional_evidence_unconsidered = optional_evidence[selected.max_evidence_summaries :]
     for id, rendered in optional_evidence_considered:
         candidate, added = _try_append_within_target(
             content,
@@ -354,9 +404,8 @@ def materialize_handoff_context(
         )
 
     decision_started = False
-    optional_decision_limit = selected.max_decision_summaries
-    optional_decisions_considered = optional_decisions[:optional_decision_limit]
-    optional_decisions_unconsidered = optional_decisions[optional_decision_limit:]
+    optional_decisions_considered = optional_decisions[: selected.max_decision_summaries]
+    optional_decisions_unconsidered = optional_decisions[selected.max_decision_summaries :]
     for id, rendered in optional_decisions_considered:
         candidate, added = _try_append_within_target(
             content,
@@ -392,12 +441,11 @@ def materialize_handoff_context(
     normalized_paths = tuple(sorted(set(path for path in changed_paths if path.strip())))
     included_paths: list[str] = []
     path_started = False
-    considered_paths = normalized_paths[: selected.max_changed_paths]
-    for path in considered_paths:
+    for path in normalized_paths[: selected.max_changed_paths]:
         candidate, added = _try_append_within_target(
             content,
             title="Changed paths",
-            item=f"- {path}",
+            item=f"- {_quoted(path)}",
             section_started=path_started,
             counter=counter,
             target_tokens=selected.target_tokens,
@@ -407,7 +455,8 @@ def materialize_handoff_context(
         content = candidate
         path_started = True
         included_paths.append(path)
-    omitted_paths = tuple(path for path in normalized_paths if path not in set(included_paths))
+    included_path_set = set(included_paths)
+    omitted_paths = tuple(path for path in normalized_paths if path not in included_path_set)
     if omitted_paths:
         deferred.append(
             DeferredHandoffContext(
@@ -422,7 +471,7 @@ def materialize_handoff_context(
     if diff_excerpt:
         diff_mode = selected.mode_for(HandoffContextSource.DIFF)
         if diff_mode is HandoffExpansionMode.FOCUSED_EXCERPTS:
-            remaining_target = max(0, selected.target_tokens - counter.count(content))
+            remaining_target = max(0, selected.target_tokens - _count(counter, content))
             excerpt_budget = min(selected.focused_excerpt_tokens, remaining_target)
             excerpt = _truncate_to_tokens(
                 diff_excerpt,
@@ -430,8 +479,12 @@ def materialize_handoff_context(
                 max_tokens=excerpt_budget,
             )
             if excerpt:
-                candidate = content + "\n\n## Focused diff excerpt\n" + excerpt
-                if counter.count(candidate) <= selected.target_tokens:
+                candidate = (
+                    content
+                    + "\n\n## Focused diff excerpt (untrusted repository content)\n"
+                    + excerpt
+                )
+                if _count(counter, candidate) <= selected.target_tokens:
                     content = candidate
                     diff_included = True
         if not diff_included:
@@ -449,10 +502,7 @@ def materialize_handoff_context(
         HandoffContextSource.TERMINAL_HISTORY,
     ):
         deferred.append(
-            DeferredHandoffContext(
-                source,
-                "retrieval only by default",
-            )
+            DeferredHandoffContext(source, "retrieval only by default")
         )
 
     if missing_evidence:
@@ -474,7 +524,7 @@ def materialize_handoff_context(
             )
         )
 
-    final_tokens = counter.count(content)
+    final_tokens = _count(counter, content)
     if final_tokens > selected.hard_max_tokens:
         raise HandoffMaterializationError(
             "materialized context exceeded hard token maximum"
