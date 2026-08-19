@@ -1,0 +1,167 @@
+format: weft-task-v0
+phase: kanban-integration
+summary: Project WeftMark coordination state into a replaceable Kanban-style control surface without moving domain authority into the UI.
+
+tasks:
+  - slug: kanban-read-model-v0
+    title: Define the stable read-only Kanban projection
+    status: done
+    priority: P0
+    depends:
+      - workspace-status-summary
+    purpose: Give Kanban and future mobile clients a small versioned board contract built from authoritative WeftMark status.
+    scope:
+      files:
+        - src/weftmark/application/kanban_projection.py
+        - tests/application/test_kanban_projection.py
+        - docs/contracts/kanban-projection-v0.md
+        - tasks/55-kanban-integration.weft.yml
+      contracts:
+        - integration:kanban-v0
+        - surface:external-board-read-v0
+    deliverables:
+      - Versioned read-only projection over StatusService.
+      - Deterministic mapping to backlog, active, review, ready and done lanes.
+      - Attention flags for dirty, stale, failed, unavailable, blocked and evidence-incomplete work.
+      - Contract documentation suitable for a separate board client.
+    accept:
+      - Projection does not read Git or ledger adapters directly.
+      - Existing lifecycle and readiness values remain present beside derived board lanes.
+      - Unknown future lifecycle states fail safe into review rather than done.
+      - Payload consists only of JSON-compatible primitives.
+    negative:
+      - Projection cannot mutate Change Sets, claims, evidence, reviews, handoffs or Git state.
+      - Board lane is never treated as the authoritative lifecycle state.
+      - V0 does not invent worker/runtime state absent from StatusService.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_kanban_projection.py
+      - kind: test
+        required: true
+        command: python scripts/validate_tasks.py
+      - kind: review
+        required: true
+        criterion: Contract keeps WeftMark authoritative and the board replaceable.
+
+  - slug: kanban-http-read-surface
+    title: Serve the Kanban projection through a minimal local HTTP interface
+    status: todo
+    priority: P1
+    depends:
+      - kanban-read-model-v0
+    purpose: Let a separately deployed Kanban/PWA client consume the same projection without filesystem or SQLite access.
+    scope:
+      files:
+        - src/weftmark/http/**
+        - tests/http/**
+      contracts:
+        - surface:http-read-v0
+        - integration:kanban-v0
+    deliverables:
+      - Read endpoint for workspace projection and individual Change Sets.
+      - Explicit schema/version response metadata.
+      - Local-first bind/authentication policy documented before remote exposure.
+    accept:
+      - HTTP output is semantically equivalent to the application projection.
+      - Read requests never refresh or mutate Change Sets implicitly.
+    negative:
+      - First HTTP slice exposes no mutation endpoint.
+      - Remote unauthenticated binding is not a default.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/http
+      - kind: security
+        required: true
+        criterion: Binding and authentication defaults reviewed before remote use.
+
+  - slug: kanban-client-architecture-spike
+    title: Map upstream Kanban internals onto the WeftMark projection
+    status: todo
+    priority: P1
+    depends:
+      - kanban-http-read-surface
+      - open-source-license
+    purpose: Identify the smallest maintainable integration seam before copying or forking substantial Kanban code.
+    scope:
+      files:
+        - docs/integrations/kanban/**
+      contracts:
+        - integration:kanban-v0
+        - boundary:third-party-code-reuse
+    deliverables:
+      - Mapping of Kanban task persistence, worktree, PTY, diff, Git and frontend/server boundaries.
+      - Recommendation among external adapter, small downstream patch, or reusable component extraction.
+      - Apache-2.0 attribution/reuse notes after WeftMark licensing is resolved.
+    accept:
+      - Spike names exact upstream seams and identifies which state must remain WeftMark-owned.
+      - No substantial upstream source is copied merely to complete the spike.
+    negative:
+      - Kanban persistence cannot become the canonical WeftMark ledger.
+      - License compatibility is not assumed before the WeftMark license gate is complete.
+    evidence:
+      - kind: review
+        required: true
+        criterion: Integration boundary is smaller than a Kanban fork and keeps upstream replaceable.
+
+  - slug: kanban-scope-collision-projection
+    title: Expose semantic scope collisions to board clients
+    status: todo
+    priority: P1
+    depends:
+      - kanban-read-model-v0
+      - semantic-lock-model
+    purpose: Surface conflicts that worktree isolation and Git file conflicts cannot detect.
+    scope:
+      files:
+        - src/weftmark/application/status.py
+        - src/weftmark/application/kanban_projection.py
+        - tests/application/**
+      contracts:
+        - contract:semantic-scope-lock-v0
+        - integration:kanban-v0
+    deliverables:
+      - Current collision summary on Change Set status.
+      - Stable collision badges in board projection.
+    accept:
+      - File-disjoint Change Sets claiming the same contract can be shown as conflicting.
+      - Collision output identifies the competing Change Set without leaking unrelated ledger state.
+    negative:
+      - Board clients do not independently compute semantic collisions.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application
+
+  - slug: kanban-write-control-bridge
+    title: Route board mutations through WeftMark application services
+    status: todo
+    priority: P2
+    depends:
+      - kanban-client-architecture-spike
+      - native-claim-workflow
+    purpose: Let board actions claim/start/review/handoff work without giving the UI direct ledger or Git authority.
+    scope:
+      files:
+        - src/weftmark/http/**
+        - src/weftmark/application/**
+        - tests/http/**
+      contracts:
+        - integration:kanban-v0
+        - boundary:remote-mutation-authority
+    deliverables:
+      - Explicit operations for claim/release and selected review/handoff actions.
+      - Idempotency and conflict semantics suitable for reconnecting mobile clients.
+    accept:
+      - Every mutation passes through existing application services and leaves durable provenance.
+      - Concurrent claims fail closed according to WeftMark ownership rules.
+    negative:
+      - UI code cannot write ledger records, create uncontrolled worktrees, or merge solely by changing a card lane.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/http tests/application
+      - kind: security
+        required: true
+        criterion: Mutation capabilities are explicitly permissioned and auditable.
