@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -36,10 +37,6 @@ class ControlRoute:
     capability: ControlCapability
     operation: str
     target_id: str
-
-
-# dataclass import kept adjacent to the public route type for a compact module API.
-from dataclasses import dataclass
 
 
 @runtime_checkable
