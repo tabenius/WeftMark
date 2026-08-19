@@ -165,6 +165,7 @@ class StatusService:
                 handoff for handoff in handoffs if handoff.change_set_id == change_set_id
             )
             latest_handoff = matching_handoffs[-1] if matching_handoffs else None
+            terminal = binding.change_set.state.value in {"merged", "closed", "abandoned"}
             values.append(
                 ChangeSetStatus(
                     id=change_set_id,
@@ -211,11 +212,15 @@ class StatusService:
                         latest_handoff is not None
                         and latest_handoff.head_sha == binding.latest.head_sha
                     ),
-                    scope_collisions=_scope_collisions(
-                        change_set_id=change_set_id,
-                        declared_scopes=binding.change_set.scopes,
-                        claims=claims,
-                        observed_at=observed_at,
+                    scope_collisions=(
+                        ()
+                        if terminal
+                        else _scope_collisions(
+                            change_set_id=change_set_id,
+                            declared_scopes=binding.change_set.scopes,
+                            claims=claims,
+                            observed_at=observed_at,
+                        )
                     ),
                 )
             )
