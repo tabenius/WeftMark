@@ -151,7 +151,7 @@ tasks:
 
   - slug: kanban-write-control-bridge
     title: Route board mutations through WeftMark application services
-    status: review
+    status: done
     priority: P1
     depends:
       - kanban-client-architecture-spike
@@ -163,6 +163,7 @@ tasks:
         - src/weftmark/http/control.py
         - src/weftmark/http/server.py
         - tests/application/test_control.py
+        - tests/application/test_control_security.py
         - tests/http/**
         - docs/contracts/http-control-v0.md
         - tasks/55-kanban-integration.weft.yml
@@ -178,6 +179,7 @@ tasks:
     accept:
       - Every mutation passes through existing application services and leaves durable provenance.
       - Reusing an idempotency key for different intent fails closed.
+      - Raw client idempotency keys are not persisted in the ledger.
       - Concurrent/retried claims preserve native task and semantic ownership rules.
       - Writes remain disabled unless a control provider, dedicated write token and at least one capability are configured.
       - Loopback-only binding and authenticated TLS proxy/tunnel remote-exposure policy remain unchanged.
@@ -189,7 +191,7 @@ tasks:
     evidence:
       - kind: test
         required: true
-        command: python -m pytest tests/http tests/application/test_control.py tests/application/test_task_claims.py
+        command: python -m pytest tests/http tests/application/test_control.py tests/application/test_control_security.py tests/application/test_task_claims.py
       - kind: security
         required: true
         criterion: Mutation capabilities, idempotency recovery, loopback transport, error disclosure and absence of direct ledger/Git authority are reviewed.
