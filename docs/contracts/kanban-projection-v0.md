@@ -37,11 +37,15 @@ V0 may emit:
 
 - `dirty_worktree`
 - `obsolete_evidence`
+- `failed_evidence`
+- `unavailable_evidence`
 - `blocked`
 - `evidence_incomplete`
 - `stale_review`
 - `stale_handoff`
 - `unknown_lifecycle_state`
+
+Evidence failure/unavailability is surfaced independently of formal readiness so a client can warn about a failing or missing proof before a review decision exists.
 
 Attention flags are hints for presentation. They never replace the authoritative lifecycle/readiness fields.
 
