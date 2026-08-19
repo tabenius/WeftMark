@@ -46,7 +46,7 @@ tasks:
 
   - slug: kanban-http-read-surface
     title: Serve the Kanban projection through a minimal local HTTP interface
-    status: todo
+    status: in_progress
     priority: P1
     depends:
       - kanban-read-model-v0
@@ -55,26 +55,33 @@ tasks:
       files:
         - src/weftmark/http/**
         - tests/http/**
+        - docs/contracts/http-read-v0.md
+        - tasks/55-kanban-integration.weft.yml
       contracts:
         - surface:http-read-v0
         - integration:kanban-v0
+        - boundary:remote-read-exposure
     deliverables:
       - Read endpoint for workspace projection and individual Change Sets.
       - Explicit schema/version response metadata.
-      - Local-first bind/authentication policy documented before remote exposure.
+      - Loopback-only v0 binding with optional local bearer-token defense in depth.
+      - Remote exposure policy requiring an authenticated TLS proxy or secure tunnel.
     accept:
       - HTTP output is semantically equivalent to the application projection.
       - Read requests never refresh or mutate Change Sets implicitly.
+      - Mutation methods are explicitly refused.
+      - Health checks do not expose workspace state.
     negative:
       - First HTTP slice exposes no mutation endpoint.
-      - Remote unauthenticated binding is not a default.
+      - Non-loopback binding is refused even when a bearer token is configured.
+      - V0 does not enable permissive CORS or pretend plaintext bearer auth is secure remote transport.
     evidence:
       - kind: test
         required: true
         command: python -m pytest tests/http
       - kind: security
         required: true
-        criterion: Binding and authentication defaults reviewed before remote use.
+        criterion: Loopback refusal and remote TLS/authentication boundary reviewed before any remote bind is added.
 
   - slug: kanban-client-architecture-spike
     title: Map upstream Kanban internals onto the WeftMark projection
