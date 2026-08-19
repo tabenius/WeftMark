@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from weftmark.application.status import ChangeSetStatus, WorkspaceStatus
+from weftmark.application.status import ChangeSetStatus, ScopeCollision, WorkspaceStatus
 
 
 KANBAN_PROJECTION_SCHEMA = "weftmark.kanban-projection.v0"
@@ -31,6 +31,7 @@ class KanbanAttention(StrEnum):
     OBSOLETE_EVIDENCE = "obsolete_evidence"
     FAILED_EVIDENCE = "failed_evidence"
     UNAVAILABLE_EVIDENCE = "unavailable_evidence"
+    SCOPE_COLLISION = "scope_collision"
     BLOCKED = "blocked"
     EVIDENCE_INCOMPLETE = "evidence_incomplete"
     STALE_REVIEW = "stale_review"
@@ -63,6 +64,7 @@ class KanbanCardProjection:
     latest_handoff_head_sha: str | None
     latest_handoff_is_current: bool
     attention: tuple[KanbanAttention, ...]
+    scope_collisions: tuple[ScopeCollision, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +110,8 @@ def _attention_for(status: ChangeSetStatus) -> tuple[KanbanAttention, ...]:
         values.append(KanbanAttention.FAILED_EVIDENCE)
     if status.unavailable_evidence_count:
         values.append(KanbanAttention.UNAVAILABLE_EVIDENCE)
+    if status.scope_collisions:
+        values.append(KanbanAttention.SCOPE_COLLISION)
     if status.readiness == "blocked":
         values.append(KanbanAttention.BLOCKED)
     if status.readiness == "evidence_incomplete":
@@ -146,6 +150,7 @@ def project_change_set(status: ChangeSetStatus) -> KanbanCardProjection:
         latest_handoff_head_sha=status.latest_handoff_head_sha,
         latest_handoff_is_current=status.latest_handoff_is_current,
         attention=_attention_for(status),
+        scope_collisions=status.scope_collisions,
     )
 
 
@@ -159,6 +164,15 @@ def project_workspace(status: WorkspaceStatus) -> KanbanProjection:
         released_claim_count=status.released_claim_count,
         cards=tuple(project_change_set(value) for value in status.change_sets),
     )
+
+
+def _collision_to_payload(value: ScopeCollision) -> dict[str, Any]:
+    return {
+        "claim_id": value.claim_id,
+        "competing_change_set_id": value.competing_change_set_id,
+        "requested_scope": value.requested_scope.to_dict(),
+        "owned_scope": value.owned_scope.to_dict(),
+    }
 
 
 def kanban_projection_to_payload(projection: KanbanProjection) -> dict[str, Any]:
@@ -193,6 +207,9 @@ def kanban_projection_to_payload(projection: KanbanProjection) -> dict[str, Any]
                 "claims": {
                     "active_ids": list(card.active_claim_ids),
                 },
+                "scope_collisions": [
+                    _collision_to_payload(value) for value in card.scope_collisions
+                ],
                 "evidence": {
                     "total": card.evidence_total,
                     "current": card.evidence_current,

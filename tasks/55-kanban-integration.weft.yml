@@ -114,7 +114,7 @@ tasks:
 
   - slug: kanban-scope-collision-projection
     title: Expose semantic scope collisions to board clients
-    status: todo
+    status: done
     priority: P1
     depends:
       - kanban-read-model-v0
@@ -125,21 +125,29 @@ tasks:
         - src/weftmark/application/status.py
         - src/weftmark/application/kanban_projection.py
         - tests/application/**
+        - docs/contracts/kanban-projection-v0.md
+        - tasks/55-kanban-integration.weft.yml
       contracts:
-        - contract:semantic-scope-lock-v0
+        - contract:semantic-lock-v0
         - integration:kanban-v0
     deliverables:
-      - Current collision summary on Change Set status.
-      - Stable collision badges in board projection.
+      - Current active-claim blocker summary on Change Set status.
+      - Stable scope-collision detail and attention badge in board projection.
     accept:
-      - File-disjoint Change Sets claiming the same contract can be shown as conflicting.
-      - Collision output identifies the competing Change Set without leaking unrelated ledger state.
+      - File-disjoint Change Sets declaring the same contract can be shown as conflicting when one currently owns that contract.
+      - Collision output identifies only the competing Change Set, claim, and overlapping canonical scopes.
+      - Released and expired claims do not remain blockers.
     negative:
       - Board clients do not independently compute semantic collisions.
+      - A Change Set is not reported as colliding with its own active claim.
+      - Status does not imply that two conflicting claims were both acquired successfully.
     evidence:
       - kind: test
         required: true
-        command: python -m pytest tests/application
+        command: python -m pytest tests/application/test_status.py tests/application/test_kanban_projection.py
+      - kind: review
+        required: true
+        criterion: Collision projection matches the existing semantic-lock acquisition/refusal rules.
 
   - slug: kanban-write-control-bridge
     title: Route board mutations through WeftMark application services

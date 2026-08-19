@@ -10,7 +10,8 @@ from weftmark.application.kanban_projection import (
     project_change_set,
     project_workspace,
 )
-from weftmark.application.status import ChangeSetStatus, WorkspaceStatus
+from weftmark.application.status import ChangeSetStatus, ScopeCollision, WorkspaceStatus
+from weftmark.domain.scope import Scope
 
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
@@ -30,6 +31,7 @@ def status(
     latest_review_is_current: bool = False,
     latest_handoff_id: str | None = None,
     latest_handoff_is_current: bool = False,
+    scope_collisions: tuple[ScopeCollision, ...] = (),
 ) -> ChangeSetStatus:
     return ChangeSetStatus(
         id=id,
@@ -56,6 +58,7 @@ def status(
             None if latest_handoff_id is None else f"handoff-head-{id}"
         ),
         latest_handoff_is_current=latest_handoff_is_current,
+        scope_collisions=scope_collisions,
     )
 
 
@@ -148,6 +151,41 @@ def test_failed_evidence_is_visible_before_formal_review() -> None:
     assert KanbanAttention.UNAVAILABLE_EVIDENCE in card.attention
 
 
+def test_scope_collision_is_projected_as_actionable_attention() -> None:
+    collision = ScopeCollision(
+        claim_id="claim-owner",
+        competing_change_set_id="chg-owner",
+        requested_scope=Scope.contract("tenant-auth"),
+        owned_scope=Scope.contract("tenant-auth"),
+    )
+    workspace = WorkspaceStatus(
+        generated_at=NOW,
+        change_sets=(
+            status(
+                id="blocked",
+                lifecycle_state="active",
+                scope_collisions=(collision,),
+            ),
+        ),
+        active_claim_count=1,
+        expired_claim_count=0,
+        released_claim_count=0,
+    )
+
+    card = project_change_set(workspace.change_sets[0])
+    payload = kanban_projection_to_payload(project_workspace(workspace))["cards"][0]
+
+    assert KanbanAttention.SCOPE_COLLISION in card.attention
+    assert payload["scope_collisions"] == [
+        {
+            "claim_id": "claim-owner",
+            "competing_change_set_id": "chg-owner",
+            "requested_scope": {"kind": "contract", "key": "tenant-auth"},
+            "owned_scope": {"kind": "contract", "key": "tenant-auth"},
+        }
+    ]
+
+
 def test_unknown_lifecycle_fails_safe_into_review_attention() -> None:
     card = project_change_set(status(id="future", lifecycle_state="future_state"))
 
@@ -179,4 +217,5 @@ def test_workspace_payload_is_versioned_read_only_and_json_compatible() -> None:
     }
     assert payload["cards"][0]["lane"] == "active"
     assert payload["cards"][0]["claims"]["active_ids"] == ["claim-active"]
+    assert payload["cards"][0]["scope_collisions"] == []
     assert payload["cards"][0]["git"]["head_sha"] == "head-active"

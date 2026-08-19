@@ -44,7 +44,7 @@ def setup(
         id="chg-1",
         goal="Summarize the workspace",
         base_revision="HEAD",
-        scopes=(Scope.file("**"), Scope.contract("status-v0")),
+        scopes=(Scope.file("src/**"), Scope.contract("status-v0")),
         created_at=NOW,
     )
     claims = ClaimService(workspace, ledger)
@@ -109,6 +109,7 @@ def test_status_composes_current_claim_evidence_review_and_handoff(
     }
     assert value["readiness"] == "ready"
     assert value["active_claim_ids"] == ["claim-1"]
+    assert value["scope_collisions"] == []
     assert value["evidence"] == {
         "total": 1,
         "current": 1,
@@ -166,3 +167,49 @@ def test_status_marks_old_proof_and_decisions_stale_after_observed_head_moves(
     assert payload["evidence"]["obsolete"] == 1
     assert not payload["latest_review"]["is_current"]
     assert not payload["latest_handoff"]["is_current"]
+
+
+def test_status_exposes_cross_file_contract_blocker_until_claim_expires(
+    tmp_path: Path,
+) -> None:
+    workspace, claims, workflow = setup(tmp_path)
+    workspace.create_change_set(
+        id="chg-2",
+        goal="Change documentation-side authentication behavior",
+        base_revision="HEAD",
+        scopes=(Scope.file("docs/**"), Scope.contract("status-v0")),
+        created_at=NOW + timedelta(milliseconds=500),
+    )
+    claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW + timedelta(seconds=1),
+        lease_seconds=10,
+    )
+
+    active = status_to_payload(
+        StatusService(workspace, claims, workflow).summarize(
+            observed_at=NOW + timedelta(seconds=2)
+        )
+    )
+    by_id = {value["id"]: value for value in active["change_sets"]}
+
+    assert by_id["chg-1"]["scope_collisions"] == []
+    assert by_id["chg-2"]["scope_collisions"] == [
+        {
+            "claim_id": "claim-1",
+            "competing_change_set_id": "chg-1",
+            "requested_scope": {"kind": "contract", "key": "status-v0"},
+            "owned_scope": {"kind": "contract", "key": "status-v0"},
+        }
+    ]
+
+    expired = status_to_payload(
+        StatusService(workspace, claims, workflow).summarize(
+            observed_at=NOW + timedelta(seconds=12)
+        )
+    )
+    by_id = {value["id"]: value for value in expired["change_sets"]}
+    assert by_id["chg-2"]["scope_collisions"] == []
