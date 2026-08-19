@@ -40,7 +40,9 @@ def services(
     git(tmp_path, "config", "user.name", "WeftMark Tests")
     git(tmp_path, "config", "user.email", "weftmark@example.invalid")
     git(tmp_path, "commit", "--allow-empty", "-m", "base")
-    ledger = LedgerService(JsonlLedger(tmp_path / ".state" / "ledger.jsonl"))
+    ledger = LedgerService(
+        JsonlLedger(tmp_path / ".git" / "weftmark" / "ledger.jsonl")
+    )
     tasks = TaskService(ledger)
     workspace = WorkspaceService(LocalGit(tmp_path), ledger)
     claims = ClaimService(workspace, ledger)
