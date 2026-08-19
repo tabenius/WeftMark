@@ -24,11 +24,12 @@ question that becomes scarce when many agents can write code at once:
 This repository now contains a **prototype WeftMark runtime** as well as its
 executable design and implementation record. Local Change Sets, semantic claims,
 Git lineage, evidence, review, handoff, CLI/status surfaces, and the read-only
-Kanban/mobile projection are implemented; this is still prototype software, not
-a production or released control plane.
+Kanban/mobile projection and tablet/phone review surface are implemented; this
+is still prototype software, not a production or released control plane.
 
 - `src/weftmark/` contains the local runtime and application/domain layers.
 - `tests/` contains executable runtime and contract evidence used by CI.
+- `web/review/` contains the dependency-free read-only tablet/phone review client.
 - `docs/weftmark.mdx` remains the editable source of truth for the product and
   architecture paper.
 - `docs/artifacts/weftmark_rev0.html` and `weftmark_rev0.pdf` preserve the
@@ -59,6 +60,7 @@ release evidence.
 | Kanban/mobile read projection | yes | yes | yes | — |
 | Loopback-only HTTP read surface | yes | yes | yes | — |
 | Semantic scope blockers in board status | yes | yes | yes | — |
+| Tablet/phone read-only review surface | yes | yes | yes | — |
 
 <!-- assurance:end -->
 
@@ -141,7 +143,7 @@ The initial graph currently covers:
 3. semantic/contract scopes and locks;
 4. local Git lineage and optional code-forge adapters;
 5. evidence policies and reviewer-facing readiness summaries;
-6. CLI, MCP, terminal, and later tablet read surfaces;
+6. CLI, MCP, terminal, and tablet/mobile read surfaces;
 7. a deliberate transition/dogfood path from Frog; and
 8. security, packaging, licensing, and release evidence for an open-source alpha.
 

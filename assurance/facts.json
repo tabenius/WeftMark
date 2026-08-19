@@ -79,6 +79,19 @@
         {"kind": "test", "ref": "tests/application/test_kanban_projection.py"},
         {"kind": "review", "ref": "tasks/55-kanban-integration.weft.yml#kanban-scope-collision-projection"}
       ]
+    },
+    {
+      "id": "tablet-review-surface",
+      "label": "Tablet/phone read-only review surface",
+      "planned": true,
+      "implemented": true,
+      "verified": true,
+      "reviewed": true,
+      "releasable": false,
+      "evidence": [
+        {"kind": "test", "ref": "tests/web/test_review_surface.py"},
+        {"kind": "review", "ref": "tasks/50-surfaces.weft.yml#tablet-web-read-model"}
+      ]
     }
   ],
   "claims": [
