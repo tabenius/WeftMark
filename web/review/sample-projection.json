@@ -1,0 +1,113 @@
+{
+  "schema": "weftmark.kanban-projection.v0",
+  "generated_at": "2026-08-19T13:00:00+00:00",
+  "authority": {
+    "coordination": "weftmark",
+    "projection": "read_only"
+  },
+  "counts": {
+    "cards": 4,
+    "active_claims": 1,
+    "expired_claims": 0,
+    "released_claims": 1
+  },
+  "cards": [
+    {
+      "id": "chg-auth-owner",
+      "title": "Tighten tenant authentication checks",
+      "lane": "active",
+      "lifecycle_state": "active",
+      "readiness": "unreviewed",
+      "git": {
+        "branch": "weft/auth-owner",
+        "head_sha": "91f8e8b09892a210cbe4fda388c355aabd566f42",
+        "observed_at": "2026-08-19T12:58:00+00:00",
+        "dirty_paths": []
+      },
+      "claims": {"active_ids": ["claim-auth-owner"]},
+      "scope_collisions": [],
+      "evidence": {"total": 2, "current": 2, "obsolete": 0, "failed": 0, "unavailable": 0},
+      "review": null,
+      "handoff": null,
+      "attention": []
+    },
+    {
+      "id": "chg-session-ui",
+      "title": "Update session expiry presentation",
+      "lane": "active",
+      "lifecycle_state": "active",
+      "readiness": "unreviewed",
+      "git": {
+        "branch": "weft/session-ui",
+        "head_sha": "266c92f73ade0901679d81e8055f80a948cc139c",
+        "observed_at": "2026-08-19T12:59:00+00:00",
+        "dirty_paths": ["src/session/banner.ts"]
+      },
+      "claims": {"active_ids": []},
+      "scope_collisions": [
+        {
+          "claim_id": "claim-auth-owner",
+          "competing_change_set_id": "chg-auth-owner",
+          "requested_scope": {"kind": "contract", "key": "tenant-auth"},
+          "owned_scope": {"kind": "contract", "key": "tenant-auth"}
+        }
+      ],
+      "evidence": {"total": 1, "current": 1, "obsolete": 0, "failed": 1, "unavailable": 0},
+      "review": null,
+      "handoff": null,
+      "attention": ["dirty_worktree", "failed_evidence", "scope_collision"]
+    },
+    {
+      "id": "chg-ingress",
+      "title": "Document ingress authorization boundary",
+      "lane": "review",
+      "lifecycle_state": "review",
+      "readiness": "evidence_incomplete",
+      "git": {
+        "branch": "weft/ingress-docs",
+        "head_sha": "6d33f0311b6634980466d3752194842521c61a55",
+        "observed_at": "2026-08-19T12:50:00+00:00",
+        "dirty_paths": []
+      },
+      "claims": {"active_ids": []},
+      "scope_collisions": [],
+      "evidence": {"total": 4, "current": 3, "obsolete": 1, "failed": 0, "unavailable": 1},
+      "review": {
+        "id": "review-ingress",
+        "outcome": "evidence_incomplete",
+        "head_sha": "6d33f0311b6634980466d3752194842521c61a55",
+        "is_current": true
+      },
+      "handoff": {
+        "id": "handoff-ingress",
+        "head_sha": "6d33f0311b6634980466d3752194842521c61a55",
+        "is_current": true
+      },
+      "attention": ["obsolete_evidence", "unavailable_evidence", "evidence_incomplete"]
+    },
+    {
+      "id": "chg-read-model",
+      "title": "Expose board read model",
+      "lane": "ready",
+      "lifecycle_state": "review",
+      "readiness": "ready",
+      "git": {
+        "branch": "weft/read-model",
+        "head_sha": "a485988532fe75b3cff98b8541e432e551d06f5d",
+        "observed_at": "2026-08-19T12:45:00+00:00",
+        "dirty_paths": []
+      },
+      "claims": {"active_ids": []},
+      "scope_collisions": [],
+      "evidence": {"total": 5, "current": 5, "obsolete": 0, "failed": 0, "unavailable": 0},
+      "review": {
+        "id": "review-read-model",
+        "outcome": "ready",
+        "head_sha": "a485988532fe75b3cff98b8541e432e551d06f5d",
+        "is_current": true
+      },
+      "handoff": null,
+      "attention": []
+    }
+  ]
+}
