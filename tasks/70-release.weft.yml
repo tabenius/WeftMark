@@ -62,7 +62,7 @@ tasks:
 
   - slug: open-source-license
     title: Select and document the open-source license
-    status: in_progress
+    status: done
     priority: P0
     depends:
       - repo-bootstrap
