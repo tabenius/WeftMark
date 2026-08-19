@@ -115,6 +115,8 @@ Operation-specific recovery also covers the narrow crash interval after domain m
 - releases recognize an already-released claim only when owner/session/reason match;
 - handoffs recognize an existing handoff ID only when its durable intent matches.
 
+V0 assumes **one WeftMark HTTP control process per ledger**. The file-locked ledger and underlying application services remain safe against other local writers, but `control_idempotency_v0` replay serialization is not advertised as a multi-process HTTP coordination protocol. Multiple HTTP control frontends should use a single writer or a future distributed idempotency service rather than independently racing the same client keys.
+
 ## Input policy
 
 The server supplies `requested_at`; clients cannot forge mutation timestamps.
