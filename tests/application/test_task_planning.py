@@ -118,6 +118,8 @@ def test_next_ranks_only_dependency_and_conflict_eligible_native_intent() -> Non
     ]
     assert selection.considered == 8
     assert selection.eligible == 2
+    assert service.eligibility("eligible-high").eligible is True
+    assert service.eligibility("unmet").eligible is False
     reasons = {value.task.id: value.reasons for value in selection.skipped}
     assert reasons["unmet"] == ("dependencies not done: abandoned-dep",)
     assert reasons["conflicted"] == ("conflicts in progress: active",)
@@ -131,4 +133,3 @@ def test_next_refuses_invalid_limit() -> None:
     service = TaskPlanningService(StaticTasks(()))
     with pytest.raises(TaskPlanningError, match="limit"):
         service.next(limit=0)
-

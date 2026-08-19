@@ -70,6 +70,44 @@ tasks:
         required: true
         criterion: Advisory eligibility remains distinct from local ownership and completion authority.
 
+  - slug: native-task-claim-service
+    title: Claim eligible native task intent
+    status: review
+    priority: P0
+    depends:
+      - native-task-next-service
+      - native-claim-workflow
+    purpose: Turn selected native intent into owned Change Set work without manually composing multiple commands.
+    scope:
+      files:
+        - src/weftmark/application/task_claims.py
+        - src/weftmark/application/task_planning.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_task_claims.py
+        - tests/application/test_task_planning.py
+        - tests/cli/test_cli_task_claims.py
+        - tasks/50-surfaces.weft.yml
+      contracts:
+        - contract:native-task-claim-v0
+    deliverables:
+      - Durable reservation linking one native task to a local Change Set and semantic claim.
+      - Retry recovery across Change Set creation, claim acquisition and task transition.
+      - Strict task claim CLI command using task-declared scopes.
+    accept:
+      - Successful claim creates local authority and transitions todo intent to in progress.
+      - Identical retry returns the same active Change Set and claim without duplicate writes.
+    negative:
+      - Ineligible, non-todo or scopeless tasks cannot reserve local work.
+      - Conflicting retries cannot change Change Set, claim, actor, session or base identity.
+      - Imported Frog locks and assignments are not consulted.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_task_claims.py tests/cli/test_cli_task_claims.py
+      - kind: review
+        required: true
+        criterion: Partial reservation recovery never grants ownership without a native active claim.
+
   - slug: cli-surface
     title: Implement the first WeftMark CLI
     status: done

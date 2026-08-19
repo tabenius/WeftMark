@@ -82,6 +82,11 @@ from weftmark.application.task_planning import (
     TaskPlanningService,
     task_selection_to_payload,
 )
+from weftmark.application.task_claims import (
+    TaskClaimError,
+    TaskClaimService,
+    task_claim_result_to_payload,
+)
 from weftmark.application.tasks import (
     TaskService,
     TaskServiceError,
@@ -179,6 +184,16 @@ def build_parser() -> argparse.ArgumentParser:
         "next", help="rank dependency-eligible native task intent"
     )
     task_next.add_argument("--limit", type=int, default=1)
+    task_claim = task_commands.add_parser(
+        "claim", help="create or recover local work authority for native intent"
+    )
+    task_claim.add_argument("id", help="native task ID")
+    task_claim.add_argument("--changeset-id")
+    task_claim.add_argument("--claim-id")
+    task_claim.add_argument("--base", default="HEAD")
+    task_claim.add_argument("--agent", default="weftmark-cli")
+    task_claim.add_argument("--session", default="local-session")
+    task_claim.add_argument("--lease-seconds", type=int, default=1800)
     task_transition = task_commands.add_parser(
         "transition", help="record a non-terminal native task transition"
     )
@@ -456,6 +471,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         tasks = TaskService(ledger)
         task_planning = TaskPlanningService(tasks)
+        task_claims = TaskClaimService(
+            task_planning, tasks, workspace, claims, ledger
+        )
 
         if args.command == "status":
             payload = status_to_payload(
@@ -501,6 +519,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "task" and args.task_command == "next":
             _emit_native_task_selection(
                 task_selection_to_payload(task_planning.next(limit=args.limit)),
+                json_output=args.json,
+            )
+            return 0
+        if args.command == "task" and args.task_command == "claim":
+            claimed_at = _now()
+            result = task_claims.claim(
+                args.id,
+                change_set_id=args.changeset_id,
+                claim_id=args.claim_id,
+                base_revision=args.base,
+                agent_id=args.agent,
+                session_id=args.session,
+                claimed_at=claimed_at,
+                lease_seconds=args.lease_seconds,
+            )
+            _emit_native_task_claim(
+                task_claim_result_to_payload(result, observed_at=claimed_at),
                 json_output=args.json,
             )
             return 0
@@ -985,6 +1020,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         LocalGitError,
         ScopeError,
         TaskError,
+        TaskClaimError,
         TaskPlanningError,
         TaskServiceError,
         WorkspaceError,
@@ -1092,6 +1128,27 @@ def _emit_native_task_selection(
         if remaining:
             print(f"    ... and {remaining} more")
     print("  advisory only; acquire a Change Set claim before editing")
+
+
+def _emit_native_task_claim(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "task_claim": payload}, sort_keys=True))
+        return
+    action = "claimed" if payload["claimed"] else "already claimed"
+    print(
+        f"{action} {payload['task_id']}  {payload['change_set']['id']}  "
+        f"{payload['claim']['id']}"
+    )
+    print(f"  expires: {payload['claim']['locks'][0]['expires_at']}")
+    print(
+        "  scopes: "
+        + ", ".join(
+            f"{lock['scope']['kind']}:{lock['scope']['key']}"
+            for lock in payload["claim"]["locks"]
+        )
+    )
 
 
 def _emit_task_relation(

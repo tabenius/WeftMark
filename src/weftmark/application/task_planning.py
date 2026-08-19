@@ -35,6 +35,32 @@ class TaskPlanningService:
     def next(self, *, limit: int = 1) -> TaskSelection:
         if limit < 1 or limit > 100:
             raise TaskPlanningError("limit must be between 1 and 100")
+        evaluated = self._evaluate()
+        eligible = sorted(
+            (value for value in evaluated if value.eligible),
+            key=lambda value: (
+                int(value.task.priority.value[1:]),
+                value.task.created_at,
+                value.task.id,
+            ),
+        )
+        skipped = tuple(value for value in evaluated if not value.eligible)
+        return TaskSelection(
+            len(evaluated),
+            len(eligible),
+            tuple(eligible[:limit]),
+            skipped,
+        )
+
+    def eligibility(self, task_id: str) -> TaskEligibility:
+        matches = tuple(
+            value for value in self._evaluate() if value.task.id == task_id
+        )
+        if len(matches) != 1:
+            raise TaskPlanningError(f"Task not found: {task_id}")
+        return matches[0]
+
+    def _evaluate(self) -> tuple[TaskEligibility, ...]:
         tasks = self._tasks.list()
         by_id = {task.id: task for task in tasks}
         dependencies: dict[str, list[str]] = {}
@@ -78,22 +104,7 @@ class TaskPlanningService:
             if active_conflicts:
                 reasons.append("conflicts in progress: " + ", ".join(active_conflicts))
             evaluated.append(TaskEligibility(task, not reasons, tuple(reasons)))
-
-        eligible = sorted(
-            (value for value in evaluated if value.eligible),
-            key=lambda value: (
-                int(value.task.priority.value[1:]),
-                value.task.created_at,
-                value.task.id,
-            ),
-        )
-        skipped = tuple(value for value in evaluated if not value.eligible)
-        return TaskSelection(
-            len(evaluated),
-            len(eligible),
-            tuple(eligible[:limit]),
-            skipped,
-        )
+        return tuple(evaluated)
 
 
 def task_selection_to_payload(value: TaskSelection) -> dict[str, Any]:
@@ -115,4 +126,3 @@ def task_selection_to_payload(value: TaskSelection) -> dict[str, Any]:
         "skipped_count": len(value.skipped),
         "authority": "advisory native intent; Change Set and claim acquisition are separate",
     }
-
