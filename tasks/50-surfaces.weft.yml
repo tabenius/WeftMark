@@ -209,7 +209,7 @@ tasks:
 
   - slug: tablet-web-read-model
     title: Prototype a tablet-friendly read-only review web surface
-    status: in_progress
+    status: done
     priority: P2
     depends:
       - cli-surface
