@@ -68,6 +68,12 @@ def test_mandatory_orientation_sources_are_never_optional() -> None:
         assert budget.mode_for(source) is HandoffExpansionMode.AUTOMATIC
 
 
+def test_known_failures_have_no_profile_count_limit() -> None:
+    payload = handoff_context_budget("standard").to_dict()
+    assert "known_failures" not in payload["limits"]
+    assert payload["source_modes"]["known_failures"] == "automatic"
+
+
 def test_budget_serialization_is_provider_neutral_and_complete() -> None:
     payload = handoff_context_budget("standard").to_dict()
 
@@ -99,7 +105,6 @@ def test_invalid_custom_budget_cannot_auto_inject_chat_history() -> None:
             hard_max_tokens=1500,
             max_evidence_summaries=4,
             max_decision_summaries=4,
-            max_known_failures=4,
             max_changed_paths=10,
             focused_excerpt_tokens=0,
             source_modes=modes,
@@ -126,7 +131,6 @@ def test_hard_max_cannot_be_smaller_than_target() -> None:
             hard_max_tokens=800,
             max_evidence_summaries=4,
             max_decision_summaries=4,
-            max_known_failures=4,
             max_changed_paths=10,
             focused_excerpt_tokens=0,
             source_modes=modes,
