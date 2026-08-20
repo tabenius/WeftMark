@@ -211,52 +211,76 @@ tasks:
 
   - slug: gitea-forge-adapter
     title: Implement a Gitea forge adapter
-    status: todo
+    status: done
     priority: P1
     depends:
       - forge-capability-discovery
     purpose: Support common self-hosted Gitea instances through the shared forge contract.
     scope:
       files:
+        - src/weftmark/adapters/gitea_like.py
         - src/weftmark/adapters/gitea.py
         - tests/adapters/test_gitea.py
+        - tests/adapters/test_gitea_family_security.py
+        - docs/contracts/forge-port-v0.md
+        - docs/integrations/forge-adapters.md
+        - tasks/30-git-lineage.weft.yml
       contracts:
         - adapter:gitea-v0
     deliverables:
-      - Pull request, status, review/comment and changed-file observations.
-      - Instance capability mapping for optional CI/Actions features.
+      - Pull request, commit-status, Actions-run, review/comment and changed-file observations.
+      - Instance capability mapping for optional/older Actions support.
+      - Shared internal Gitea-family mapper with a provider-specific public adapter.
     accept:
       - Instance feature absence maps to unsupported rather than missing or failed.
+      - Provider API/transport failures remain unavailable rather than failed evidence.
+      - API credentials remain request-local and out of returned records.
     negative:
       - Gitea API details do not leak into ForgePort.
+      - Adapter exposes no merge, approve, comment-create, workflow-trigger or release mutation.
     evidence:
       - kind: test
         required: true
-        criterion: Fixture suite covers modern and feature-limited Gitea instances.
+        command: python -m pytest tests/adapters/test_gitea.py tests/adapters/test_gitea_family_security.py
+      - kind: review
+        required: true
+        criterion: Gitea instance capability and Actions semantics remain adapter-local.
 
   - slug: forgejo-forge-adapter
     title: Implement a Forgejo forge adapter
-    status: todo
+    status: done
     priority: P1
     depends:
       - forge-capability-discovery
     purpose: Support Forgejo and Codeberg while allowing its API/Actions dialect to diverge from Gitea safely.
     scope:
       files:
+        - src/weftmark/adapters/gitea_like.py
         - src/weftmark/adapters/forgejo.py
         - tests/adapters/test_forgejo.py
+        - tests/adapters/test_gitea_family_security.py
+        - docs/contracts/forge-port-v0.md
+        - docs/integrations/forge-adapters.md
+        - tasks/30-git-lineage.weft.yml
       contracts:
         - adapter:forgejo-v0
     deliverables:
-      - Forgejo-specific thin adapter with shared helpers only where behavior is truly compatible.
+      - Separate Forgejo public adapter with Codeberg defaults.
+      - Shared mapping helpers only where fixture evidence proves compatibility.
+      - Explicit Actions enabled/disabled/endpoint-absent capability behavior.
     accept:
       - Codeberg-compatible read observations fit ForgePort without pretending Forgejo is GitHub Actions-compatible.
+      - Actions-disabled/absent instances return unsupported rather than missing or failed.
     negative:
       - Forgejo is not implemented as a blind alias for Gitea.
+      - Adapter exposes no merge, approve, comment-create, workflow-trigger or release mutation.
     evidence:
       - kind: test
         required: true
-        criterion: Fixtures cover Actions enabled and disabled capability states.
+        command: python -m pytest tests/adapters/test_forgejo.py tests/adapters/test_gitea_family_security.py
+      - kind: review
+        required: true
+        criterion: Forgejo remains a separate dialect and shared code is limited to fixture-proven compatibility.
 
   - slug: bitbucket-forge-adapter
     title: Implement a Bitbucket Cloud forge adapter
