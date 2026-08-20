@@ -147,7 +147,7 @@ tasks:
 
   - slug: forge-capability-discovery
     title: Distinguish unsupported forge capabilities
-    status: review
+    status: done
     priority: P1
     depends:
       - forge-port-contract
@@ -178,7 +178,7 @@ tasks:
 
   - slug: gitlab-forge-adapter
     title: Implement a GitLab forge adapter
-    status: todo
+    status: done
     priority: P1
     depends:
       - forge-capability-discovery
