@@ -114,7 +114,7 @@ tasks:
 
   - slug: github-forge-adapter
     title: Implement a GitHub forge adapter
-    status: review
+    status: done
     priority: P1
     depends:
       - forge-port-contract
