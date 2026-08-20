@@ -79,7 +79,7 @@ tasks:
 
   - slug: forge-port-contract
     title: Define the optional code-forge port
-    status: todo
+    status: done
     priority: P1
     depends:
       - git-port-contract
@@ -88,22 +88,33 @@ tasks:
     scope:
       files:
         - src/weftmark/application/ports/forge.py
+        - tests/contracts/test_forge_port.py
+        - docs/contracts/forge-port-v0.md
+        - tasks/30-git-lineage.weft.yml
       contracts:
         - port:forge-v0
     deliverables:
-      - Provider-neutral PR/MR, review, CI-status and comment interfaces.
+      - Provider-neutral Change Request, review, comment, CI-check and workflow interfaces.
+      - Explicit available, missing and unavailable observation states.
+      - Shared status/conclusion vocabulary that does not assume GitHub terminology.
     accept:
-      - GitHub and GitLab terminology can map into the same domain-facing contract.
+      - GitHub, GitLab, Gitea/Forgejo and other forge terminology can map into the same application-facing contract.
+      - Missing workflow/check data remains distinct from provider unavailability and failed CI.
     negative:
       - Forge API availability is not required for local-only Change Set operation.
+      - Provider approval never becomes a WeftMark ReviewDecision automatically.
+      - Forge v0 exposes no remote mutation authority.
     evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/contracts/test_forge_port.py
       - kind: review
         required: true
-        criterion: Port stays optional and does not contaminate core lifecycle types.
+        criterion: Port stays optional, read-side and free of GitHub/GitLab lifecycle terminology.
 
   - slug: github-forge-adapter
     title: Implement a GitHub forge adapter
-    status: todo
+    status: done
     priority: P1
     depends:
       - forge-port-contract
@@ -112,15 +123,24 @@ tasks:
       files:
         - src/weftmark/adapters/github.py
         - tests/adapters/test_github.py
+        - docs/contracts/forge-port-v0.md
+        - tasks/30-git-lineage.weft.yml
       contracts:
         - adapter:github-v0
     deliverables:
-      - Read-side PR metadata, status checks, workflow evidence, reviews and changed-file mapping.
+      - Read-side PR metadata, status checks, workflow evidence, reviews/comments and changed-file mapping.
+      - Dependency-free stdlib HTTP transport with injectable fixture transport for tests.
+      - GitHub.com defaults plus configurable API/web bases for GitHub Enterprise Server.
     accept:
       - Adapter can distinguish failed checks from checks that never ran or are unavailable.
+      - Credentials remain process/request configuration and do not enter forge result values.
     negative:
-      - Network/API failures are represented as unavailable evidence, not test failure.
+      - Network/API failures are represented as unavailable observations, not test failure.
+      - Adapter exposes no merge, approve, comment-create or release mutation.
     evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_github.py
       - kind: test
         required: true
         criterion: Recorded fixtures cover success, failure, pending, missing-run and API-error cases.
