@@ -316,6 +316,7 @@ class ForgePort(Protocol):
 
     def capabilities(self) -> ForgeCapabilities:
         """Describe which ForgePort observation families this adapter supports."""
+        return ForgeCapabilities()
 
     def change_request(self, external_id: str) -> ForgeResult[ForgeChangeRequest]:
         """Read a pull/merge/change request by provider-visible identifier."""
