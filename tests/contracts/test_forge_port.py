@@ -5,7 +5,9 @@ from datetime import UTC, datetime
 import pytest
 
 from weftmark.application.ports.forge import (
+    ForgeActor,
     ForgeAvailability,
+    ForgeCapabilities,
     ForgeChangeRequest,
     ForgeChangeState,
     ForgeCheck,
@@ -15,7 +17,6 @@ from weftmark.application.ports.forge import (
     ForgeRepository,
     ForgeResult,
     ForgeRunStatus,
-    ForgeActor,
 )
 from weftmark.application.ports.git import GitObjectId
 
@@ -25,14 +26,15 @@ SHA_A = GitObjectId("a" * 40)
 SHA_B = GitObjectId("b" * 40)
 
 
-def test_result_distinguishes_missing_from_unavailable() -> None:
+def test_result_distinguishes_missing_unsupported_and_unavailable() -> None:
     missing = ForgeResult[tuple[ForgeCheck, ...]].missing("no checks for head")
+    unsupported = ForgeResult[tuple[ForgeCheck, ...]].unsupported("checks unsupported")
     unavailable = ForgeResult[tuple[ForgeCheck, ...]].unavailable("provider transport unavailable")
 
     assert missing.availability is ForgeAvailability.MISSING
+    assert unsupported.availability is ForgeAvailability.UNSUPPORTED
     assert unavailable.availability is ForgeAvailability.UNAVAILABLE
-    assert missing.value is None
-    assert unavailable.value is None
+    assert missing.value is unsupported.value is unavailable.value is None
 
 
 def test_result_rejects_ambiguous_availability() -> None:
@@ -42,6 +44,16 @@ def test_result_rejects_ambiguous_availability() -> None:
         ForgeResult(ForgeAvailability.UNAVAILABLE, value=())
     with pytest.raises(ForgeContractError):
         ForgeResult(ForgeAvailability.UNAVAILABLE)
+    with pytest.raises(ForgeContractError):
+        ForgeResult(ForgeAvailability.UNSUPPORTED)
+
+
+def test_capabilities_are_observation_support_not_authority() -> None:
+    value = ForgeCapabilities(workflow_runs=False)
+    assert value.change_requests is True
+    assert value.workflow_runs is False
+    assert not hasattr(value, "merge")
+    assert not hasattr(value, "approve")
 
 
 def test_change_request_uses_provider_neutral_terms() -> None:
@@ -115,6 +127,9 @@ def test_forge_port_is_runtime_checkable_and_read_side_only() -> None:
     class FakeForge:
         def repository(self):
             return ForgeRepository("fake", "team/repo", "https://forge.example/team/repo")
+
+        def capabilities(self):
+            return ForgeCapabilities()
 
         def change_request(self, external_id):
             raise NotImplementedError

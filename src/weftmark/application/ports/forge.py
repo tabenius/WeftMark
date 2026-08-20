@@ -32,6 +32,7 @@ def _require_aware(name: str, value: datetime) -> None:
 class ForgeAvailability(StrEnum):
     AVAILABLE = "available"
     MISSING = "missing"
+    UNSUPPORTED = "unsupported"
     UNAVAILABLE = "unavailable"
 
 
@@ -40,12 +41,12 @@ T = TypeVar("T")
 
 @dataclass(frozen=True, slots=True)
 class ForgeResult(Generic[T]):
-    """One forge observation with explicit absence vs provider failure.
+    """One forge observation with explicit absence, unsupported and failure states.
 
     `missing` means the provider was reachable and the requested forge fact did
-    not exist (for example, no workflow runs for a commit). `unavailable` means
-    the observation could not be made. Neither state is equivalent to a failed
-    test/check.
+    not exist. `unsupported` means the configured provider/instance cannot
+    represent the requested capability. `unavailable` means the observation
+    could not be made. None of those states is equivalent to a failed test/check.
     """
 
     availability: ForgeAvailability
@@ -61,9 +62,11 @@ class ForgeResult(Generic[T]):
         else:
             if self.value is not None:
                 raise ForgeContractError("non-available forge result cannot carry a value")
-            if self.availability is ForgeAvailability.UNAVAILABLE:
+            if self.availability in {ForgeAvailability.UNSUPPORTED, ForgeAvailability.UNAVAILABLE}:
                 if self.detail is None or not self.detail.strip():
-                    raise ForgeContractError("unavailable forge result requires detail")
+                    raise ForgeContractError(
+                        f"{self.availability.value} forge result requires detail"
+                    )
 
     @classmethod
     def available(cls, value: T) -> ForgeResult[T]:
@@ -74,8 +77,28 @@ class ForgeResult(Generic[T]):
         return cls(ForgeAvailability.MISSING, detail=detail)
 
     @classmethod
+    def unsupported(cls, detail: str) -> ForgeResult[T]:
+        return cls(ForgeAvailability.UNSUPPORTED, detail=detail)
+
+    @classmethod
     def unavailable(cls, detail: str) -> ForgeResult[T]:
         return cls(ForgeAvailability.UNAVAILABLE, detail=detail)
+
+
+@dataclass(frozen=True, slots=True)
+class ForgeCapabilities:
+    """Capabilities exposed by the configured forge adapter/instance.
+
+    These are observation capabilities, not authorization grants. A supported
+    capability can still return missing or unavailable for one observation.
+    """
+
+    change_requests: bool = True
+    checks: bool = True
+    workflow_runs: bool = True
+    reviews: bool = True
+    comments: bool = True
+    changed_files: bool = True
 
 
 class ForgeChangeState(StrEnum):
@@ -279,8 +302,6 @@ class ForgeChangedFile:
 
 
 def _dummy_change_kind():
-    # Reuse GitDiffEntry's repository-path validation without exporting a second
-    # path grammar from the forge contract.
     from weftmark.application.ports.git import GitChangeKind
 
     return GitChangeKind.MODIFIED
@@ -292,6 +313,10 @@ class ForgePort(Protocol):
 
     def repository(self) -> ForgeRepository:
         """Return provider/repository identity without requiring local Git."""
+
+    def capabilities(self) -> ForgeCapabilities:
+        """Describe which ForgePort observation families this adapter supports."""
+        return ForgeCapabilities()
 
     def change_request(self, external_id: str) -> ForgeResult[ForgeChangeRequest]:
         """Read a pull/merge/change request by provider-visible identifier."""
