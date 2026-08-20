@@ -84,7 +84,7 @@ tasks:
     depends:
       - git-port-contract
       - review-decision-model
-    purpose: Support GitHub first without making GitHub the product model.
+    purpose: Support hosted forges without making one provider the product model.
     scope:
       files:
         - src/weftmark/application/ports/forge.py
@@ -96,7 +96,7 @@ tasks:
     deliverables:
       - Provider-neutral Change Request, review, comment, CI-check and workflow interfaces.
       - Explicit available, missing and unavailable observation states.
-      - Shared status/conclusion vocabulary that does not assume GitHub terminology.
+      - Shared status/conclusion vocabulary that does not assume provider terminology.
     accept:
       - GitHub, GitLab, Gitea/Forgejo and other forge terminology can map into the same application-facing contract.
       - Missing workflow/check data remains distinct from provider unavailability and failed CI.
@@ -110,7 +110,7 @@ tasks:
         command: python -m pytest tests/contracts/test_forge_port.py
       - kind: review
         required: true
-        criterion: Port stays optional, read-side and free of GitHub/GitLab lifecycle terminology.
+        criterion: Port stays optional, read-side and free of provider lifecycle terminology.
 
   - slug: github-forge-adapter
     title: Implement a GitHub forge adapter
@@ -144,3 +144,164 @@ tasks:
       - kind: test
         required: true
         criterion: Recorded fixtures cover success, failure, pending, missing-run and API-error cases.
+
+  - slug: forge-capability-discovery
+    title: Distinguish unsupported forge capabilities
+    status: review
+    priority: P1
+    depends:
+      - forge-port-contract
+    purpose: Let heterogeneous and self-hosted forge instances describe absent features without conflating them with missing data or outages.
+    scope:
+      files:
+        - src/weftmark/application/ports/forge.py
+        - tests/contracts/test_forge_port.py
+        - docs/contracts/forge-port-v0.md
+        - tasks/30-git-lineage.weft.yml
+      contracts:
+        - port:forge-v0
+    deliverables:
+      - ForgeCapabilities observation-support record.
+      - unsupported ForgeResult availability state.
+    accept:
+      - missing, unsupported and unavailable remain distinguishable.
+      - Capability discovery carries no write/merge authority.
+    negative:
+      - Disabled or unsupported CI is never reported as failed CI.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/contracts/test_forge_port.py
+      - kind: review
+        required: true
+        criterion: Capability discovery models support only and does not become an authorization mechanism.
+
+  - slug: gitlab-forge-adapter
+    title: Implement a GitLab forge adapter
+    status: todo
+    priority: P1
+    depends:
+      - forge-capability-discovery
+    purpose: Support GitLab.com and self-managed GitLab without changing the provider-neutral forge contract.
+    scope:
+      files:
+        - src/weftmark/adapters/gitlab.py
+        - tests/adapters/test_gitlab.py
+        - docs/contracts/forge-port-v0.md
+        - tasks/30-git-lineage.weft.yml
+      contracts:
+        - adapter:gitlab-v0
+    deliverables:
+      - Merge Request, commit-status, pipeline, approval, discussion and diff observations.
+      - Nested project-path support and configurable GitLab API/web bases.
+    accept:
+      - GitLab approvals remain external observations and cannot promote WeftMark readiness.
+      - Truncated GitLab diffs do not produce invented change counts.
+      - Provider/API outages remain unavailable rather than failed evidence.
+    negative:
+      - Adapter exposes no approve, merge, comment-create, pipeline-trigger or release mutation.
+      - Private tokens never enter forge result values.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_gitlab.py
+      - kind: review
+        required: true
+        criterion: GitLab terminology and tier-specific approval semantics stay inside the adapter.
+
+  - slug: gitea-forge-adapter
+    title: Implement a Gitea forge adapter
+    status: todo
+    priority: P1
+    depends:
+      - forge-capability-discovery
+    purpose: Support common self-hosted Gitea instances through the shared forge contract.
+    scope:
+      files:
+        - src/weftmark/adapters/gitea.py
+        - tests/adapters/test_gitea.py
+      contracts:
+        - adapter:gitea-v0
+    deliverables:
+      - Pull request, status, review/comment and changed-file observations.
+      - Instance capability mapping for optional CI/Actions features.
+    accept:
+      - Instance feature absence maps to unsupported rather than missing or failed.
+    negative:
+      - Gitea API details do not leak into ForgePort.
+    evidence:
+      - kind: test
+        required: true
+        criterion: Fixture suite covers modern and feature-limited Gitea instances.
+
+  - slug: forgejo-forge-adapter
+    title: Implement a Forgejo forge adapter
+    status: todo
+    priority: P1
+    depends:
+      - forge-capability-discovery
+    purpose: Support Forgejo and Codeberg while allowing its API/Actions dialect to diverge from Gitea safely.
+    scope:
+      files:
+        - src/weftmark/adapters/forgejo.py
+        - tests/adapters/test_forgejo.py
+      contracts:
+        - adapter:forgejo-v0
+    deliverables:
+      - Forgejo-specific thin adapter with shared helpers only where behavior is truly compatible.
+    accept:
+      - Codeberg-compatible read observations fit ForgePort without pretending Forgejo is GitHub Actions-compatible.
+    negative:
+      - Forgejo is not implemented as a blind alias for Gitea.
+    evidence:
+      - kind: test
+        required: true
+        criterion: Fixtures cover Actions enabled and disabled capability states.
+
+  - slug: bitbucket-forge-adapter
+    title: Implement a Bitbucket Cloud forge adapter
+    status: todo
+    priority: P2
+    depends:
+      - forge-capability-discovery
+    purpose: Extend ForgePort to another major hosted pull-request platform after GitLab and the self-hosted forge family.
+    scope:
+      files:
+        - src/weftmark/adapters/bitbucket.py
+        - tests/adapters/test_bitbucket.py
+      contracts:
+        - adapter:bitbucket-v0
+    deliverables:
+      - Pull request, build/status, approval/comment and diff observations.
+    accept:
+      - Bitbucket-specific pagination and status vocabulary normalize without domain changes.
+    negative:
+      - Bitbucket write APIs remain out of read-side v0.
+    evidence:
+      - kind: test
+        required: true
+        criterion: Recorded fixtures cover PR, CI, review and outage states.
+
+  - slug: azure-devops-forge-adapter
+    title: Implement an Azure DevOps forge adapter
+    status: todo
+    priority: P2
+    depends:
+      - forge-capability-discovery
+    purpose: Support enterprise Azure Repos/Pipelines after the simpler forge mappings are proven.
+    scope:
+      files:
+        - src/weftmark/adapters/azure_devops.py
+        - tests/adapters/test_azure_devops.py
+      contracts:
+        - adapter:azure-devops-v0
+    deliverables:
+      - Pull request, build/status, thread/comment and changed-file observations.
+    accept:
+      - Organization/project/repository hierarchy remains adapter-local.
+    negative:
+      - Azure DevOps policy status is not treated as a WeftMark readiness verdict.
+    evidence:
+      - kind: test
+        required: true
+        criterion: Recorded fixtures cover PR, build, thread and provider-error mappings.
