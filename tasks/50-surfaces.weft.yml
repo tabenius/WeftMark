@@ -138,7 +138,7 @@ tasks:
 
   - slug: mcp-surface
     title: Expose the application services over MCP
-    status: review
+    status: done
     priority: P1
     depends:
       - cli-surface
