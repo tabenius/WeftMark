@@ -138,32 +138,46 @@ tasks:
 
   - slug: mcp-surface
     title: Expose the application services over MCP
-    status: todo
+    status: review
     priority: P1
     depends:
       - cli-surface
-    purpose: Let coding agents coordinate through the same contracts humans use.
+    purpose: Let coding agents coordinate through the same contracts humans use without granting implicit local execution authority.
     scope:
       files:
         - src/weftmark/mcp/**
         - tests/mcp/**
+        - docs/contracts/mcp-v0.md
+        - pyproject.toml
+        - tasks/50-surfaces.weft.yml
       contracts:
         - surface:mcp-v0
+        - boundary:mcp-write-authority
     deliverables:
-      - Read tools for task/change/evidence/review context.
-      - Write tools for claim/scope/evidence/handoff with explicit permissions.
+      - Optional stdio MCP server using the official stable MCP Python SDK v2.
+      - Read tools for native tasks, Change Sets, evidence, reviews and handoffs through existing application read models.
+      - Explicit process capabilities for claim, release, handoff, scope audit and command-evidence execution.
+      - Protocol-level tests using the SDK in-memory client against the real registered tool surface.
     accept:
-      - MCP tool results are equivalent to application-service results.
-      - Mutating tools expose dry-run where practical.
+      - MCP tool results are equivalent to existing application-service serializers/read models.
+      - Server is read-only when no write capabilities are granted.
+      - Ungranted write tools are absent from tool discovery and also refused by the application facade.
+      - Claim, release and handoff mutations reuse the same ControlService/idempotency semantics as HTTP.
+      - Command evidence defaults to dry-run, uses the existing safe runner, and accepts no caller-supplied environment variables in v0.
+      - V0 serves stdio only; remote MCP transport is not enabled implicitly.
     negative:
       - MCP does not become a second business-logic implementation.
+      - MCP tool annotations are never treated as authorization.
+      - Ordinary coordination capabilities do not imply command-execution permission.
+      - MCP cannot merge/release software or switch runtime providers in v0.
+      - V0 does not expose a network MCP listener.
     evidence:
       - kind: test
         required: true
         command: python -m pytest tests/mcp
       - kind: security
         required: true
-        criterion: Write tools reviewed for least-privilege permission grouping.
+        criterion: Read-only default, explicit write capability registration, internal capability recheck, stdio trust boundary and isolated evidence-exec authority are reviewed.
 
   - slug: workspace-status-summary
     title: Summarize current local coordination records
