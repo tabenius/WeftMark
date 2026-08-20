@@ -224,7 +224,7 @@ def test_scope_audit_and_command_evidence_are_separate_high_risk_capabilities(
         cwd=str(tmp_path),
         dry_run=False,
     )
-    assert evidence["evidence"]["state"] == "passed"
+    assert evidence["state"] == "passed"
     assert value.evidence_list(change_set_id="chg-a")["count"] == 1
 
 
