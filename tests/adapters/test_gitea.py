@@ -177,6 +177,21 @@ def test_reviews_comments_and_files_map_to_generic_records() -> None:
     assert (changed.additions, changed.deletions) == (3, 1)
 
 
+def test_missing_provider_file_counts_remain_unknown_not_zero() -> None:
+    files = f"{API}/repos/team/repo/pulls/42/files?page=1&limit=100"
+    value, _ = adapter(
+        {
+            files: response(
+                [{"filename": "src/value.py", "status": "modified"}]
+            )
+        }
+    )
+
+    changed = value.changed_files("42").value[0]
+    assert changed.additions is None
+    assert changed.deletions is None
+
+
 def test_transport_and_api_failures_remain_unavailable() -> None:
     url = f"{API}/repos/team/repo/pulls/42"
     transport, _ = adapter({url: GiteaTransportError("secret")})

@@ -106,7 +106,7 @@ def test_repository_capabilities_and_pull_request_keep_hierarchy_adapter_local()
     assert value.repository().provider == "azure-devops"
     assert value.repository().id == IDENTITY
     assert value.repository().web_url == f"{WEB}/org/project/_git/repo"
-    assert value.capabilities().changed_files is False
+    assert value.capabilities().changed_files is True
     assert result.availability is ForgeAvailability.AVAILABLE
     assert result.value.state is ForgeChangeState.OPEN
     assert result.value.source_branch == "feature/azure"
@@ -337,14 +337,86 @@ def test_continuation_token_paginates_and_unsafe_token_fails_closed() -> None:
     assert result.detail == "Azure DevOps returned malformed paginated data"
 
 
-def test_changed_files_are_explicitly_unsupported_instead_of_inventing_counts() -> None:
-    value, transport = adapter({})
+def test_changed_files_preserve_paths_and_unknown_counts_across_iteration_pages() -> None:
+    iterations_url = f"{GIT}/pullRequests/42/iterations?api-version=7.1"
+    first_changes_url = (
+        f"{GIT}/pullRequests/42/iterations/3/changes?%24top=2000&api-version=7.1"
+    )
+    second_changes_url = (
+        f"{GIT}/pullRequests/42/iterations/3/changes?"
+        "%24top=2000&%24skip=2&api-version=7.1"
+    )
+    value, transport = adapter(
+        {
+            iterations_url: response(
+                {"count": 2, "value": [{"id": 1}, {"id": 3}]}
+            ),
+            first_changes_url: response(
+                {
+                    "changeEntries": [
+                        {
+                            "changeTrackingId": 1,
+                            "changeType": "edit",
+                            "item": {"path": "/src/value.py"},
+                        }
+                    ],
+                    "nextSkip": 2,
+                }
+            ),
+            second_changes_url: response(
+                {
+                    "changeEntries": [
+                        {
+                            "changeTrackingId": 2,
+                            "changeType": "rename",
+                            "originalPath": "/src/old.py",
+                            "item": {"path": "/src/new.py"},
+                        }
+                    ]
+                }
+            ),
+        }
+    )
 
     result = value.changed_files("42")
 
-    assert result.availability is ForgeAvailability.UNSUPPORTED
-    assert "exact per-file line counts" in result.detail
-    assert transport.calls == []
+    assert result.availability is ForgeAvailability.AVAILABLE
+    by_path = {item.entry.path: item for item in result.value}
+    assert by_path["src/value.py"].additions is None
+    assert by_path["src/value.py"].deletions is None
+    assert by_path["src/new.py"].entry.old_path == "src/old.py"
+    assert [call[0] for call in transport.calls] == [
+        iterations_url,
+        first_changes_url,
+        second_changes_url,
+    ]
+
+
+def test_renamed_change_without_original_path_is_unavailable() -> None:
+    iterations_url = f"{GIT}/pullRequests/42/iterations?api-version=7.1"
+    changes_url = (
+        f"{GIT}/pullRequests/42/iterations/1/changes?%24top=2000&api-version=7.1"
+    )
+    value, _ = adapter(
+        {
+            iterations_url: response({"count": 1, "value": [{"id": 1}]}),
+            changes_url: response(
+                {
+                    "changeEntries": [
+                        {
+                            "changeTrackingId": 1,
+                            "changeType": "rename",
+                            "item": {"path": "/src/new.py"},
+                        }
+                    ]
+                }
+            ),
+        }
+    )
+
+    result = value.changed_files("42")
+    assert result.availability is ForgeAvailability.UNAVAILABLE
+    assert result.detail == "Azure DevOps returned malformed iteration-change data"
 
 
 def test_missing_transport_malformed_data_and_configuration_fail_safely() -> None:

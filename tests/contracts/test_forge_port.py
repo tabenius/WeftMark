@@ -8,6 +8,7 @@ from weftmark.application.ports.forge import (
     ForgeActor,
     ForgeAvailability,
     ForgeCapabilities,
+    ForgeChangedFile,
     ForgeChangeRequest,
     ForgeChangeState,
     ForgeCheck,
@@ -18,7 +19,7 @@ from weftmark.application.ports.forge import (
     ForgeResult,
     ForgeRunStatus,
 )
-from weftmark.application.ports.git import GitObjectId
+from weftmark.application.ports.git import GitChangeKind, GitDiffEntry, GitObjectId
 
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
@@ -121,6 +122,21 @@ def test_checks_separate_run_status_from_conclusion() -> None:
             conclusion=None,
             head=SHA_B,
         )
+
+
+def test_changed_file_counts_distinguish_unknown_from_exact_zero() -> None:
+    entry = GitDiffEntry("src/value.py", GitChangeKind.MODIFIED)
+
+    unknown = ForgeChangedFile(entry, additions=None, deletions=None)
+    exact_zero = ForgeChangedFile(entry, additions=0, deletions=0)
+
+    assert unknown.additions is None
+    assert unknown.deletions is None
+    assert exact_zero.additions == 0
+    assert exact_zero.deletions == 0
+
+    with pytest.raises(ForgeContractError, match="negative"):
+        ForgeChangedFile(entry, additions=-1, deletions=None)
 
 
 def test_forge_port_is_runtime_checkable_and_read_side_only() -> None:

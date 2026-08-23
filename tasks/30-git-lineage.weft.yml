@@ -311,10 +311,11 @@ tasks:
 
   - slug: azure-devops-forge-adapter
     title: Implement an Azure DevOps forge adapter
-    status: blocked
+    status: review
     priority: P2
     depends:
       - forge-capability-discovery
+      - forge-changed-file-optional-counts
     purpose: Support enterprise Azure Repos/Pipelines after the simpler forge mappings are proven.
     scope:
       files:
@@ -337,4 +338,43 @@ tasks:
         required: true
         criterion: Azure organization/project/repository, status, reviewer and thread semantics remain adapter-local and read-only.
     notes:
-      - Azure pull-request iteration changes expose paths and change kinds but not exact per-file addition/deletion counts. ForgeChangedFile v0 requires integer counts, so the adapter advertises changed_files as unsupported instead of inventing zero counts. Resolve the port contract before completing this task.
+      - Azure pull-request iteration changes expose paths and change kinds but not exact per-file addition/deletion counts. The adapter preserves those counts as unavailable under ForgeChangedFile v0 rather than inventing zeros.
+
+  - slug: forge-changed-file-optional-counts
+    title: Represent unavailable forge changed-file counts
+    status: review
+    priority: P1
+    depends:
+      - forge-port-contract
+    purpose: Preserve useful changed-file paths and kinds when a provider does not expose exact per-file additions and deletions.
+    scope:
+      files:
+        - src/weftmark/application/ports/forge.py
+        - tests/contracts/test_forge_port.py
+        - docs/contracts/forge-port-v0.md
+        - src/weftmark/adapters/azure_devops.py
+        - tests/adapters/test_azure_devops.py
+        - src/weftmark/adapters/gitea_like.py
+        - tests/adapters/test_gitea.py
+        - tasks/30-git-lineage.weft.yml
+      contracts:
+        - port:forge-v0
+        - adapter:azure-devops-v0
+    deliverables:
+      - Optional per-file addition and deletion counts with an explicit unknown state.
+      - Azure iteration-change mapping that preserves paths and kinds without invented counts.
+    accept:
+      - Consumers can distinguish an unavailable count from an exact zero.
+      - Existing adapters retain their exact integer counts without behavior changes.
+      - Gitea-family responses that omit counts preserve them as unknown.
+      - Azure changed files remain available observations with unknown counts.
+    negative:
+      - Missing provider counts are never normalized to zero.
+      - A truncated provider diff is not parsed as complete evidence.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/contracts/test_forge_port.py tests/adapters/test_azure_devops.py
+      - kind: review
+        required: true
+        criterion: Optional counts remain distinct from exact zeros across the port, adapters and reviewer-facing consumers.

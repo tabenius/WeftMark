@@ -31,6 +31,7 @@ from weftmark.application.ports.forge import (
     ForgeWorkflowRun,
 )
 from weftmark.application.ports.git import GitObjectId
+from weftmark.application.ports.git import GitChangeKind, GitDiffEntry
 
 
 class AzureDevopsAdapterError(ValueError):
@@ -126,9 +127,7 @@ class AzureDevopsForgeAdapter(ForgePort):
         )
 
     def capabilities(self) -> ForgeCapabilities:
-        # Azure iteration changes expose paths and kinds but not the exact
-        # per-file line counts required by ForgeChangedFile v0.
-        return ForgeCapabilities(changed_files=False)
+        return ForgeCapabilities()
 
     def change_request(self, external_id: str) -> ForgeResult[ForgeChangeRequest]:
         number = _pull_number(external_id)
@@ -251,10 +250,63 @@ class AzureDevopsForgeAdapter(ForgePort):
     def changed_files(
         self, external_id: str
     ) -> ForgeResult[tuple[ForgeChangedFile, ...]]:
-        _pull_number(external_id)
-        return ForgeResult.unsupported(
-            "Azure DevOps iteration changes omit the exact per-file line counts "
-            "required by ForgeChangedFile v0"
+        number = _pull_number(external_id)
+        iterations = self._paged_values(f"{self._pull_path(number)}/iterations")
+        if iterations.availability is not ForgeAvailability.AVAILABLE:
+            return ForgeResult(iterations.availability, detail=iterations.detail)
+        if not iterations.value:
+            return ForgeResult.missing("no pull-request iterations reported")
+        try:
+            iteration_id = max(int(value["id"]) for value in iterations.value)
+        except (KeyError, TypeError, ValueError):
+            return ForgeResult.unavailable(
+                "Azure DevOps returned malformed iteration data"
+            )
+        changes = self._iteration_changes(number, iteration_id)
+        if changes.availability is not ForgeAvailability.AVAILABLE:
+            return ForgeResult(changes.availability, detail=changes.detail)
+        try:
+            values = tuple(_changed_file(value) for value in changes.value)
+        except (KeyError, TypeError, ValueError):
+            return ForgeResult.unavailable(
+                "Azure DevOps returned malformed iteration-change data"
+            )
+        return ForgeResult.available(
+            tuple(sorted(values, key=lambda value: value.entry.path))
+        )
+
+    def _iteration_changes(
+        self, number: int, iteration_id: int
+    ) -> ForgeResult[tuple[Mapping[str, Any], ...]]:
+        path = f"{self._pull_path(number)}/iterations/{iteration_id}/changes"
+        values: list[Mapping[str, Any]] = []
+        skip: int | None = None
+        for _ in range(100):
+            query = {"$top": "2000"}
+            if skip is not None:
+                query["$skip"] = str(skip)
+            result = self._get_json(path, query=query)
+            if result.availability is not ForgeAvailability.AVAILABLE:
+                return ForgeResult(result.availability, detail=result.detail)
+            try:
+                raw_payload, _headers = result.value
+                payload = _mapping(raw_payload)
+                raw_values = payload["changeEntries"]
+                if not isinstance(raw_values, list):
+                    raise TypeError("changeEntries must be a list")
+                values.extend(_mapping(value) for value in raw_values)
+                raw_skip = payload.get("nextSkip")
+                skip = None if raw_skip is None else int(raw_skip)
+                if skip is not None and skip < 0:
+                    raise ValueError("nextSkip must not be negative")
+            except (KeyError, TypeError, ValueError):
+                return ForgeResult.unavailable(
+                    "Azure DevOps returned malformed iteration-change data"
+                )
+            if skip is None:
+                return ForgeResult.available(tuple(values))
+        return ForgeResult.unavailable(
+            "Azure DevOps iteration-change pagination exceeded safety limit"
         )
 
     @property
@@ -561,4 +613,33 @@ def _comment(
         web_url=f"{pull_web_url}?_a=files&discussionId={thread_id}",
         path=path,
         line=line,
+    )
+
+
+def _changed_file(value: Mapping[str, Any]) -> ForgeChangedFile:
+    normalized = str(value["changeType"]).lower()
+    kind = None
+    for token, candidate in (
+        ("rename", GitChangeKind.RENAMED),
+        ("add", GitChangeKind.ADDED),
+        ("delete", GitChangeKind.DELETED),
+        ("edit", GitChangeKind.MODIFIED),
+    ):
+        if token in normalized:
+            kind = candidate
+            break
+    if kind is None:
+        raise ValueError("unknown Azure DevOps change type")
+    item = _mapping(value["item"])
+    path = str(item["path"]).lstrip("/")
+    old_path = None
+    if kind is GitChangeKind.RENAMED:
+        raw_old_path = value.get("originalPath")
+        if raw_old_path is None:
+            raise KeyError("renamed Azure change lacks originalPath")
+        old_path = str(raw_old_path).lstrip("/")
+    return ForgeChangedFile(
+        GitDiffEntry(path=path, kind=kind, old_path=old_path),
+        additions=None,
+        deletions=None,
     )

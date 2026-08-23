@@ -75,7 +75,16 @@ Comments are either general discussion or code-review comments. Inline comments 
 
 Forge-reported changed files reuse WeftMark's Git change/path vocabulary. They are useful for remote comparison and review UI, but local Git remains the primary lineage source whenever a checkout is available.
 
-Adapters must not invent add/delete counts from truncated provider diffs. GitLab's adapter returns `unavailable` if GitLab marks a diff collapsed or too large. Gitea/Forgejo use provider-reported changed-file counts rather than attempting to reparse an incomplete patch.
+`additions` and `deletions` are independently optional. An integer is an exact
+provider-reported or complete-diff-derived count; `0` means an exact zero.
+`null` means the provider did not expose a count that the adapter could derive
+without guessing. Consumers must render `null` as unknown, never as zero.
+
+Adapters must not invent add/delete counts from truncated provider diffs.
+GitLab's adapter returns `unavailable` if GitLab marks a diff collapsed or too
+large. Gitea/Forgejo and Bitbucket use provider-reported changed-file counts
+rather than attempting to reparse an incomplete patch. Azure DevOps preserves
+its iteration-reported paths and change kinds while returning `null` counts.
 
 ## GitHub adapter v0
 
@@ -108,9 +117,23 @@ Forgejo Actions is treated as a forge workflow provider, not as a promise of exa
 
 Forgejo is intentionally **not** implemented as a type alias or blind subclass name for `GiteaForgeAdapter`.
 
+## Azure DevOps adapter v0
+
+`AzureDevopsForgeAdapter` keeps the organization/project/repository hierarchy
+inside the adapter. It maps Azure pull requests, commit statuses, builds,
+reviewer votes, and human discussion threads into ForgePort. Policy and vote
+observations never become WeftMark readiness authority.
+
+Azure pull-request iteration changes report paths and change kinds without
+exact per-file additions/deletions. Those files remain available observations
+with `null` counts under the optional-count rule above.
+
 ## Credentials
 
-Credentials are process/request configuration only. GitHub bearer tokens, GitLab private tokens and Gitea/Forgejo API tokens are placed only in request headers and are never included in forge result values or persisted by an adapter.
+Credentials are process/request configuration only. GitHub and Azure DevOps
+bearer tokens, GitLab private tokens and Gitea/Forgejo API tokens are placed
+only in request headers and are never included in forge result values or
+persisted by an adapter.
 
 ## Non-goals
 

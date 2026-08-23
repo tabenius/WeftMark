@@ -568,6 +568,10 @@ def _changed_file(value: Mapping[str, Any]) -> ForgeChangedFile:
             kind=kind,
             old_path=old_path,
         ),
-        additions=int(value.get("additions", 0)),
-        deletions=int(value.get("deletions", 0)),
+        additions=(
+            None if value.get("additions") is None else int(value["additions"])
+        ),
+        deletions=(
+            None if value.get("deletions") is None else int(value["deletions"])
+        ),
     )

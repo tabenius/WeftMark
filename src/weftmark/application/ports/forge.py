@@ -293,11 +293,14 @@ class ForgeComment:
 @dataclass(frozen=True, slots=True)
 class ForgeChangedFile:
     entry: GitDiffEntry
-    additions: int
-    deletions: int
+    additions: int | None
+    deletions: int | None
 
     def __post_init__(self) -> None:
-        if self.additions < 0 or self.deletions < 0:
+        if any(
+            count is not None and count < 0
+            for count in (self.additions, self.deletions)
+        ):
             raise ForgeContractError("changed-file counts cannot be negative")
 
 
