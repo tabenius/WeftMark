@@ -284,7 +284,7 @@ tasks:
 
   - slug: bitbucket-forge-adapter
     title: Implement a Bitbucket Cloud forge adapter
-    status: todo
+    status: review
     priority: P2
     depends:
       - forge-capability-discovery
@@ -304,7 +304,10 @@ tasks:
     evidence:
       - kind: test
         required: true
-        criterion: Recorded fixtures cover PR, CI, review and outage states.
+        command: python -m pytest tests/adapters/test_bitbucket.py
+      - kind: review
+        required: true
+        criterion: Bitbucket pagination, status and approval semantics remain adapter-local and read-only.
 
   - slug: azure-devops-forge-adapter
     title: Implement an Azure DevOps forge adapter
