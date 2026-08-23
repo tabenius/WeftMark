@@ -1,0 +1,134 @@
+format: weft-task-v0
+phase: runtime-providers
+summary: Let WeftMark start, drive and observe disposable coding-agent workers as a provider-neutral capability, without becoming a second agent runtime.
+
+tasks:
+  - slug: runtime-port-contract
+    title: Define the replaceable runtime adapter port
+    status: done
+    priority: P1
+    depends:
+      - git-port-contract
+    purpose: Let a Change Set's coding-agent worker be driven by any disposable runtime provider (ACP, Docker, local PTY, ...) without the domain or application layer knowing which one.
+    scope:
+      files:
+        - src/weftmark/application/ports/runtime.py
+        - tests/contracts/test_runtime_port.py
+        - tasks/57-runtime-providers.weft.yml
+      contracts:
+        - port:runtime-v0
+    deliverables:
+      - Provider-neutral workspace attachment, disposable Change Set worktree, worker lifecycle (start/stop/send-input/summary) and diff-presentation contract.
+      - Normalized RuntimeAdapterError with a shared error-code vocabulary across providers.
+    accept:
+      - A Protocol-conformant fake provider satisfies the full contract in tests without any concrete adapter existing yet.
+      - Worker telemetry is explicitly never a review/readiness verdict.
+    negative:
+      - The port does not own WeftMark lifecycle, claims, evidence, review or handoff state.
+      - Browser/UI code must not receive the provider object directly.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/contracts/test_runtime_port.py
+      - kind: review
+        required: true
+        criterion: Port stays provider-neutral and exposes no direct execution authority beyond the declared worker lifecycle.
+
+  - slug: acp-runtime-adapter
+    title: Implement an ACP runtime adapter
+    status: todo
+    priority: P1
+    depends:
+      - runtime-port-contract
+    purpose: Drive ACP-speaking coding agents (Codex, Claude Code, OpenCode, Cline, ...) as disposable Change Set workers without inventing a proprietary runtime protocol.
+    scope:
+      files:
+        - src/weftmark/adapters/acp.py
+        - tests/adapters/test_acp.py
+        - docs/contracts/acp-runtime-adapter-v0.md
+        - tasks/57-runtime-providers.weft.yml
+      contracts:
+        - adapter:acp-v0
+    deliverables:
+      - Dependency-free stdio JSON-RPC ACP client implementing the initialize/session-new/session-prompt/session-cancel/session-update slice of ACP.
+      - Disposable Change Set git worktree creation and cleanup owned by the adapter.
+      - Worktree-scoped fs/read_text_file, fs/write_text_file and session/request_permission handling; anything outside the worktree or broader than a worktree-scoped edit permission is refused.
+      - Background notification-draining thread so start/send-input return without blocking for a full agent turn.
+    accept:
+      - A fixture ACP agent subprocess can be started, sent input, polled for state and stopped through RuntimePort alone.
+      - Worker state transitions (idle/running/awaiting_input/exited/failed) are observable via worker_summary without blocking.
+      - fs/permission requests outside the disposable worktree are refused, not silently scoped down.
+    negative:
+      - The adapter does not grant the spawned agent access to files outside its own disposable worktree.
+      - The adapter does not auto-approve permission requests broader than a worktree-scoped read/edit.
+      - Cleanup of a disposable worktree never touches the primary worktree or unrelated Change Sets.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_acp.py tests/contracts/test_runtime_port.py
+      - kind: security
+        required: true
+        criterion: fs and permission-request handling reviewed for worktree escape and unscoped execution grants.
+
+  - slug: runtime-provider-registry
+    title: Configure named runtime providers
+    status: todo
+    priority: P1
+    depends:
+      - runtime-port-contract
+    purpose: Let an operator name and select among multiple disposable runtime providers without a plugin or discovery mechanism.
+    scope:
+      files:
+        - src/weftmark/application/runtime_registry.py
+        - tests/application/test_runtime_registry.py
+        - docs/contracts/runtime-provider-registry-v0.md
+        - tasks/57-runtime-providers.weft.yml
+      contracts:
+        - contract:runtime-provider-registry-v0
+    deliverables:
+      - Named provider configuration (argv template plus declared capabilities) sourced from CLI flags or a --runtime-config file.
+      - Deterministic provider lookup by name with explicit refusal for an unknown provider.
+    accept:
+      - Two differently named providers resolve to distinct, non-interfering launch configurations.
+      - An unconfigured provider name fails closed with an explained error rather than silently defaulting.
+    negative:
+      - The registry does not import or depend on the concrete ACP adapter; it is exercised in tests only through the existing FakeRuntime double.
+      - The registry does not perform network discovery or dynamic plugin loading in v0.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_runtime_registry.py
+
+  - slug: runtime-cli-surface
+    title: Start and observe runtime workers from the CLI
+    status: todo
+    priority: P1
+    depends:
+      - acp-runtime-adapter
+      - runtime-provider-registry
+      - native-task-claim-service
+    purpose: Let an operator start, feed input to, observe and stop a disposable coding-agent worker for an owned native task without a second coordination tool.
+    scope:
+      files:
+        - src/weftmark/cli/main.py
+        - tests/cli/test_cli_runtime.py
+        - tasks/57-runtime-providers.weft.yml
+      contracts:
+        - surface:runtime-cli-v0
+    deliverables:
+      - weftmark runtime start/status/send-input/stop commands scoped to a native task's active claim.
+      - Ledger-recorded worker-session provenance visible through weftmark status.
+    accept:
+      - Starting a worker for a task without an active native claim is refused.
+      - Starting a worker twice for the same active claim returns the existing session rather than a second worktree/process.
+      - Stopping a worker never mutates Change Set lifecycle, review or handoff state.
+    negative:
+      - CLI commands do not bypass the provider registry or adapter to spawn a process directly.
+      - Runtime commands do not grant merge, release, or lifecycle-transition authority.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/cli/test_cli_runtime.py
+      - kind: review
+        required: true
+        criterion: Runtime worker authority stays scoped to the owning claim and never implies review/readiness or lifecycle authority.
