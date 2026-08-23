@@ -311,7 +311,7 @@ tasks:
 
   - slug: azure-devops-forge-adapter
     title: Implement an Azure DevOps forge adapter
-    status: todo
+    status: blocked
     priority: P2
     depends:
       - forge-capability-discovery
@@ -320,6 +320,7 @@ tasks:
       files:
         - src/weftmark/adapters/azure_devops.py
         - tests/adapters/test_azure_devops.py
+        - tasks/30-git-lineage.weft.yml
       contracts:
         - adapter:azure-devops-v0
     deliverables:
@@ -331,4 +332,9 @@ tasks:
     evidence:
       - kind: test
         required: true
-        criterion: Recorded fixtures cover PR, build, thread and provider-error mappings.
+        command: python -m pytest tests/adapters/test_azure_devops.py
+      - kind: review
+        required: true
+        criterion: Azure organization/project/repository, status, reviewer and thread semantics remain adapter-local and read-only.
+    notes:
+      - Azure pull-request iteration changes expose paths and change kinds but not exact per-file addition/deletion counts. ForgeChangedFile v0 requires integer counts, so the adapter advertises changed_files as unsupported instead of inventing zero counts. Resolve the port contract before completing this task.
