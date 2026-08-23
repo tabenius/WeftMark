@@ -5,7 +5,7 @@ summary: Convert a useful internal control plane into an honestly described open
 tasks:
   - slug: security-threat-model
     title: Threat-model local and remote coordination surfaces
-    status: todo
+    status: review
     priority: P0
     depends:
       - mcp-surface
