@@ -36,7 +36,7 @@ tasks:
 
   - slug: acp-runtime-adapter
     title: Implement an ACP runtime adapter
-    status: review
+    status: done
     priority: P1
     depends:
       - runtime-port-contract
@@ -77,7 +77,7 @@ tasks:
 
   - slug: runtime-provider-registry
     title: Configure named runtime providers
-    status: review
+    status: done
     priority: P1
     depends:
       - runtime-port-contract
@@ -107,7 +107,7 @@ tasks:
 
   - slug: runtime-cli-surface
     title: Start and observe runtime workers from the CLI
-    status: review
+    status: done
     priority: P1
     depends:
       - acp-runtime-adapter
