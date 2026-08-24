@@ -131,7 +131,7 @@ def test_completed_and_abandoned_pull_requests_map_without_policy_authority() ->
 
 
 def test_commit_statuses_preserve_success_failure_and_pending() -> None:
-    url = f"{GIT}/commits/{SHA_B}/statuses?%24top=1000&api-version=7.1"
+    url = f"{GIT}/commits/{SHA_B}/statuses?top=1000&skip=0&api-version=7.1"
     value, _ = adapter(
         {
             url: response(
@@ -175,6 +175,31 @@ def test_commit_statuses_preserve_success_failure_and_pending() -> None:
     assert by_name["ci/security"].conclusion is ForgeConclusion.FAILED
     assert by_name["ci/unit"].status is ForgeRunStatus.PENDING
     assert by_name["ci/unit"].conclusion is None
+
+
+def test_commit_statuses_follow_documented_top_skip_pagination() -> None:
+    first = f"{GIT}/commits/{SHA_B}/statuses?top=1000&skip=0&api-version=7.1"
+    second = f"{GIT}/commits/{SHA_B}/statuses?top=1000&skip=1000&api-version=7.1"
+    status = {
+        "id": 1,
+        "state": "succeeded",
+        "context": {"genre": "ci", "name": "same"},
+        "targetUrl": f"{WEB}/status/1",
+        "creationDate": NOW,
+        "updatedDate": LATER,
+    }
+    value, transport = adapter(
+        {
+            first: response({"count": 1000, "value": [status] * 1000}),
+            second: response({"count": 1, "value": [{**status, "id": 2}]}),
+        }
+    )
+
+    result = value.checks(GitObjectId(SHA_B))
+
+    assert result.availability is ForgeAvailability.AVAILABLE
+    assert len(result.value) == 1001
+    assert [call[0] for call in transport.calls] == [first, second]
 
 
 def test_builds_distinguish_missing_failed_and_in_progress() -> None:
@@ -390,6 +415,37 @@ def test_changed_files_preserve_paths_and_unknown_counts_across_iteration_pages(
         first_changes_url,
         second_changes_url,
     ]
+
+
+def test_changed_files_treat_zero_iteration_cursor_as_terminal() -> None:
+    iterations_url = f"{GIT}/pullRequests/42/iterations?api-version=7.1"
+    changes_url = (
+        f"{GIT}/pullRequests/42/iterations/1/changes?%24top=2000&api-version=7.1"
+    )
+    value, transport = adapter(
+        {
+            iterations_url: response({"count": 1, "value": [{"id": 1}]}),
+            changes_url: response(
+                {
+                    "changeEntries": [
+                        {
+                            "changeTrackingId": 1,
+                            "changeType": "edit",
+                            "item": {"path": "/src/value.py"},
+                        }
+                    ],
+                    "nextSkip": 0,
+                    "nextTop": 0,
+                }
+            ),
+        }
+    )
+
+    result = value.changed_files("42")
+
+    assert result.availability is ForgeAvailability.AVAILABLE
+    assert len(result.value) == 1
+    assert [call[0] for call in transport.calls] == [iterations_url, changes_url]
 
 
 def test_renamed_change_without_original_path_is_unavailable() -> None:

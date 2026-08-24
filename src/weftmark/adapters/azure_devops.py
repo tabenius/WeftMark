@@ -174,9 +174,9 @@ class AzureDevopsForgeAdapter(ForgePort):
             )
 
     def checks(self, head: GitObjectId) -> ForgeResult[tuple[ForgeCheck, ...]]:
-        result = self._paged_values(
+        result = self._offset_paged_values(
             f"{self._git_path}/commits/{head}/statuses",
-            query={"$top": "1000"},
+            page_size=1000,
         )
         if result.availability is not ForgeAvailability.AVAILABLE:
             return ForgeResult(result.availability, detail=result.detail)
@@ -295,16 +295,19 @@ class AzureDevopsForgeAdapter(ForgePort):
                 if not isinstance(raw_values, list):
                     raise TypeError("changeEntries must be a list")
                 values.extend(_mapping(value) for value in raw_values)
-                raw_skip = payload.get("nextSkip")
-                skip = None if raw_skip is None else int(raw_skip)
-                if skip is not None and skip < 0:
-                    raise ValueError("nextSkip must not be negative")
+                next_skip = _optional_nonnegative_integer(payload, "nextSkip")
+                next_top = _optional_nonnegative_integer(payload, "nextTop")
+                if next_skip in {None, 0} and next_top in {None, 0}:
+                    return ForgeResult.available(tuple(values))
+                if next_skip is None or next_skip == 0 or next_top == 0:
+                    raise ValueError("inconsistent iteration pagination")
+                if skip is not None and next_skip <= skip:
+                    raise ValueError("nextSkip did not advance")
+                skip = next_skip
             except (KeyError, TypeError, ValueError):
                 return ForgeResult.unavailable(
                     "Azure DevOps returned malformed iteration-change data"
                 )
-            if skip is None:
-                return ForgeResult.available(tuple(values))
         return ForgeResult.unavailable(
             "Azure DevOps iteration-change pagination exceeded safety limit"
         )
@@ -389,6 +392,42 @@ class AzureDevopsForgeAdapter(ForgePort):
                 return ForgeResult.available(tuple(values))
         return ForgeResult.unavailable("Azure DevOps pagination exceeded safety limit")
 
+    def _offset_paged_values(
+        self,
+        path: str,
+        *,
+        page_size: int,
+    ) -> ForgeResult[tuple[Mapping[str, Any], ...]]:
+        """Read APIs that document ``top``/``skip`` rather than tokens."""
+
+        values: list[Mapping[str, Any]] = []
+        skip = 0
+        for _ in range(100):
+            result = self._get_json(
+                path,
+                query={"top": str(page_size), "skip": str(skip)},
+            )
+            if result.availability is not ForgeAvailability.AVAILABLE:
+                return ForgeResult(result.availability, detail=result.detail)
+            try:
+                raw_payload, _headers = result.value
+                payload = _mapping(raw_payload)
+                raw_values = payload["value"]
+                if not isinstance(raw_values, list) or len(raw_values) > page_size:
+                    raise TypeError("invalid value page")
+                page = tuple(_mapping(value) for value in raw_values)
+            except (KeyError, TypeError):
+                return ForgeResult.unavailable(
+                    "Azure DevOps returned malformed offset-paginated data"
+                )
+            values.extend(page)
+            if len(page) < page_size:
+                return ForgeResult.available(tuple(values))
+            skip += len(page)
+        return ForgeResult.unavailable(
+            "Azure DevOps offset pagination exceeded safety limit"
+        )
+
 
 def _base_url(name: str, value: str) -> str:
     normalized = value.strip().rstrip("/")
@@ -423,6 +462,17 @@ def _pull_number(value: str) -> int:
 def _mapping(value: Any) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError("expected object")
+    return value
+
+
+def _optional_nonnegative_integer(
+    payload: Mapping[str, Any], name: str
+) -> int | None:
+    value = payload.get(name)
+    if value is None:
+        return None
+    if type(value) is not int or value < 0:
+        raise TypeError(f"{name} must be a non-negative integer")
     return value
 
 

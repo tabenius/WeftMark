@@ -137,6 +137,9 @@ def test_changed_file_counts_distinguish_unknown_from_exact_zero() -> None:
 
     with pytest.raises(ForgeContractError, match="negative"):
         ForgeChangedFile(entry, additions=-1, deletions=None)
+    for invalid in (False, True, 1.5, "1"):
+        with pytest.raises(ForgeContractError, match="integers or unavailable"):
+            ForgeChangedFile(entry, additions=invalid, deletions=None)  # type: ignore[arg-type]
 
 
 def test_forge_port_is_runtime_checkable_and_read_side_only() -> None:
