@@ -59,11 +59,14 @@ tasks:
       - A fixture ACP agent subprocess can be started, sent input, polled for state and stopped through RuntimePort alone.
       - Worker state transitions (idle/running/awaiting_input/exited/failed) are observable via worker_summary without blocking.
       - fs/permission requests outside the disposable worktree are refused, not silently scoped down.
+      - Reconnect accepts commits descended from the claimed base while refusing a replaced repository or rewritten history.
+      - ACP and local-control messages plus text callbacks have explicit size and shape bounds.
     negative:
       - ACP file callbacks do not grant the spawned agent access to paths outside its own disposable worktree.
       - The adapter does not auto-approve permission requests broader than a worktree-scoped read/edit.
       - Cleanup of a disposable worktree never touches the primary worktree or unrelated Change Sets.
       - Callback policy is not presented as operating-system process isolation; configured provider executables remain trusted unless separately sandboxed.
+      - A forged control-host workspace envelope cannot redirect a worker or callback root outside the deterministic Change Set worktree.
     evidence:
       - kind: test
         required: true
@@ -93,6 +96,7 @@ tasks:
     accept:
       - Two differently named providers resolve to distinct, non-interfering launch configurations.
       - An unconfigured provider name fails closed with an explained error rather than silently defaulting.
+      - Exact provider configuration has a stable non-secret fingerprint for runtime-session binding.
     negative:
       - The registry does not import or depend on the concrete ACP adapter; it is exercised in tests only through the existing FakeRuntime double.
       - The registry does not perform network discovery or dynamic plugin loading in v0.
@@ -124,6 +128,7 @@ tasks:
       - Starting a worker for a task without an active native claim is refused.
       - Starting a worker twice for the same active claim returns the existing session rather than a second worktree/process.
       - Stopping a worker never mutates Change Set lifecycle, review or handoff state.
+      - Later commands refuse same-name provider configuration drift before contacting a runtime host.
     negative:
       - CLI commands do not bypass the provider registry or adapter to spawn a process directly.
       - Runtime commands do not grant merge, release, or lifecycle-transition authority.

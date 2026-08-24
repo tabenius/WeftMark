@@ -16,3 +16,9 @@ never passes them through a shell.
 Names, arguments, capabilities, file size, JSON structure, and duplicate keys
 are validated. Unknown providers, malformed configuration, empty arguments,
 NUL, and ambiguous capability placement fail closed.
+
+Each validated configuration exposes a deterministic SHA-256 fingerprint over
+its name, argv, and sorted capabilities. Runtime-session receipts store that
+digest, never the raw argv, and require it to match on later status, input, and
+stop operations. Reusing a provider name therefore does not silently retarget a
+running worker to a different executable or capability declaration.

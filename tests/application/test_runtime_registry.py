@@ -25,6 +25,16 @@ def test_registry_is_deterministic_and_unknown_fails_closed() -> None:
         registry.get("missing")
 
 
+def test_provider_fingerprint_binds_exact_argv_and_capabilities() -> None:
+    first = RuntimeProviderConfig("acp", ("agent", "acp"), frozenset({"edit", "read"}))
+    reordered = RuntimeProviderConfig("acp", ("agent", "acp"), frozenset({"read", "edit"}))
+    changed = RuntimeProviderConfig("acp", ("other-agent", "acp"), frozenset({"read", "edit"}))
+
+    assert first.fingerprint == reordered.fingerprint
+    assert first.fingerprint.startswith("sha256:")
+    assert first.fingerprint != changed.fingerprint
+
+
 def test_flag_accepts_legacy_and_json_argv_forms() -> None:
     legacy = parse_runtime_provider_flag("codex-acp=codex:acp:cap=Read,edit")
     assert legacy.argv == ("codex", "acp")

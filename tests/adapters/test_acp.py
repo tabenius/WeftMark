@@ -103,6 +103,35 @@ def test_request_times_out_when_agent_is_silent(tmp_path: Path) -> None:
     assert excinfo.value.code is RuntimeErrorCode.TRANSPORT_FAILED
 
 
+def test_request_refuses_oversized_agent_message(tmp_path: Path) -> None:
+    script = tmp_path / "oversized_agent.py"
+    script.write_text(
+        "import sys\n"
+        "for line in sys.stdin:\n"
+        " sys.stdout.buffer.write(b'{' + b'x' * 1048576 + b'}\\n'); sys.stdout.flush()\n",
+        encoding="utf-8",
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(script)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    connection = AcpConnection(
+        process, request_handlers={}, on_notification=lambda method, params: None
+    )
+    try:
+        with pytest.raises(RuntimeAdapterError) as excinfo:
+            connection.request("ping", {}, timeout=2)
+    finally:
+        connection.close()
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+    assert excinfo.value.code is RuntimeErrorCode.TRANSPORT_FAILED
+    assert "1 MiB" in excinfo.value.detail
+
+
 _STUB_AGENT = """
 import json
 import sys
@@ -141,20 +170,20 @@ def _spawn_stub_adapter(tmp_path: Path) -> AcpRuntimeAdapter:
     )
 
 
-def _runtime_workspace(tmp_path: Path) -> RuntimeChangeWorkspace:
-    return RuntimeChangeWorkspace(
-        provider="stub-acp",
-        workspace_id="ws-1",
-        change_set_id="chg-1",
-        task_id="task-1",
-        base=GitObjectId("0" * 40),
-        worktree_path=str(tmp_path),
-    )
-
-
 def test_start_worker_is_non_blocking_and_reaches_awaiting_input(tmp_path: Path) -> None:
     adapter = _spawn_stub_adapter(tmp_path / "stub")
-    workspace = _runtime_workspace(tmp_path)
+    repo, head = _init_repo(tmp_path)
+    workspace = adapter.ensure_change_workspace(
+        adapter.attach_workspace(str(repo)), "chg-worker", GitObjectId(head)
+    )
+    workspace = RuntimeChangeWorkspace(
+        workspace.provider,
+        workspace.workspace_id,
+        workspace.change_set_id,
+        "task-worker",
+        workspace.base,
+        workspace.worktree_path,
+    )
     started = time.monotonic()
     try:
         summary = adapter.start_worker(workspace, "agent-1", "do the thing")
@@ -171,13 +200,69 @@ def test_start_worker_is_non_blocking_and_reaches_awaiting_input(tmp_path: Path)
         assert summary.session_id == "sess-1"
     finally:
         adapter.stop_worker(workspace)
+        adapter.cleanup_change_workspace(workspace)
 
 
 def test_stop_worker_marks_exited(tmp_path: Path) -> None:
     adapter = _spawn_stub_adapter(tmp_path / "stub")
-    workspace = _runtime_workspace(tmp_path)
-    adapter.start_worker(workspace, "agent-1", "do the thing")
-    assert adapter.stop_worker(workspace).state is RuntimeWorkerState.EXITED
+    repo, head = _init_repo(tmp_path)
+    workspace = adapter.ensure_change_workspace(
+        adapter.attach_workspace(str(repo)), "chg-stop", GitObjectId(head)
+    )
+    workspace = RuntimeChangeWorkspace(
+        workspace.provider,
+        workspace.workspace_id,
+        workspace.change_set_id,
+        "task-stop",
+        workspace.base,
+        workspace.worktree_path,
+    )
+    try:
+        adapter.start_worker(workspace, "agent-1", "do the thing")
+        assert adapter.stop_worker(workspace).state is RuntimeWorkerState.EXITED
+    finally:
+        adapter.stop_worker(workspace)
+        adapter.cleanup_change_workspace(workspace)
+
+
+def test_start_worker_refuses_incompatible_protocol_version(tmp_path: Path) -> None:
+    repo, head = _init_repo(tmp_path)
+    script = tmp_path / "bad_version_agent.py"
+    script.write_text(
+        textwrap.dedent(
+            """
+            import json, sys
+            for line in sys.stdin:
+                value = json.loads(line)
+                if value.get("method") == "initialize":
+                    result = {"protocolVersion": 99, "agentCapabilities": {}, "authMethods": []}
+                    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": value["id"], "result": result}) + "\\n")
+                    sys.stdout.flush()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = AcpRuntimeAdapter(
+        AcpProviderSpec("bad-version", (sys.executable, str(script)))
+    )
+    change = adapter.ensure_change_workspace(
+        adapter.attach_workspace(str(repo)), "chg-version", GitObjectId(head)
+    )
+    change = RuntimeChangeWorkspace(
+        change.provider,
+        change.workspace_id,
+        change.change_set_id,
+        "task-version",
+        change.base,
+        change.worktree_path,
+    )
+    try:
+        with pytest.raises(RuntimeAdapterError) as excinfo:
+            adapter.start_worker(change, "agent-1", "work")
+        assert excinfo.value.code is RuntimeErrorCode.TRANSPORT_FAILED
+        assert "protocol version" in excinfo.value.detail
+    finally:
+        adapter.cleanup_change_workspace(change)
 
 
 def _init_repo(tmp_path: Path) -> tuple[Path, str]:
@@ -206,11 +291,24 @@ def test_worktree_lifecycle_changes_and_scoped_fs(tmp_path: Path) -> None:
         assert adapter._handle_read_text_file({"path": str(inside)}) == {"content": "hello\n"}
         adapter._handle_write_text_file({"path": str(inside), "content": "changed\n"})
         assert [item.path for item in adapter.changes(change).files] == ["README.md"]
+        subprocess.run(["git", "add", "README.md"], cwd=change.worktree_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "agent commit"],
+            cwd=change.worktree_path,
+            check=True,
+        )
+        assert adapter.get_change_workspace(workspace, "chg-2", GitObjectId(head)) is not None
         outside = tmp_path / "outside.txt"
         outside.write_text("secret", encoding="utf-8")
         with pytest.raises(RuntimeAdapterError) as excinfo:
             adapter._handle_read_text_file({"path": str(outside)})
         assert excinfo.value.code is RuntimeErrorCode.PERMISSION_DENIED
+        with pytest.raises(RuntimeAdapterError, match="content must be text"):
+            adapter._handle_write_text_file({"path": str(inside), "content": {"bad": True}})
+        large = Path(change.worktree_path) / "large.txt"
+        large.write_bytes(b"x" * 4_194_305)
+        with pytest.raises(RuntimeAdapterError, match="at most 4 MiB"):
+            adapter._handle_read_text_file({"path": str(large)})
     finally:
         adapter.cleanup_change_workspace(change)
     assert not Path(change.worktree_path).exists()
@@ -240,6 +338,34 @@ def test_permission_policy_requires_scoped_read_or_edit(tmp_path: Path) -> None:
         ):
             denied = adapter._handle_request_permission({"toolCall": tool_call, "options": options})
             assert denied["outcome"]["optionId"] == "reject"
+        cancelled = adapter._handle_request_permission(
+            {
+                "toolCall": {"kind": "edit", "locations": [{"path": inside}]},
+                "options": [{"kind": "allow_once"}],
+            }
+        )
+        assert cancelled == {"outcome": {"outcome": "cancelled"}}
+    finally:
+        adapter.cleanup_change_workspace(change)
+
+
+def test_adapter_refuses_forged_change_workspace_envelope(tmp_path: Path) -> None:
+    repo, head = _init_repo(tmp_path)
+    adapter = _spawn_stub_adapter(tmp_path / "stub")
+    workspace = adapter.attach_workspace(str(repo))
+    change = adapter.ensure_change_workspace(workspace, "chg-safe", GitObjectId(head))
+    forged = RuntimeChangeWorkspace(
+        change.provider,
+        change.workspace_id,
+        change.change_set_id,
+        "task-safe",
+        change.base,
+        str(tmp_path),
+    )
+    try:
+        with pytest.raises(RuntimeAdapterError) as excinfo:
+            adapter.start_worker(forged, "agent-1", "do not run")
+        assert excinfo.value.code is RuntimeErrorCode.PERMISSION_DENIED
     finally:
         adapter.cleanup_change_workspace(change)
 

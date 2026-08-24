@@ -11,9 +11,9 @@ stderr is free for the agent's own logs.
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import json
-import hashlib
 import os
 import socket
 import stat
@@ -43,6 +43,14 @@ from weftmark.application.ports.runtime import (
 
 RequestHandler = Callable[[dict[str, Any]], dict[str, Any]]
 NotificationHandler = Callable[[str, dict[str, Any]], None]
+
+_MAX_RPC_BYTES = 1_048_576
+_MAX_TEXT_FILE_BYTES = 4_194_304
+_MAX_TEXT_LINES = 100_000
+_MAX_REQUEST_TIMEOUT_SECONDS = 3_600
+_STOP_REASONS = frozenset(
+    {"end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"}
+)
 
 
 class _PendingCall:
@@ -77,11 +85,28 @@ class AcpConnection:
         self._reader.start()
 
     def request(self, method: str, params: dict[str, Any], *, timeout: float = 30.0) -> dict[str, Any]:
+        if not isinstance(method, str) or not method or not isinstance(params, dict):
+            raise RuntimeContractError("ACP request requires a method and object params")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or timeout != timeout
+            or timeout <= 0
+            or timeout > _MAX_REQUEST_TIMEOUT_SECONDS
+        ):
+            raise RuntimeContractError("ACP request timeout must be between 0 and 3600 seconds")
         call_id = next(self._ids)
         pending = _PendingCall()
         with self._pending_lock:
             self._pending[call_id] = pending
-        self._write({"jsonrpc": "2.0", "id": call_id, "method": method, "params": params})
+        try:
+            self._write(
+                {"jsonrpc": "2.0", "id": call_id, "method": method, "params": params}
+            )
+        except RuntimeAdapterError:
+            with self._pending_lock:
+                self._pending.pop(call_id, None)
+            raise
         if not pending.event.wait(timeout):
             with self._pending_lock:
                 self._pending.pop(call_id, None)
@@ -111,7 +136,29 @@ class AcpConnection:
         self._fail_pending("connection closed")
 
     def _write(self, message: dict[str, Any]) -> None:
-        line = json.dumps(message, separators=(",", ":")) + "\n"
+        try:
+            encoded = (
+                json.dumps(
+                    message,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+                + b"\n"
+            )
+        except (TypeError, ValueError) as error:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.TRANSPORT_FAILED,
+                "acp",
+                "write",
+                "message is not strict JSON",
+            ) from error
+        if len(encoded) > _MAX_RPC_BYTES:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.TRANSPORT_FAILED,
+                "acp",
+                "write",
+                "message exceeds 1 MiB",
+            )
         with self._write_lock:
             if self._closed or self._process.stdin is None:
                 raise RuntimeAdapterError(
@@ -121,7 +168,7 @@ class AcpConnection:
                     "connection is closed",
                 )
             try:
-                self._process.stdin.write(line.encode("utf-8"))
+                self._process.stdin.write(encoded)
                 self._process.stdin.flush()
             except (BrokenPipeError, OSError) as error:
                 raise RuntimeAdapterError(
@@ -133,25 +180,37 @@ class AcpConnection:
 
     def _read_loop(self) -> None:
         assert self._process.stdout is not None
-        for raw_line in self._process.stdout:
+        while True:
+            raw_line = self._process.stdout.readline(_MAX_RPC_BYTES + 1)
+            if not raw_line:
+                break
             if self._closed:
+                return
+            if len(raw_line) > _MAX_RPC_BYTES or not raw_line.endswith(b"\n"):
+                self._fail_pending("agent message is missing a newline or exceeds 1 MiB")
                 return
             line = raw_line.strip()
             if not line:
                 continue
             try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
+                message = _strict_json_loads(line)
+            except (ValueError, UnicodeDecodeError):
                 continue
             if not isinstance(message, dict):
                 continue
             try:
                 self._dispatch(message)
+            except RuntimeAdapterError as error:
+                self._fail_pending(error.detail)
+                return
             except (KeyError, TypeError, ValueError):
                 continue
         self._fail_pending("agent transport closed")
 
     def _dispatch(self, message: dict[str, Any]) -> None:
+        if message.get("jsonrpc") != "2.0":
+            self._malformed_response(message, "JSON-RPC version must be 2.0")
+            return
         if "method" in message and "id" in message:
             self._handle_inbound_request(message)
         elif "method" in message:
@@ -198,7 +257,10 @@ class AcpConnection:
             pending = self._pending.pop(response_id, None)
         if pending is None:
             return
-        if "error" in message:
+        if ("error" in message) == ("result" in message):
+            pending.error = "ACP response must contain exactly one of result or error"
+            pending.transport_error = True
+        elif "error" in message:
             error = message["error"]
             pending.error = (
                 str(error.get("message", "unknown ACP error"))[:4096]
@@ -212,6 +274,17 @@ class AcpConnection:
             else:
                 pending.result = result
         pending.event.set()
+
+    def _malformed_response(self, message: Mapping[str, Any], detail: str) -> None:
+        response_id = message.get("id")
+        if isinstance(response_id, str) and response_id.isascii() and response_id.isdigit():
+            response_id = int(response_id)
+        with self._pending_lock:
+            pending = self._pending.pop(response_id, None)
+        if pending is not None:
+            pending.error = detail
+            pending.transport_error = True
+            pending.event.set()
 
     def _fail_pending(self, detail: str) -> None:
         with self._pending_lock:
@@ -234,17 +307,33 @@ class AcpProviderSpec:
     argv: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise RuntimeContractError("provider name must not be empty")
+        name = self.name.strip()
+        if (
+            not name
+            or len(name) > 128
+            or not name.isascii()
+            or not name[0].isalnum()
+            or any(not (value.isalnum() or value in "._-") for value in name)
+        ):
+            raise RuntimeContractError("provider name must be a portable identifier")
         if not self.argv or any(
             not isinstance(value, str) or not value.strip() or "\x00" in value
             for value in self.argv
         ):
             raise RuntimeContractError("provider argv must contain non-empty arguments")
+        object.__setattr__(self, "name", name)
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _require_worker_text(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeContractError("worker input must not be empty")
+    if len(value.encode("utf-8")) > _MAX_RPC_BYTES // 2:
+        raise RuntimeContractError("worker input exceeds 512 KiB")
+    return value
 
 
 @dataclass
@@ -286,11 +375,34 @@ class AcpRuntimeAdapter:
                 "attach_workspace",
                 f"repository directory not found: {resolved}",
             )
+        try:
+            top_level = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=resolved,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.WORKSPACE_NOT_FOUND,
+                self._spec.name,
+                "attach_workspace",
+                "workspace is not a readable Git worktree",
+            ) from error
+        if Path(top_level).resolve() != Path(resolved):
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.CONFLICT,
+                self._spec.name,
+                "attach_workspace",
+                "workspace must identify the Git worktree root",
+            )
         return RuntimeWorkspace(self._spec.name, resolved, resolved)
 
     def ensure_change_workspace(
         self, workspace: RuntimeWorkspace, change_set_id: str, base: GitObjectId
     ) -> RuntimeChangeWorkspace:
+        self._require_workspace(workspace)
         existing = self.get_change_workspace(workspace, change_set_id, base)
         if existing is not None:
             return existing
@@ -318,17 +430,38 @@ class AcpRuntimeAdapter:
     def get_change_workspace(
         self, workspace: RuntimeWorkspace, change_set_id: str, base: GitObjectId
     ) -> RuntimeChangeWorkspace | None:
+        self._require_workspace(workspace)
         worktree_path = self._worktree_path(workspace, change_set_id)
         if not Path(worktree_path).is_dir():
             return None
         try:
-            actual = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
+            ancestry = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", base.value, "HEAD"],
                 cwd=worktree_path,
-                check=True,
                 capture_output=True,
                 text=True,
-            ).stdout.strip()
+            )
+            if ancestry.returncode not in {0, 1}:
+                raise subprocess.CalledProcessError(
+                    ancestry.returncode,
+                    ancestry.args,
+                    output=ancestry.stdout,
+                    stderr=ancestry.stderr,
+                )
+            if ancestry.returncode == 1:
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.CONFLICT,
+                    self._spec.name,
+                    "get_change_workspace",
+                    "existing runtime worktree no longer descends from its claimed base",
+                )
+            if _git_common_dir(worktree_path) != _git_common_dir(workspace.repo_path):
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.CONFLICT,
+                    self._spec.name,
+                    "get_change_workspace",
+                    "existing runtime path belongs to a different Git repository",
+                )
         except (OSError, subprocess.CalledProcessError) as error:
             raise RuntimeAdapterError(
                 RuntimeErrorCode.RUNTIME_FAILED,
@@ -336,13 +469,6 @@ class AcpRuntimeAdapter:
                 "get_change_workspace",
                 "existing runtime worktree is unreadable",
             ) from error
-        if actual != base.value:
-            raise RuntimeAdapterError(
-                RuntimeErrorCode.CONFLICT,
-                self._spec.name,
-                "get_change_workspace",
-                "existing runtime worktree has a different base",
-            )
         self._current_worktree_hint = worktree_path
         self._owned_worktrees.add(str(Path(worktree_path).resolve()))
         return self._change_workspace(workspace, change_set_id, base, worktree_path)
@@ -357,6 +483,10 @@ class AcpRuntimeAdapter:
         rows: int | None = None,
     ) -> RuntimeWorkerSummary:
         del cols, rows
+        self._require_change_workspace(change_workspace)
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            raise RuntimeContractError("worker agent_id must not be empty")
+        _require_worker_text(prompt)
         key = self._key(change_workspace)
         with self._sessions_lock:
             existing = self._sessions.get(key)
@@ -390,7 +520,7 @@ class AcpRuntimeAdapter:
         with self._sessions_lock:
             self._sessions[key] = session
         try:
-            connection.request(
+            initialized = connection.request(
                 "initialize",
                 {
                     "protocolVersion": PROTOCOL_VERSION,
@@ -401,6 +531,22 @@ class AcpRuntimeAdapter:
                     "clientInfo": {"name": "weftmark", "version": "0"},
                 },
             )
+            if initialized.get("protocolVersion") != PROTOCOL_VERSION:
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.TRANSPORT_FAILED,
+                    self._spec.name,
+                    "initialize",
+                    "agent selected an unsupported ACP protocol version",
+                )
+            if not isinstance(initialized.get("agentCapabilities"), Mapping) or not isinstance(
+                initialized.get("authMethods"), list
+            ):
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.TRANSPORT_FAILED,
+                    self._spec.name,
+                    "initialize",
+                    "agent returned malformed ACP capabilities",
+                )
             created = connection.request(
                 "session/new",
                 {
@@ -409,9 +555,22 @@ class AcpRuntimeAdapter:
                     "additionalDirectories": [],
                 },
             )
-            session.session_id = str(created["sessionId"])
+            session_id = created.get("sessionId")
+            if (
+                not isinstance(session_id, str)
+                or not session_id.strip()
+                or len(session_id) > 1024
+                or "\x00" in session_id
+            ):
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.TRANSPORT_FAILED,
+                    self._spec.name,
+                    "session/new",
+                    "agent response has an invalid sessionId",
+                )
+            session.session_id = session_id
             self._send_prompt(session, prompt)
-        except (KeyError, RuntimeAdapterError) as error:
+        except RuntimeAdapterError as error:
             with session.lock:
                 session.state = RuntimeWorkerState.FAILED
                 session.updated_at = _now()
@@ -421,19 +580,13 @@ class AcpRuntimeAdapter:
             if process.poll() is None:
                 process.kill()
                 process.wait(timeout=5)
-            if isinstance(error, RuntimeAdapterError):
-                raise
-            raise RuntimeAdapterError(
-                RuntimeErrorCode.TRANSPORT_FAILED,
-                self._spec.name,
-                "session/new",
-                "agent response lacks sessionId",
-            ) from error
+            raise
         return self._summary(change_workspace, session)
 
     def send_worker_input(
         self, change_workspace: RuntimeChangeWorkspace, data: str
     ) -> RuntimeWorkerSummary:
+        self._require_change_workspace(change_workspace)
         session = self._require_session(change_workspace)
         self._send_prompt(session, data)
         return self._summary(change_workspace, session)
@@ -441,6 +594,7 @@ class AcpRuntimeAdapter:
     def worker_summary(
         self, change_workspace: RuntimeChangeWorkspace
     ) -> RuntimeWorkerSummary:
+        self._require_change_workspace(change_workspace)
         with self._sessions_lock:
             session = self._sessions.get(self._key(change_workspace))
         if session is None:
@@ -458,6 +612,7 @@ class AcpRuntimeAdapter:
     def stop_worker(
         self, change_workspace: RuntimeChangeWorkspace
     ) -> RuntimeWorkerSummary:
+        self._require_change_workspace(change_workspace, require_base=False)
         key = self._key(change_workspace)
         with self._sessions_lock:
             session = self._sessions.pop(key, None)
@@ -487,6 +642,7 @@ class AcpRuntimeAdapter:
         change_workspace: RuntimeChangeWorkspace,
         mode: RuntimeChangesMode = RuntimeChangesMode.WORKING_COPY,
     ) -> RuntimeChanges:
+        self._require_change_workspace(change_workspace)
         if mode is not RuntimeChangesMode.WORKING_COPY:
             raise RuntimeContractError("only working_copy mode is supported in v0")
         try:
@@ -515,6 +671,11 @@ class AcpRuntimeAdapter:
     def cleanup_change_workspace(
         self, change_workspace: RuntimeChangeWorkspace
     ) -> None:
+        self._require_change_workspace(
+            change_workspace,
+            require_exists=False,
+            require_base=False,
+        )
         if self._key(change_workspace) in self._sessions:
             raise RuntimeAdapterError(
                 RuntimeErrorCode.CONFLICT,
@@ -535,7 +696,7 @@ class AcpRuntimeAdapter:
         try:
             subprocess.run(
                 ["git", "worktree", "remove", "--force", change_workspace.worktree_path],
-                cwd=change_workspace.worktree_path,
+                cwd=change_workspace.workspace_id,
                 check=True,
                 capture_output=True,
                 text=True,
@@ -549,6 +710,90 @@ class AcpRuntimeAdapter:
                 detail,
             ) from error
         self._owned_worktrees.discard(resolved)
+
+    def _require_workspace(self, workspace: RuntimeWorkspace) -> None:
+        if workspace.provider != self._spec.name:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.CONFLICT,
+                self._spec.name,
+                "workspace",
+                "workspace provider does not match adapter provider",
+            )
+        resolved = str(Path(workspace.repo_path).resolve())
+        if workspace.workspace_id != resolved:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.CONFLICT,
+                self._spec.name,
+                "workspace",
+                "workspace identity does not match its repository path",
+            )
+
+    def _require_change_workspace(
+        self,
+        value: RuntimeChangeWorkspace,
+        *,
+        require_exists: bool = True,
+        require_base: bool = True,
+    ) -> None:
+        if value.provider != self._spec.name:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.CONFLICT,
+                self._spec.name,
+                "change_workspace",
+                "change workspace provider does not match adapter provider",
+            )
+        workspace = RuntimeWorkspace(
+            self._spec.name,
+            value.workspace_id,
+            value.workspace_id,
+        )
+        self._require_workspace(workspace)
+        expected = self._worktree_path(workspace, value.change_set_id)
+        if Path(value.worktree_path).resolve() != Path(expected).resolve():
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.PERMISSION_DENIED,
+                self._spec.name,
+                "change_workspace",
+                "change workspace path is outside its deterministic runtime location",
+            )
+        if not require_exists and not Path(expected).exists():
+            return
+        if not Path(expected).is_dir():
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.WORKSPACE_NOT_FOUND,
+                self._spec.name,
+                "change_workspace",
+                "runtime worktree is unavailable",
+            )
+        try:
+            if _git_common_dir(expected) != _git_common_dir(value.workspace_id):
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.CONFLICT,
+                    self._spec.name,
+                    "change_workspace",
+                    "runtime worktree belongs to a different Git repository",
+                )
+            if require_base:
+                ancestry = subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", value.base.value, "HEAD"],
+                    cwd=expected,
+                    capture_output=True,
+                    text=True,
+                )
+                if ancestry.returncode != 0:
+                    raise RuntimeAdapterError(
+                        RuntimeErrorCode.CONFLICT,
+                        self._spec.name,
+                        "change_workspace",
+                        "runtime worktree no longer descends from its claimed base",
+                    )
+        except OSError as error:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.RUNTIME_FAILED,
+                self._spec.name,
+                "change_workspace",
+                "cannot validate runtime worktree",
+            ) from error
 
     def _change_workspace(
         self,
@@ -567,15 +812,7 @@ class AcpRuntimeAdapter:
         )
 
     def _worktree_path(self, workspace: RuntimeWorkspace, change_set_id: str) -> str:
-        if (
-            not change_set_id
-            or len(change_set_id) > 128
-            or change_set_id in {".", ".."}
-            or any(value in change_set_id for value in ("/", "\\", "\x00"))
-        ):
-            raise RuntimeContractError("change_set_id is unsafe for a worktree path")
-        base = Path(workspace.repo_path).resolve()
-        return str(base.parent / f".weftmark-runtime-{base.name}-{change_set_id}")
+        return _runtime_worktree_path(workspace.repo_path, change_set_id)
 
     def _launch_process(self) -> subprocess.Popen[bytes]:
         try:
@@ -612,8 +849,7 @@ class AcpRuntimeAdapter:
         return session
 
     def _send_prompt(self, session: _SessionState, text: str) -> None:
-        if not text.strip():
-            raise RuntimeContractError("worker input must not be empty")
+        _require_worker_text(text)
         with session.lock:
             if session.state is RuntimeWorkerState.RUNNING:
                 raise RuntimeAdapterError(
@@ -638,17 +874,26 @@ class AcpRuntimeAdapter:
         def run() -> None:
             assert session.connection is not None
             try:
-                session.connection.request(
+                completed = session.connection.request(
                     "session/prompt",
                     {
                         "sessionId": session.session_id,
                         "prompt": [{"type": "text", "text": text}],
                     },
+                    timeout=_MAX_REQUEST_TIMEOUT_SECONDS,
                 )
+                if completed.get("stopReason") not in _STOP_REASONS:
+                    raise RuntimeAdapterError(
+                        RuntimeErrorCode.TRANSPORT_FAILED,
+                        self._spec.name,
+                        "session/prompt",
+                        "agent returned an invalid stopReason",
+                    )
             except RuntimeAdapterError:
                 with session.lock:
-                    session.state = RuntimeWorkerState.FAILED
-                    session.updated_at = _now()
+                    if session.state is not RuntimeWorkerState.EXITED:
+                        session.state = RuntimeWorkerState.FAILED
+                        session.updated_at = _now()
                 return
             with session.lock:
                 session.state = RuntimeWorkerState.AWAITING_INPUT
@@ -720,8 +965,15 @@ class AcpRuntimeAdapter:
     def _read_text(self, worktree_path: str, params: dict[str, Any]) -> dict[str, Any]:
         path = self._resolve_path_in(worktree_path, str(params.get("path", "")))
         try:
+            if not path.is_file() or path.stat().st_size > _MAX_TEXT_FILE_BYTES:
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.PERMISSION_DENIED,
+                    self._spec.name,
+                    "fs/read_text_file",
+                    "text file must be regular and at most 4 MiB",
+                )
             content = path.read_text(encoding="utf-8")
-        except OSError as error:
+        except (OSError, UnicodeError) as error:
             raise RuntimeAdapterError(
                 RuntimeErrorCode.RUNTIME_FAILED,
                 self._spec.name,
@@ -730,17 +982,60 @@ class AcpRuntimeAdapter:
             ) from error
         line = params.get("line")
         limit = params.get("limit")
+        if line is not None and (
+            isinstance(line, bool) or not isinstance(line, int) or line < 1
+        ):
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.TRANSPORT_FAILED,
+                self._spec.name,
+                "fs/read_text_file",
+                "line must be a positive integer",
+            )
+        if limit is not None and (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit < 0
+            or limit > _MAX_TEXT_LINES
+        ):
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.TRANSPORT_FAILED,
+                self._spec.name,
+                "fs/read_text_file",
+                "limit must be between 0 and 100000",
+            )
         if line is not None or limit is not None:
             lines = content.splitlines(keepends=True)
-            start = max(int(line or 1) - 1, 0)
-            content = "".join(lines[start : None if limit is None else start + int(limit)])
+            start = (line or 1) - 1
+            content = "".join(lines[start : None if limit is None else start + limit])
         return {"content": content}
 
     def _write_text(self, worktree_path: str, params: dict[str, Any]) -> dict[str, Any]:
         path = self._resolve_path_in(worktree_path, str(params.get("path", "")))
+        content = params.get("content")
+        if not isinstance(content, str):
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.TRANSPORT_FAILED,
+                self._spec.name,
+                "fs/write_text_file",
+                "content must be text",
+            )
+        if len(content.encode("utf-8")) > _MAX_TEXT_FILE_BYTES:
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.PERMISSION_DENIED,
+                self._spec.name,
+                "fs/write_text_file",
+                "text content exceeds 4 MiB",
+            )
         try:
-            path.write_text(str(params["content"]), encoding="utf-8")
-        except (KeyError, OSError) as error:
+            if path.exists() and not path.is_file():
+                raise RuntimeAdapterError(
+                    RuntimeErrorCode.PERMISSION_DENIED,
+                    self._spec.name,
+                    "fs/write_text_file",
+                    "write target must be a regular file",
+                )
+            path.write_text(content, encoding="utf-8")
+        except OSError as error:
             raise RuntimeAdapterError(
                 RuntimeErrorCode.RUNTIME_FAILED,
                 self._spec.name,
@@ -788,16 +1083,32 @@ class AcpRuntimeAdapter:
             )
         )
         allow = next(
-            (value for value in options if value.get("kind") == "allow_once"), None
+            (
+                value
+                for value in options
+                if isinstance(value, Mapping)
+                and value.get("kind") == "allow_once"
+                and isinstance(value.get("optionId"), str)
+                and value["optionId"]
+            ),
+            None,
         )
         reject = next(
-            (value for value in options if value.get("kind") == "reject_once"), None
+            (
+                value
+                for value in options
+                if isinstance(value, Mapping)
+                and value.get("kind") == "reject_once"
+                and isinstance(value.get("optionId"), str)
+                and value["optionId"]
+            ),
+            None,
         )
         selected = allow if scoped and allow is not None else reject
         if selected is None:
             return {"outcome": {"outcome": "cancelled"}}
         return {
-            "outcome": {"outcome": "selected", "optionId": selected.get("optionId")}
+            "outcome": {"outcome": "selected", "optionId": selected["optionId"]}
         }
 
     @staticmethod
@@ -841,6 +1152,25 @@ def _parse_porcelain(output: bytes) -> tuple[RuntimeFileChange, ...]:
     return tuple(sorted(files, key=lambda value: (value.path, value.old_path or "")))
 
 
+def _git_common_dir(path: str) -> Path:
+    try:
+        raw = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeAdapterError(
+            RuntimeErrorCode.RUNTIME_FAILED,
+            "acp",
+            "workspace",
+            "cannot resolve Git common directory",
+        ) from error
+    return Path(raw).resolve()
+
+
 class AcpRuntimeProxy:
     """Reconnectable RuntimePort proxy to a same-user local ACP control host."""
 
@@ -872,12 +1202,9 @@ class AcpRuntimeProxy:
     ) -> RuntimeChangeWorkspace | None:
         self._bind(workspace, change_set_id, base)
         if not self._host_available():
-            path = _runtime_worktree_path(workspace.repo_path, change_set_id)
-            if not Path(path).is_dir():
-                return None
-            self._change_workspace = RuntimeChangeWorkspace(
-                self._spec.name, workspace.workspace_id, change_set_id, change_set_id, base, path
-            )
+            self._change_workspace = AcpRuntimeAdapter(
+                self._spec
+            ).get_change_workspace(workspace, change_set_id, base)
             return self._change_workspace
         payload = self._request(
             "get",
@@ -972,7 +1299,7 @@ class AcpRuntimeProxy:
 
     def _bind(self, workspace: RuntimeWorkspace, change_set_id: str, base: GitObjectId) -> None:
         self._workspace = workspace
-        self._address = _host_address(workspace.repo_path, self._spec.name, change_set_id)
+        self._address = _host_address(workspace.repo_path, self._spec, change_set_id)
         self._change_workspace = RuntimeChangeWorkspace(
             self._spec.name,
             workspace.workspace_id,
@@ -987,7 +1314,7 @@ class AcpRuntimeProxy:
             self._workspace = RuntimeWorkspace(value.provider, value.workspace_id, value.workspace_id)
         if self._address is None:
             self._address = _host_address(
-                self._workspace.repo_path, self._spec.name, value.change_set_id
+                self._workspace.repo_path, self._spec, value.change_set_id
             )
         self._change_workspace = value
 
@@ -1015,21 +1342,59 @@ class AcpRuntimeProxy:
 
 
 def _runtime_worktree_path(repo_path: str, change_set_id: str) -> str:
+    if (
+        not change_set_id
+        or len(change_set_id) > 128
+        or change_set_id in {".", ".."}
+        or any(value in change_set_id for value in ("/", "\\", "\x00"))
+    ):
+        raise RuntimeContractError("change_set_id is unsafe for a worktree path")
     base = Path(repo_path).resolve()
     return str(base.parent / f".weftmark-runtime-{base.name}-{change_set_id}")
 
 
-def _host_address(repo_path: str, provider: str, change_set_id: str) -> Path:
-    identity = "\0".join((str(Path(repo_path).resolve()), provider, change_set_id))
+def _host_address(
+    repo_path: str, spec: AcpProviderSpec, change_set_id: str
+) -> Path:
+    provider_identity = json.dumps(
+        {"name": spec.name, "argv": spec.argv},
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    identity = "\0".join(
+        (str(Path(repo_path).resolve()), provider_identity, change_set_id)
+    )
     digest = hashlib.sha256(identity.encode()).hexdigest()[:32]
     directory = Path("/tmp") / f"weftmark-runtime-{os.getuid()}"
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(directory, 0o700)
+    try:
+        directory.mkdir(mode=0o700, parents=False, exist_ok=True)
+        metadata = directory.lstat()
+        if (
+            metadata.st_uid != os.getuid()
+            or not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+        ):
+            raise RuntimeAdapterError(
+                RuntimeErrorCode.PERMISSION_DENIED,
+                spec.name,
+                "host",
+                "runtime control directory is not a private owned directory",
+            )
+        if stat.S_IMODE(metadata.st_mode) != 0o700:
+            os.chmod(directory, 0o700)
+    except OSError as error:
+        raise RuntimeAdapterError(
+            RuntimeErrorCode.PERMISSION_DENIED,
+            spec.name,
+            "host",
+            "runtime control directory is unavailable",
+        ) from error
     return directory / f"{digest}.sock"
 
 
 def _spawn_host(address: Path, spec: AcpProviderSpec) -> None:
-    if address.exists():
+    if address.exists() or address.is_symlink():
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
                 probe.settimeout(0.5)
@@ -1070,30 +1435,55 @@ def _spawn_host(address: Path, spec: AcpProviderSpec) -> None:
             close_fds=True,
         )
         assert process.stdin is not None
-        process.stdin.write(
-            (json.dumps({"name": spec.name, "argv": list(spec.argv)}) + "\n").encode()
+        config = (
+            json.dumps(
+                {"name": spec.name, "argv": list(spec.argv)},
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode()
+            + b"\n"
         )
+        if len(config) > _MAX_RPC_BYTES:
+            raise OSError("runtime provider configuration exceeds 1 MiB")
+        process.stdin.write(config)
         process.stdin.close()
     except (OSError, BrokenPipeError) as error:
         raise RuntimeAdapterError(
             RuntimeErrorCode.AGENT_UNAVAILABLE, spec.name, "host", "cannot launch runtime host"
         ) from error
-    for _ in range(100):
-        if address.exists():
-            try:
-                _socket_request(address, {"operation": "ping"}, timeout=0.2)
-                return
-            except RuntimeAdapterError:
-                pass
+    ready = False
+    try:
+        for _ in range(100):
+            if address.exists():
+                try:
+                    _socket_request(address, {"operation": "ping"}, timeout=0.2)
+                    ready = True
+                    return
+                except RuntimeAdapterError:
+                    pass
+            if process.poll() is not None:
+                break
+            threading.Event().wait(0.02)
+        detail = "runtime host did not become ready"
+        if process.poll() is not None and process.stderr is not None:
+            diagnostic = process.stderr.read(4096).decode(
+                "utf-8", errors="replace"
+            ).strip()
+            if diagnostic:
+                detail += ": " + diagnostic
+        raise RuntimeAdapterError(
+            RuntimeErrorCode.AGENT_UNAVAILABLE, spec.name, "host", detail
+        )
+    finally:
         if process.poll() is not None:
-            break
-        threading.Event().wait(0.02)
-    detail = "runtime host did not become ready"
-    if process.poll() is not None and process.stderr is not None:
-        diagnostic = process.stderr.read(4096).decode("utf-8", errors="replace").strip()
-        if diagnostic:
-            detail += ": " + diagnostic
-    raise RuntimeAdapterError(RuntimeErrorCode.AGENT_UNAVAILABLE, spec.name, "host", detail)
+            process.wait(timeout=1)
+        elif not ready:
+            process.terminate()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1)
 
 
 def _socket_request(address: Path, request: Mapping[str, Any], *, timeout: float) -> dict[str, Any]:
@@ -1113,7 +1503,7 @@ def _socket_request(address: Path, request: Mapping[str, Any], *, timeout: float
             RuntimeErrorCode.TRANSPORT_FAILED, "acp", "host", "runtime host is unavailable"
         ) from error
     try:
-        payload = json.loads(response)
+        payload = _strict_json_loads(response)
         if not isinstance(payload, dict):
             raise ValueError("response is not an object")
         if payload.get("ok") is not True:
@@ -1145,9 +1535,15 @@ def _recv_line(connection: socket.socket) -> bytes:
 
 def _run_host(address: Path) -> int:
     try:
-        raw = sys.stdin.buffer.readline(1_048_577)
-        config = json.loads(raw)
-        spec = AcpProviderSpec(str(config["name"]), tuple(config["argv"]))
+        raw = sys.stdin.buffer.readline(_MAX_RPC_BYTES + 1)
+        if len(raw) > _MAX_RPC_BYTES or not raw.endswith(b"\n"):
+            return 2
+        config = _strict_json_loads(raw)
+        if not isinstance(config, Mapping) or set(config) != {"name", "argv"}:
+            return 2
+        if not isinstance(config["name"], str) or not isinstance(config["argv"], list):
+            return 2
+        spec = AcpProviderSpec(config["name"], tuple(config["argv"]))
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return 2
     adapter = AcpRuntimeAdapter(spec)
@@ -1173,7 +1569,7 @@ def _run_host(address: Path) -> int:
                         _host_reply(connection, error="peer uid is not authorized", code=RuntimeErrorCode.PERMISSION_DENIED)
                         continue
                     try:
-                        request = json.loads(_recv_line(connection))
+                        request = _strict_json_loads(_recv_line(connection))
                         result, should_exit = _dispatch_host(adapter, request)
                         _host_reply(connection, result=result)
                         if request.get("operation") == "stop":
@@ -1196,6 +1592,18 @@ def _same_uid(connection: socket.socket) -> bool:
     credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
     _, uid, _ = struct.unpack("3i", credentials)
     return uid == os.getuid()
+
+
+def _strict_json_loads(value: str | bytes) -> Any:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON field: {key}")
+            result[key] = item
+        return result
+
+    return json.loads(value, object_pairs_hook=reject_duplicates)
 
 
 def _dispatch_host(

@@ -13,10 +13,12 @@ from weftmark.application.ports.ledger import LEDGER_GENESIS_DIGEST, LedgerHeadC
 from weftmark.application.ports.runtime import (
     RuntimeAdapterError,
     RuntimeChangeWorkspace,
+    RuntimeContractError,
     RuntimePort,
     RuntimeWorkerState,
 )
 from weftmark.application.runtime_registry import (
+    RuntimeProviderConfig,
     RuntimeProviderRegistry,
     RuntimeRegistryError,
 )
@@ -33,12 +35,53 @@ class RuntimeWorkerRecord:
     task_id: str
     change_set_id: str
     provider: str
+    provider_fingerprint: str
     state: RuntimeWorkerState
     updated_at: datetime
     agent_id: str | None = None
     session_id: str | None = None
     pid: int | None = None
     exit_code: int | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("task_id", self.task_id),
+            ("change_set_id", self.change_set_id),
+            ("provider", self.provider),
+        ):
+            if not value or not value.strip():
+                raise RuntimeWorkerError(f"runtime worker {name} must not be empty")
+        if (
+            not self.provider_fingerprint.startswith("sha256:")
+            or len(self.provider_fingerprint) != 71
+            or any(
+                value not in "0123456789abcdef"
+                for value in self.provider_fingerprint.removeprefix("sha256:")
+            )
+        ):
+            raise RuntimeWorkerError("runtime provider fingerprint is invalid")
+        if not isinstance(self.state, RuntimeWorkerState):
+            raise RuntimeWorkerError("runtime worker state is invalid")
+        _require_aware(self.updated_at)
+        for name, value in (
+            ("agent_id", self.agent_id),
+            ("session_id", self.session_id),
+        ):
+            if value is not None and (
+                not isinstance(value, str)
+                or not value.strip()
+                or len(value) > 1024
+                or "\x00" in value
+            ):
+                raise RuntimeWorkerError(f"runtime worker {name} is invalid")
+        if self.pid is not None and (
+            isinstance(self.pid, bool) or not isinstance(self.pid, int) or self.pid <= 0
+        ):
+            raise RuntimeWorkerError("runtime worker pid must be a positive integer")
+        if self.exit_code is not None and (
+            isinstance(self.exit_code, bool) or not isinstance(self.exit_code, int)
+        ):
+            raise RuntimeWorkerError("runtime worker exit_code must be an integer")
 
 
 class RuntimeWorkerService:
@@ -69,10 +112,9 @@ class RuntimeWorkerService:
         started_at: datetime,
     ) -> RuntimeWorkerRecord:
         _require_aware(started_at)
-        if not prompt.strip():
-            raise RuntimeWorkerError("runtime prompt must not be empty")
+        _require_runtime_text(prompt, name="prompt")
         binding = self._require_active_claim(task_id, at=started_at)
-        self._require_provider(provider)
+        config = self._require_provider(provider)
         existing = self._latest(task_id)
         if existing is not None and existing.state not in {
             RuntimeWorkerState.EXITED,
@@ -80,22 +122,33 @@ class RuntimeWorkerService:
         }:
             if existing.provider != provider:
                 raise RuntimeWorkerError("active runtime session uses a different provider")
+            if existing.provider_fingerprint != config.fingerprint:
+                raise RuntimeWorkerError(
+                    "active runtime session uses different provider configuration"
+                )
             return self._observe(binding, existing.provider, at=started_at)
         adapter, change_workspace = self._ensure_workspace(binding, provider)
         try:
             summary = adapter.start_worker(
                 change_workspace, binding.agent_id, prompt
             )
-        except RuntimeAdapterError as error:
-            raise _adapter_error(error) from error
-        return self._record(_from_summary(summary, updated_at=started_at))
+        except (RuntimeAdapterError, RuntimeContractError) as error:
+            raise _runtime_error(error) from error
+        return self._record(
+            _from_summary(
+                summary,
+                binding=binding,
+                provider=provider,
+                provider_fingerprint=config.fingerprint,
+                updated_at=started_at,
+            )
+        )
 
     def send_input(
         self, task_id: str, data: str, *, observed_at: datetime
     ) -> RuntimeWorkerRecord:
         _require_aware(observed_at)
-        if not data.strip():
-            raise RuntimeWorkerError("runtime input must not be empty")
+        _require_runtime_text(data, name="input")
         binding = self._require_active_claim(task_id, at=observed_at)
         current = self._require_started(task_id)
         if current.state in {RuntimeWorkerState.EXITED, RuntimeWorkerState.FAILED}:
@@ -103,9 +156,17 @@ class RuntimeWorkerService:
         adapter, workspace = self._existing_workspace(binding, current.provider)
         try:
             summary = adapter.send_worker_input(workspace, data)
-        except RuntimeAdapterError as error:
-            raise _adapter_error(error) from error
-        return self._record(_from_summary(summary, updated_at=observed_at))
+        except (RuntimeAdapterError, RuntimeContractError) as error:
+            raise _runtime_error(error) from error
+        return self._record(
+            _from_summary(
+                summary,
+                binding=binding,
+                provider=current.provider,
+                provider_fingerprint=current.provider_fingerprint,
+                updated_at=observed_at,
+            )
+        )
 
     def status(self, task_id: str, *, observed_at: datetime) -> RuntimeWorkerRecord:
         _require_aware(observed_at)
@@ -126,9 +187,17 @@ class RuntimeWorkerService:
         adapter, workspace = self._existing_workspace(binding, current.provider)
         try:
             summary = adapter.stop_worker(workspace)
-        except RuntimeAdapterError as error:
-            raise _adapter_error(error) from error
-        return self._record(_from_summary(summary, updated_at=observed_at))
+        except (RuntimeAdapterError, RuntimeContractError) as error:
+            raise _runtime_error(error) from error
+        return self._record(
+            _from_summary(
+                summary,
+                binding=binding,
+                provider=current.provider,
+                provider_fingerprint=current.provider_fingerprint,
+                updated_at=observed_at,
+            )
+        )
 
     def _observe(
         self, binding: TaskWorkBinding, provider: str, *, at: datetime
@@ -136,12 +205,21 @@ class RuntimeWorkerService:
         adapter, workspace = self._existing_workspace(binding, provider)
         try:
             summary = adapter.worker_summary(workspace)
-        except RuntimeAdapterError as error:
-            raise _adapter_error(error) from error
+        except (RuntimeAdapterError, RuntimeContractError) as error:
+            raise _runtime_error(error) from error
         if summary.state is RuntimeWorkerState.UNKNOWN:
             current = self._require_started(binding.task_id)
             return current
-        return self._record(_from_summary(summary, updated_at=at))
+        current = self._require_started(binding.task_id)
+        return self._record(
+            _from_summary(
+                summary,
+                binding=binding,
+                provider=provider,
+                provider_fingerprint=current.provider_fingerprint,
+                updated_at=at,
+            )
+        )
 
     def _require_binding(self, task_id: str) -> TaskWorkBinding:
         binding = self._task_claims.get(task_id)
@@ -169,43 +247,47 @@ class RuntimeWorkerService:
         current = self._latest(task_id)
         if current is None:
             raise RuntimeWorkerError(f"no runtime worker recorded for task: {task_id}")
-        self._require_provider(current.provider)
+        configured = self._require_provider(current.provider)
+        if configured.fingerprint != current.provider_fingerprint:
+            raise RuntimeWorkerError(
+                "runtime provider configuration differs from the started session"
+            )
         return current
 
-    def _require_provider(self, provider: str) -> None:
+    def _require_provider(self, provider: str) -> RuntimeProviderConfig:
         try:
-            self._registry.get(provider)
+            return self._registry.get(provider)
         except RuntimeRegistryError as error:
             raise RuntimeWorkerError(str(error)) from error
 
     def _ensure_workspace(
         self, binding: TaskWorkBinding, provider: str
     ) -> tuple[RuntimePort, RuntimeChangeWorkspace]:
-        adapter = self._adapter_factory(provider)
-        workspace = adapter.attach_workspace(self._repo_path)
         try:
+            adapter = self._adapter_factory(provider)
+            workspace = adapter.attach_workspace(self._repo_path)
             change = adapter.ensure_change_workspace(
                 workspace,
                 binding.change_set_id,
                 self._change_set_base(binding.change_set_id),
             )
-        except RuntimeAdapterError as error:
-            raise _adapter_error(error) from error
+        except (RuntimeAdapterError, RuntimeContractError) as error:
+            raise _runtime_error(error) from error
         return adapter, _with_task_id(change, binding.task_id)
 
     def _existing_workspace(
         self, binding: TaskWorkBinding, provider: str
     ) -> tuple[RuntimePort, RuntimeChangeWorkspace]:
-        adapter = self._adapter_factory(provider)
-        workspace = adapter.attach_workspace(self._repo_path)
         try:
+            adapter = self._adapter_factory(provider)
+            workspace = adapter.attach_workspace(self._repo_path)
             change = adapter.get_change_workspace(
                 workspace,
                 binding.change_set_id,
                 self._change_set_base(binding.change_set_id),
             )
-        except RuntimeAdapterError as error:
-            raise _adapter_error(error) from error
+        except (RuntimeAdapterError, RuntimeContractError) as error:
+            raise _runtime_error(error) from error
         if change is None:
             raise RuntimeWorkerError(
                 f"runtime worktree not found for change set: {binding.change_set_id}"
@@ -243,6 +325,7 @@ def runtime_worker_record_to_payload(record: RuntimeWorkerRecord) -> dict[str, A
         "task_id": record.task_id,
         "change_set_id": record.change_set_id,
         "provider": record.provider,
+        "provider_fingerprint": record.provider_fingerprint,
         "state": record.state.value,
         "updated_at": record.updated_at.isoformat(),
         "agent_id": record.agent_id,
@@ -255,6 +338,21 @@ def runtime_worker_record_to_payload(record: RuntimeWorkerRecord) -> dict[str, A
 
 def _record_from_payload(payload: Mapping[str, Any], recorded_at: datetime) -> RuntimeWorkerRecord:
     try:
+        if set(payload) != {
+            "schema_version",
+            "task_id",
+            "change_set_id",
+            "provider",
+            "provider_fingerprint",
+            "state",
+            "updated_at",
+            "agent_id",
+            "session_id",
+            "pid",
+            "exit_code",
+            "authority",
+        }:
+            raise ValueError("unexpected runtime worker fields")
         if payload["schema_version"] != 1:
             raise ValueError("unsupported schema")
         if payload.get("authority") != "operational_observation_only":
@@ -265,26 +363,48 @@ def _record_from_payload(payload: Mapping[str, Any], recorded_at: datetime) -> R
             raise ValueError("record time mismatch")
         pid = payload.get("pid")
         exit_code = payload.get("exit_code")
+        if pid is not None and (isinstance(pid, bool) or not isinstance(pid, int)):
+            raise ValueError("invalid pid")
+        if exit_code is not None and (
+            isinstance(exit_code, bool) or not isinstance(exit_code, int)
+        ):
+            raise ValueError("invalid exit_code")
         return RuntimeWorkerRecord(
             task_id=_text(payload, "task_id"),
             change_set_id=_text(payload, "change_set_id"),
             provider=_text(payload, "provider"),
+            provider_fingerprint=_text(payload, "provider_fingerprint"),
             state=RuntimeWorkerState(str(payload["state"])),
             updated_at=updated_at,
             agent_id=_optional_text(payload.get("agent_id")),
             session_id=_optional_text(payload.get("session_id")),
-            pid=None if pid is None else int(pid),
-            exit_code=None if exit_code is None else int(exit_code),
+            pid=pid,
+            exit_code=exit_code,
         )
-    except (KeyError, TypeError, ValueError) as error:
+    except (KeyError, RuntimeWorkerError, TypeError, ValueError) as error:
         raise RuntimeWorkerError("stored runtime worker record is malformed") from error
 
 
-def _from_summary(summary: Any, *, updated_at: datetime) -> RuntimeWorkerRecord:
+def _from_summary(
+    summary: Any,
+    *,
+    binding: TaskWorkBinding,
+    provider: str,
+    provider_fingerprint: str,
+    updated_at: datetime,
+) -> RuntimeWorkerRecord:
+    if (
+        summary.task_id != binding.task_id
+        or summary.change_set_id != binding.change_set_id
+        or summary.provider != provider
+        or (summary.agent_id is not None and summary.agent_id != binding.agent_id)
+    ):
+        raise RuntimeWorkerError("runtime adapter returned mismatched worker identity")
     return RuntimeWorkerRecord(
         summary.task_id,
         summary.change_set_id,
         summary.provider,
+        provider_fingerprint,
         summary.state,
         updated_at,
         summary.agent_id,
@@ -305,8 +425,20 @@ def _with_task_id(value: RuntimeChangeWorkspace, task_id: str) -> RuntimeChangeW
     )
 
 
-def _adapter_error(error: RuntimeAdapterError) -> RuntimeWorkerError:
-    return RuntimeWorkerError(f"{error.code.value}: {error.detail}")
+def _runtime_error(
+    error: RuntimeAdapterError | RuntimeContractError,
+) -> RuntimeWorkerError:
+    if isinstance(error, RuntimeAdapterError):
+        return RuntimeWorkerError(f"{error.code.value}: {error.detail}")
+    return RuntimeWorkerError(str(error))
+
+
+def _require_runtime_text(value: object, *, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeWorkerError(f"runtime {name} must not be empty")
+    if len(value.encode("utf-8")) > 524_288:
+        raise RuntimeWorkerError(f"runtime {name} exceeds 512 KiB")
+    return value
 
 
 def _require_aware(value: datetime) -> None:
@@ -315,11 +447,18 @@ def _require_aware(value: datetime) -> None:
 
 
 def _text(value: Mapping[str, Any], name: str) -> str:
-    text = str(value[name]).strip()
+    raw = value[name]
+    if not isinstance(raw, str):
+        raise ValueError(f"non-text {name}")
+    text = raw.strip()
     if not text:
         raise ValueError(f"empty {name}")
     return text
 
 
 def _optional_text(value: object) -> str | None:
-    return None if value is None else str(value).strip() or None
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("optional runtime identity must be non-empty text")
+    return value.strip()

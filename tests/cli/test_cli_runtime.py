@@ -100,6 +100,21 @@ def test_runtime_cli_reconnects_and_refuses_unclaimed_work(tmp_path: Path, capsy
     ) == 0
     assert _payload(capsys)["runtime_worker"]["pid"] == repeated_pid
 
+    changed_provider = "echo=" + json.dumps(
+        [sys.executable, "-c", "pass"], separators=(",", ":")
+    )
+    assert main(
+        _command(
+            repo,
+            "runtime",
+            "status",
+            "owned",
+            "--runtime-provider",
+            changed_provider,
+        )
+    ) == 2
+    assert "configuration differs" in _payload(capsys)["error"]
+
     deadline = time.monotonic() + 2
     while True:
         assert main(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -38,6 +39,22 @@ class RuntimeProviderConfig:
             raise RuntimeRegistryError(f"provider {name!r} has invalid capabilities")
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "capabilities", normalized)
+
+    @property
+    def fingerprint(self) -> str:
+        """Stable identity for the exact executable configuration, without exposing argv."""
+
+        canonical = json.dumps(
+            {
+                "name": self.name,
+                "argv": self.argv,
+                "capabilities": sorted(self.capabilities),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        return f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
 
 
 class RuntimeProviderRegistry:
