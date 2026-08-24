@@ -281,8 +281,9 @@ class AzureDevopsForgeAdapter(ForgePort):
         path = f"{self._pull_path(number)}/iterations/{iteration_id}/changes"
         values: list[Mapping[str, Any]] = []
         skip: int | None = None
+        top = 2000
         for _ in range(100):
-            query = {"$top": "2000"}
+            query = {"$top": str(top)}
             if skip is not None:
                 query["$skip"] = str(skip)
             result = self._get_json(path, query=query)
@@ -304,6 +305,8 @@ class AzureDevopsForgeAdapter(ForgePort):
                 if skip is not None and next_skip <= skip:
                     raise ValueError("nextSkip did not advance")
                 skip = next_skip
+                if next_top is not None:
+                    top = min(next_top, 2000)
             except (KeyError, TypeError, ValueError):
                 return ForgeResult.unavailable(
                     "Azure DevOps returned malformed iteration-change data"

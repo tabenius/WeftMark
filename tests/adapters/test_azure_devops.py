@@ -369,7 +369,7 @@ def test_changed_files_preserve_paths_and_unknown_counts_across_iteration_pages(
     )
     second_changes_url = (
         f"{GIT}/pullRequests/42/iterations/3/changes?"
-        "%24top=2000&%24skip=2&api-version=7.1"
+        "%24top=25&%24skip=2&api-version=7.1"
     )
     value, transport = adapter(
         {
@@ -386,6 +386,7 @@ def test_changed_files_preserve_paths_and_unknown_counts_across_iteration_pages(
                         }
                     ],
                     "nextSkip": 2,
+                    "nextTop": 25,
                 }
             ),
             second_changes_url: response(
