@@ -342,7 +342,7 @@ tasks:
 
   - slug: azure-devops-forge-adapter
     title: Implement an Azure DevOps forge adapter
-    status: review
+    status: done
     priority: P2
     depends:
       - forge-capability-discovery
@@ -373,7 +373,7 @@ tasks:
 
   - slug: forge-changed-file-optional-counts
     title: Represent unavailable forge changed-file counts
-    status: review
+    status: done
     priority: P1
     depends:
       - forge-port-contract
