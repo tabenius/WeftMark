@@ -287,3 +287,37 @@ tasks:
       - kind: review
         required: true
         criterion: Partial completion and retry behavior preserve explicit local authority boundaries.
+
+  - slug: frog-transition-board-projection
+    title: Project imported Frog intent into a transition board
+    status: review
+    priority: P0
+    depends:
+      - frog-snapshot-receipt-cli
+      - frog-imported-task-eligibility
+    purpose: Keep Frog backlog intent visible during migration without making legacy assignments or locks authoritative in WeftMark.
+    scope:
+      files:
+        - src/weftmark/application/frog_projection.py
+        - tests/application/test_frog_projection.py
+        - docs/contracts/frog-transition-projection-v0.md
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-transition-projection-v0
+    deliverables:
+      - Versioned read-only board payload over one immutable Frog snapshot receipt.
+      - Deterministic lanes, dependency/conflict context, observation metadata and freshness state.
+    accept:
+      - Source task intent is filterable by repository and sorted deterministically.
+      - Snapshot digest, capture/import times and staleness are explicit.
+    negative:
+      - Frog assignments and locks never become WeftMark claims or coordination authority.
+      - Unknown source status cannot silently appear complete.
+      - Projection never mutates the local ledger.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_frog_projection.py
+      - kind: review
+        required: true
+        criterion: Projection authority and migration boundaries are reviewed against docs/frog-transition.md.
