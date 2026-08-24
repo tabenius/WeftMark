@@ -110,7 +110,7 @@ tasks:
 
   - slug: native-task-completion-workflow
     title: Complete reviewed native tasks atomically
-    status: review
+    status: done
     priority: P0
     depends:
       - native-task-claim-service
