@@ -321,3 +321,78 @@ tasks:
       - kind: review
         required: true
         criterion: Projection authority and migration boundaries are reviewed against docs/frog-transition.md.
+
+  - slug: source-plan-native-import-core
+    title: Import Weft source plans into native TaskService
+    status: review
+    priority: P0
+    depends:
+      - native-task-ledger-service
+    purpose: Make reviewed task-plan intent usable by native scheduling without waiting for a currently claimed CLI surface.
+    scope:
+      files:
+        - src/weftmark/adapters/weft_plan.py
+        - src/weftmark/application/plan_import.py
+        - tests/adapters/test_weft_plan.py
+        - tests/application/test_plan_import.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:source-plan-import-v0
+    deliverables:
+      - Bounded, strict parser for the complete weft-task-v0 graph with deterministic source digests.
+      - Retry-safe native task, dependency and conflict creation with durable provenance and drift reporting.
+    accept:
+      - A fresh ledger receives actionable source tasks, native-compatible scopes, dependencies and symmetric conflicts deterministically.
+      - Repeating an identical import does not append records or reset native task state.
+      - Changed source intent produces an inspectable drift report before mutation.
+      - Source-plan done dependencies are recorded as source-satisfied rather than fabricated native completion.
+    negative:
+      - Source in-progress, blocked, review or done status never manufactures equivalent native runtime authority.
+      - Existing native task state and immutable intent are never silently overwritten.
+      - YAML aliases, duplicate mapping keys, path escape and unsupported source formats fail closed.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_weft_plan.py tests/application/test_plan_import.py tests/application/test_tasks.py
+      - kind: review
+        required: true
+        criterion: Import provenance, status mapping, partial-retry behavior and drift refusal preserve the source-plan/runtime authority boundary.
+
+  - slug: source-plan-native-import
+    title: Expose source-plan import through the native CLI
+    status: blocked
+    priority: P0
+    depends:
+      - source-plan-native-import-core
+      - native-task-cli-surface
+    purpose: Let a fresh checkout populate its native task ledger from reviewed task files without manual recreation.
+    scope:
+      files:
+        - src/weftmark/adapters/weft_plan.py
+        - src/weftmark/application/plan_import.py
+        - src/weftmark/cli/main.py
+        - tests/adapters/test_weft_plan.py
+        - tests/application/test_plan_import.py
+        - tests/cli/test_cli_plan_import.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:source-plan-import-v0
+        - surface:cli-task-plan
+    deliverables:
+      - JSON and human-readable plan import and drift inspection commands over the core service.
+      - Explicit source label and repository plan-root selection.
+    accept:
+      - Operators can import tasks/*.weft.yml idempotently and inspect exactly what was created, reused, skipped or drifted.
+      - Command output distinguishes source-plan state from native runtime state.
+    negative:
+      - CLI import never resets an existing task, claims work, or treats source completion as native evidence.
+      - Import does not acquire or write Frog locks.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/cli/test_cli_plan_import.py tests/application/test_plan_import.py
+      - kind: review
+        required: true
+        criterion: CLI wording and exit behavior make drift and non-authoritative source statuses explicit.
+    notes:
+      - Temporarily blocked because acp-runtime-adapter-claim4 owns src/weftmark/cli/main.py; recover the preserved native reservation after ACP review and release.
