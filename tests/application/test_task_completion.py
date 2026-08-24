@@ -221,6 +221,28 @@ def test_completion_accepts_matching_released_claim_and_rejects_changed_retry(
     assert repeated.completed is False
     assert repeated.review_id == "review-ready"
 
+    workflow.create_handoff(
+        "native-work-cs",
+        id="post-completion-handoff",
+        task_id="native-work",
+        next_action="close completed work",
+        created_by="worker-1",
+        created_at=NOW + timedelta(seconds=11),
+    )
+    LifecycleService(workspace, workflow).transition(
+        "native-work-cs",
+        state=ChangeSetState.CLOSED,
+        transitioned_at=NOW + timedelta(seconds=12),
+    )
+    after_close = service.complete(
+        "native-work",
+        actor_id="worker-1",
+        reason="merged and verified",
+        completed_at=NOW + timedelta(seconds=13),
+    )
+    assert after_close.completed is False
+    assert after_close.review_id == "review-ready"
+
 
 def test_newer_incomplete_review_during_release_prevents_task_transition(
     tmp_path: Path,

@@ -224,15 +224,26 @@ def _proof_from_entries(
     _require_current_binding(entries, binding)
     task_entry = _latest_task_entry(entries, binding.task_id)
     current = _task_from_entry(task_entry, binding.task_id)
-    change_set_entry = _latest_entry(entries, "changeset", binding.change_set_id)
-    claim_entry = _latest_entry(entries, "claim", binding.claim_id)
+    sequence_limit = task_entry.sequence if current.state is TaskState.DONE else None
+    change_set_entry = _latest_entry(
+        entries,
+        "changeset",
+        binding.change_set_id,
+        before_sequence=sequence_limit,
+    )
+    claim_entry = _latest_entry(
+        entries,
+        "claim",
+        binding.claim_id,
+        before_sequence=sequence_limit,
+    )
     try:
         change_set = binding_from_payload(change_set_entry.payload)
         claim = claim_from_payload(claim_entry.payload)
     except ValueError as error:
         raise TaskCompletionError(str(error)) from error
     if current.state is TaskState.DONE:
-        allowed_states = {ChangeSetState.MERGED, ChangeSetState.CLOSED}
+        allowed_states = {ChangeSetState.MERGED}
         review_sequence = task_entry.sequence
     else:
         allowed_states = {ChangeSetState.MERGED}
@@ -256,6 +267,8 @@ def _proof_from_entries(
     )
     if state is LockState.EXPIRED:
         raise TaskCompletionError("expired bound claim cannot authorize task completion")
+    if current.state is TaskState.DONE and state is not LockState.RELEASED:
+        raise TaskCompletionError("completed task does not have a prior claim release")
     if require_released and state is not LockState.RELEASED:
         raise TaskCompletionError("bound claim must be released before task completion")
     reviews = tuple(
@@ -300,13 +313,18 @@ def _task_from_entry(entry: LedgerEntry, task_id: str) -> TaskIntent:
 
 
 def _latest_entry(
-    entries: tuple[LedgerEntry, ...], kind: str, entity_id: str
+    entries: tuple[LedgerEntry, ...],
+    kind: str,
+    entity_id: str,
+    *,
+    before_sequence: int | None = None,
 ) -> LedgerEntry:
     entry = next(
         (
             value
             for value in reversed(entries)
             if value.kind == kind and value.entity_id == entity_id
+            and (before_sequence is None or value.sequence < before_sequence)
         ),
         None,
     )
