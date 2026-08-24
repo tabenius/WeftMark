@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Mapping
 
 from weftmark.application.claims import Claim, ClaimService
 from weftmark.application.local_workflow import LocalWorkflowService
+from weftmark.application.ledger import LedgerService
+from weftmark.application.ports.ledger import LedgerEntry
+from weftmark.application.tasks import TaskService
 from weftmark.application.workspace import WorkspaceService
 from weftmark.domain.evidence import EvidenceState, SubjectKind
 from weftmark.domain.lock import LockState, scopes_overlap
@@ -58,12 +61,42 @@ class ChangeSetStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class TaskSource:
+    kind: str
+    label: str
+    digest: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskStatus:
+    id: str
+    title: str
+    state: str
+    priority: str
+    created_at: datetime
+    updated_at: datetime
+    dependencies: tuple[str, ...]
+    conflicts: tuple[str, ...]
+    sources: tuple[TaskSource, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TaskChangeSetLink:
+    task_id: str
+    change_set_id: str
+    claim_id: str
+    binding_state: str
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceStatus:
     generated_at: datetime
     change_sets: tuple[ChangeSetStatus, ...]
     active_claim_count: int
     expired_claim_count: int
     released_claim_count: int
+    tasks: tuple[TaskStatus, ...] = ()
+    task_change_set_links: tuple[TaskChangeSetLink, ...] = ()
 
 
 def _scope_collisions(
@@ -120,10 +153,17 @@ class StatusService:
         workspace: WorkspaceService,
         claims: ClaimService,
         workflow: LocalWorkflowService,
+        *,
+        tasks: TaskService | None = None,
+        ledger: LedgerService | None = None,
     ) -> None:
         self._workspace = workspace
         self._claims = claims
         self._workflow = workflow
+        if (tasks is None) != (ledger is None):
+            raise ValueError("native task status requires both TaskService and ledger")
+        self._tasks = tasks
+        self._ledger = ledger
 
     def summarize(self, *, observed_at: datetime) -> WorkspaceStatus:
         claims = self._claims.list()
@@ -225,13 +265,113 @@ class StatusService:
                 )
             )
         states = tuple(claim.state_at(observed_at) for claim in claims)
+        task_values, task_links = self._task_status()
         return WorkspaceStatus(
             generated_at=observed_at,
             change_sets=tuple(values),
             active_claim_count=states.count(LockState.ACTIVE),
             expired_claim_count=states.count(LockState.EXPIRED),
             released_claim_count=states.count(LockState.RELEASED),
+            tasks=task_values,
+            task_change_set_links=task_links,
         )
+
+    def _task_status(
+        self,
+    ) -> tuple[tuple[TaskStatus, ...], tuple[TaskChangeSetLink, ...]]:
+        if self._tasks is None or self._ledger is None:
+            return (), ()
+        entries = self._ledger.snapshot()
+        sources = _task_sources(entries)
+        dependencies: dict[str, list[str]] = {}
+        for value in self._tasks.dependencies():
+            dependencies.setdefault(value.task_id, []).append(value.depends_on_task_id)
+        conflicts: dict[str, list[str]] = {}
+        for value in self._tasks.conflicts():
+            conflicts.setdefault(value.first_task_id, []).append(value.second_task_id)
+            conflicts.setdefault(value.second_task_id, []).append(value.first_task_id)
+        tasks = tuple(
+            TaskStatus(
+                id=value.id,
+                title=value.title,
+                state=value.state.value,
+                priority=value.priority.value,
+                created_at=value.created_at,
+                updated_at=value.updated_at,
+                dependencies=tuple(sorted(dependencies.get(value.id, ()))),
+                conflicts=tuple(sorted(conflicts.get(value.id, ()))),
+                sources=sources.get(
+                    value.id, (TaskSource("native", "native-ledger", None),)
+                ),
+            )
+            for value in self._tasks.list()
+        )
+        latest_bindings: dict[str, Mapping[str, Any]] = {}
+        for entry in entries:
+            if entry.kind == "task_work_claim":
+                latest_bindings[entry.entity_id] = entry.payload
+        links = tuple(
+            _task_link(task_id, payload)
+            for task_id, payload in sorted(latest_bindings.items())
+        )
+        return tasks, links
+
+
+def _task_sources(
+    entries: tuple[LedgerEntry, ...],
+) -> dict[str, tuple[TaskSource, ...]]:
+    values: dict[str, set[tuple[str, str, str | None]]] = {}
+    for entry in entries:
+        payload = entry.payload
+        if entry.kind == "source_plan_import":
+            ids = payload.get("native_task_ids")
+            kind = "source_plan"
+            digest = payload.get("source_digest")
+        elif entry.kind in {"frog_native_task_import", "frog_task_import"}:
+            native = payload.get("native_tasks")
+            ids = tuple(native) if isinstance(native, Mapping) else None
+            kind = "frog_snapshot"
+            digest = payload.get("source_snapshot_digest")
+        else:
+            continue
+        label = payload.get("source_label")
+        if (
+            not isinstance(ids, (list, tuple))
+            or not isinstance(label, str)
+            or not label.strip()
+            or not isinstance(digest, str)
+            or not digest.strip()
+        ):
+            continue
+        for task_id in ids:
+            if isinstance(task_id, str) and task_id:
+                values.setdefault(task_id, set()).add((kind, label, digest))
+    return {
+        task_id: tuple(TaskSource(*value) for value in sorted(records))
+        for task_id, records in values.items()
+    }
+
+
+def _task_link(task_id: str, payload: Mapping[str, Any]) -> TaskChangeSetLink:
+    try:
+        if (
+            payload["schema_version"] != 1
+            or payload["task_id"] != task_id
+            or payload["state"] not in {"reserved", "completed"}
+        ):
+            raise ValueError("binding contract mismatch")
+        change_set_id = str(payload["change_set_id"]).strip()
+        claim_id = str(payload["claim_id"]).strip()
+        if not change_set_id or not claim_id:
+            raise ValueError("empty binding identity")
+        return TaskChangeSetLink(
+            task_id,
+            change_set_id,
+            claim_id,
+            str(payload["state"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("stored native task work binding is malformed") from error
 
 
 def _scope_collision_to_payload(value: ScopeCollision) -> dict[str, Any]:
@@ -248,10 +388,41 @@ def status_to_payload(status: WorkspaceStatus) -> dict[str, Any]:
         "generated_at": status.generated_at.isoformat(),
         "counts": {
             "change_sets": len(status.change_sets),
+            **(
+                {"tasks": len(status.tasks)}
+                if status.tasks or status.task_change_set_links
+                else {}
+            ),
             "active_claims": status.active_claim_count,
             "expired_claims": status.expired_claim_count,
             "released_claims": status.released_claim_count,
         },
+        "tasks": [
+            {
+                "id": value.id,
+                "title": value.title,
+                "state": value.state,
+                "priority": value.priority,
+                "created_at": value.created_at.isoformat(),
+                "updated_at": value.updated_at.isoformat(),
+                "dependencies": list(value.dependencies),
+                "conflicts": list(value.conflicts),
+                "sources": [
+                    {"kind": source.kind, "label": source.label, "digest": source.digest}
+                    for source in value.sources
+                ],
+            }
+            for value in status.tasks
+        ],
+        "task_change_set_links": [
+            {
+                "task_id": value.task_id,
+                "change_set_id": value.change_set_id,
+                "claim_id": value.claim_id,
+                "binding_state": value.binding_state,
+            }
+            for value in status.task_change_set_links
+        ],
         "change_sets": [
             {
                 "id": value.id,

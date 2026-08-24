@@ -73,14 +73,21 @@ function validateProjection(value) {
     throw new Error(`Unsupported projection schema: ${value.schema || "missing"}`);
   }
   if (!Array.isArray(value.cards)) throw new Error("Projection cards must be an array.");
+  if (value.plan_cards !== undefined && !Array.isArray(value.plan_cards)) {
+    throw new Error("Projection plan cards must be an array.");
+  }
   if (!value.counts || typeof value.counts !== "object") throw new Error("Projection counts are missing.");
-  for (const card of value.cards) {
+  for (const card of [...value.cards, ...(value.plan_cards || [])]) {
     if (!card || typeof card !== "object" || typeof card.id !== "string" || typeof card.title !== "string") {
       throw new Error("Projection contains a malformed card.");
     }
     if (!LANES.includes(card.lane)) throw new Error(`Unsupported board lane: ${card.lane}`);
   }
   return value;
+}
+
+function visibleCards() {
+  return [...(projection.plan_cards || []), ...projection.cards];
 }
 
 function setMessage(message = "") {
@@ -107,19 +114,31 @@ function renderCard(card) {
   const button = el("button", { className: "card", type: "button" });
   button.append(el("span", { className: "card-title", text: card.title }));
   const badges = el("span", { className: "badges" });
-  badges.append(statusBadge(card.readiness));
+  badges.append(statusBadge(card.kind === "task" ? card.task_state : card.readiness));
   for (const attention of card.attention || []) badges.append(attentionBadge(attention));
   button.append(badges);
-  const evidence = card.evidence || {};
-  button.append(el("span", { className: "evidence-mini" }, [
-    el("span", { text: `${evidence.current ?? 0} current` }),
-    el("span", { text: `${evidence.failed ?? 0} failed` }),
-    el("span", { text: `${evidence.obsolete ?? 0} stale` }),
-  ]));
-  button.append(el("span", { className: "card-meta" }, [
-    el("span", { text: card.git?.branch || "no branch" }),
-    el("span", { className: "mono", text: shortSha(card.git?.head_sha) }),
-  ]));
+  if (card.kind === "task") {
+    button.append(el("span", { className: "evidence-mini" }, [
+      el("span", { text: `${card.priority || "p?"} priority` }),
+      el("span", { text: `${(card.planning?.dependencies || []).length} dependencies` }),
+      el("span", { text: `${card.change_set_ids?.length || 0} Change Sets` }),
+    ]));
+    button.append(el("span", { className: "card-meta" }, [
+      el("span", { text: card.sources?.[0]?.label || "native intent" }),
+      el("span", { className: "mono", text: card.id }),
+    ]));
+  } else {
+    const evidence = card.evidence || {};
+    button.append(el("span", { className: "evidence-mini" }, [
+      el("span", { text: `${evidence.current ?? 0} current` }),
+      el("span", { text: `${evidence.failed ?? 0} failed` }),
+      el("span", { text: `${evidence.obsolete ?? 0} stale` }),
+    ]));
+    button.append(el("span", { className: "card-meta" }, [
+      el("span", { text: card.git?.branch || "no branch" }),
+      el("span", { className: "mono", text: shortSha(card.git?.head_sha) }),
+    ]));
+  }
   button.addEventListener("click", () => openDetail(card));
   return button;
 }
@@ -127,7 +146,7 @@ function renderCard(card) {
 function renderBoard() {
   elements.board.replaceChildren();
   const byLane = Object.fromEntries(LANES.map((lane) => [lane, []]));
-  for (const card of projection.cards) byLane[card.lane].push(card);
+  for (const card of visibleCards()) byLane[card.lane].push(card);
   for (const lane of LANES) {
     const laneCards = byLane[lane];
     const section = el("section", { className: "lane", "aria-labelledby": `lane-${lane}` });
@@ -136,7 +155,7 @@ function renderBoard() {
       el("span", { className: "lane-count", text: String(laneCards.length) }),
     ]));
     const list = el("div", { className: "cards" });
-    if (laneCards.length === 0) list.append(el("p", { className: "empty-lane", text: "No Change Sets in this lane." }));
+    if (laneCards.length === 0) list.append(el("p", { className: "empty-lane", text: "No work in this lane." }));
     for (const card of laneCards) list.append(renderCard(card));
     section.append(list);
     elements.board.append(section);
@@ -144,8 +163,9 @@ function renderBoard() {
 }
 
 function renderSummary() {
-  const attentionCount = projection.cards.filter((card) => (card.attention || []).length > 0).length;
-  elements.countCards.textContent = String(projection.counts.cards ?? projection.cards.length);
+  const cards = visibleCards();
+  const attentionCount = cards.filter((card) => (card.attention || []).length > 0).length;
+  elements.countCards.textContent = String(projection.counts.total_cards ?? cards.length);
   elements.countClaims.textContent = String(projection.counts.active_claims ?? 0);
   elements.countAttention.textContent = String(attentionCount);
   elements.generatedAt.textContent = formatTime(projection.generated_at);
@@ -182,9 +202,21 @@ function renderCollisions(card) {
 }
 
 function openDetail(card) {
-  elements.detailLane.textContent = `${card.lane} · ${humanize(card.readiness)}`;
+  const state = card.kind === "task" ? card.task_state : card.readiness;
+  elements.detailLane.textContent = `${card.lane} · ${humanize(state)}`;
   elements.detailTitle.textContent = card.title;
   elements.detailContent.replaceChildren();
+  if (card.kind === "task") {
+    elements.detailContent.append(detailSection("Task intent", definitionRows([
+      ["Task", card.id, true], ["State", humanize(card.task_state)],
+      ["Priority", card.priority], ["Sources", (card.sources || []).map((value) => value.label).join(", ") || "native-ledger"],
+      ["Dependencies", (card.planning?.dependencies || []).join(", ") || "none", true],
+      ["Conflicts", (card.planning?.conflicts || []).join(", ") || "none", true],
+      ["Change Sets", (card.change_set_ids || []).join(", ") || "unclaimed", true],
+    ])));
+    if (!elements.dialog.open) elements.dialog.showModal();
+    return;
+  }
   elements.detailContent.append(detailSection("State", definitionRows([
     ["Change Set", card.id, true],
     ["Lifecycle", humanize(card.lifecycle_state)],

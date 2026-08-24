@@ -3,6 +3,50 @@ phase: kanban-integration
 summary: Project WeftMark coordination state into a replaceable Kanban-style control surface without moving domain authority into the UI.
 
 tasks:
+  - slug: unified-kanban-plan-board
+    title: Unify task intent and Change Sets in the Kanban projection
+    status: review
+    priority: P0
+    depends:
+      - kanban-read-model-v0
+      - native-task-claim-service
+      - source-plan-native-import
+    purpose: Keep backlog, dependencies and unclaimed work visible beside authoritative Change Set readiness.
+    scope:
+      files:
+        - docs/contracts/kanban-projection-v0.md
+        - src/weftmark/application/kanban_projection.py
+        - src/weftmark/application/status.py
+        - src/weftmark/http/server.py
+        - tests/application/test_kanban_projection.py
+        - tests/application/test_status.py
+        - tests/http/test_server.py
+        - tests/web/test_review_surface.py
+        - web/review/**
+        - tasks/55-kanban-integration.weft.yml
+      contracts:
+        - contract:unified-kanban-projection-v0
+        - surface:kanban-plan-board
+    deliverables:
+      - Source-labelled native task cards with dependency and conflict context.
+      - Explicit native task-to-Change Set links beside unchanged Change Set authority.
+      - Read-only HTTP and browser views for both card kinds.
+    accept:
+      - Unclaimed native tasks remain visible in backlog lanes.
+      - Claimed tasks link to Change Sets without copying lifecycle or readiness authority.
+      - Existing v0 Change Set card fields and endpoint remain backward compatible.
+    negative:
+      - Moving or rendering a plan card cannot mutate native task or Change Set state.
+      - Imported Frog assignments, locks and status do not become native authority.
+      - A missing link or Change Set is shown as attention rather than invented state.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_kanban_projection.py tests/application/test_status.py tests/http/test_server.py tests/web/test_review_surface.py
+      - kind: review
+        required: true
+        criterion: Additive v0 fields preserve old clients and keep plan, claim and Change Set semantics distinct.
+
   - slug: kanban-read-model-v0
     title: Define the stable read-only Kanban projection
     status: done

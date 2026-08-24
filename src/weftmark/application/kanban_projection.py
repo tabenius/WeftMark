@@ -12,7 +12,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from weftmark.application.status import ChangeSetStatus, ScopeCollision, WorkspaceStatus
+from weftmark.application.status import (
+    ChangeSetStatus,
+    ScopeCollision,
+    TaskChangeSetLink,
+    TaskSource,
+    TaskStatus,
+    WorkspaceStatus,
+)
 
 
 KANBAN_PROJECTION_SCHEMA = "weftmark.kanban-projection.v0"
@@ -68,12 +75,30 @@ class KanbanCardProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class KanbanPlanCardProjection:
+    task_id: str
+    title: str
+    lane: KanbanLane
+    task_state: str
+    priority: str
+    created_at: datetime
+    updated_at: datetime
+    dependencies: tuple[str, ...]
+    conflicts: tuple[str, ...]
+    sources: tuple[TaskSource, ...]
+    change_set_ids: tuple[str, ...]
+    attention: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class KanbanProjection:
     generated_at: datetime
     active_claim_count: int
     expired_claim_count: int
     released_claim_count: int
     cards: tuple[KanbanCardProjection, ...]
+    plan_cards: tuple[KanbanPlanCardProjection, ...] = ()
+    task_change_set_links: tuple[TaskChangeSetLink, ...] = ()
 
 
 def _lane_for(status: ChangeSetStatus) -> KanbanLane:
@@ -157,12 +182,66 @@ def project_change_set(status: ChangeSetStatus) -> KanbanCardProjection:
 def project_workspace(status: WorkspaceStatus) -> KanbanProjection:
     """Build the v0 external-board read model without mutating workspace state."""
 
+    links_by_task: dict[str, list[str]] = {}
+    change_set_ids = {value.id for value in status.change_sets}
+    for link in status.task_change_set_links:
+        links_by_task.setdefault(link.task_id, []).append(link.change_set_id)
     return KanbanProjection(
         generated_at=status.generated_at,
         active_claim_count=status.active_claim_count,
         expired_claim_count=status.expired_claim_count,
         released_claim_count=status.released_claim_count,
         cards=tuple(project_change_set(value) for value in status.change_sets),
+        plan_cards=tuple(
+            _project_task(
+                value,
+                tuple(sorted(links_by_task.get(value.id, ()))),
+                change_set_ids,
+            )
+            for value in sorted(status.tasks, key=_task_sort_key)
+        ),
+        task_change_set_links=status.task_change_set_links,
+    )
+
+
+def _task_sort_key(value: TaskStatus) -> tuple[int, datetime, str]:
+    priority = {"p0": 0, "p1": 1, "p2": 2, "p3": 3}.get(value.priority, 4)
+    return priority, value.created_at, value.id
+
+
+def _project_task(
+    task: TaskStatus,
+    linked_change_sets: tuple[str, ...],
+    known_change_sets: set[str],
+) -> KanbanPlanCardProjection:
+    if task.state in {"idea", "todo"}:
+        lane = KanbanLane.BACKLOG
+    elif task.state == "in_progress":
+        lane = KanbanLane.ACTIVE
+    elif task.state in {"done", "abandoned"}:
+        lane = KanbanLane.DONE
+    else:
+        lane = KanbanLane.REVIEW
+    attention: list[str] = []
+    if task.state == "blocked":
+        attention.append("blocked")
+    if task.state == "in_progress" and not linked_change_sets:
+        attention.append("missing_change_set_link")
+    if any(value not in known_change_sets for value in linked_change_sets):
+        attention.append("missing_change_set")
+    return KanbanPlanCardProjection(
+        task_id=task.id,
+        title=task.title,
+        lane=lane,
+        task_state=task.state,
+        priority=task.priority,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+        dependencies=task.dependencies,
+        conflicts=task.conflicts,
+        sources=task.sources,
+        change_set_ids=linked_change_sets,
+        attention=tuple(attention),
     )
 
 
@@ -187,12 +266,53 @@ def kanban_projection_to_payload(projection: KanbanProjection) -> dict[str, Any]
         },
         "counts": {
             "cards": len(projection.cards),
+            **(
+                {
+                    "plan_cards": len(projection.plan_cards),
+                    "total_cards": len(projection.cards) + len(projection.plan_cards),
+                }
+                if projection.plan_cards or projection.task_change_set_links
+                else {}
+            ),
             "active_claims": projection.active_claim_count,
             "expired_claims": projection.expired_claim_count,
             "released_claims": projection.released_claim_count,
         },
+        "task_change_set_links": [
+            {
+                "task_id": value.task_id,
+                "change_set_id": value.change_set_id,
+                "claim_id": value.claim_id,
+                "binding_state": value.binding_state,
+            }
+            for value in projection.task_change_set_links
+        ],
+        "plan_cards": [
+            {
+                "kind": "task",
+                "id": card.task_id,
+                "title": card.title,
+                "lane": card.lane.value,
+                "task_state": card.task_state,
+                "priority": card.priority,
+                "created_at": card.created_at.isoformat(),
+                "updated_at": card.updated_at.isoformat(),
+                "planning": {
+                    "dependencies": list(card.dependencies),
+                    "conflicts": list(card.conflicts),
+                },
+                "sources": [
+                    {"kind": value.kind, "label": value.label, "digest": value.digest}
+                    for value in card.sources
+                ],
+                "change_set_ids": list(card.change_set_ids),
+                "attention": list(card.attention),
+            }
+            for card in projection.plan_cards
+        ],
         "cards": [
             {
+                "kind": "change_set",
                 "id": card.change_set_id,
                 "title": card.title,
                 "lane": card.lane.value,

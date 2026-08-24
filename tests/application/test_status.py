@@ -11,10 +11,14 @@ from weftmark.application.claims import ClaimService
 from weftmark.application.evidence_runner import CommandEvidenceRequest
 from weftmark.application.ledger import LedgerService
 from weftmark.application.local_workflow import LocalWorkflowService
+from weftmark.application.task_claims import TaskClaimService
+from weftmark.application.task_planning import TaskPlanningService
+from weftmark.application.tasks import TaskService
 from weftmark.application.status import StatusService, status_to_payload
 from weftmark.application.workspace import WorkspaceService
 from weftmark.domain.evidence import EvidenceKind, EvidenceProducer, ProducerKind
 from weftmark.domain.scope import Scope
+from weftmark.domain.task import TaskIntent, TaskPriority, TaskState
 
 
 NOW = datetime(2026, 8, 14, 11, 0, tzinfo=timezone.utc)
@@ -213,3 +217,86 @@ def test_status_exposes_cross_file_contract_blocker_until_claim_expires(
     )
     by_id = {value["id"]: value for value in expired["change_sets"]}
     assert by_id["chg-2"]["scope_collisions"] == []
+
+
+def test_status_includes_native_task_sources_relations_and_work_binding(
+    tmp_path: Path,
+) -> None:
+    workspace, claims, workflow = setup(tmp_path)
+    ledger = LedgerService(JsonlLedger(tmp_path / ".git" / "weftmark" / "status.jsonl"))
+    tasks = TaskService(ledger)
+    tasks.create(
+        TaskIntent.create(
+            id="plan-work",
+            title="Plan work",
+            why="show intent",
+            what="project task",
+            roi_note=None,
+            priority=TaskPriority.P0,
+            state=TaskState.TODO,
+            scopes=(Scope.file("docs/**"),),
+            created_at=NOW + timedelta(seconds=1),
+        )
+    )
+    task_claims = TaskClaimService(
+        TaskPlanningService(tasks), tasks, workspace, claims, ledger
+    )
+    task_claims.claim(
+        "plan-work",
+        change_set_id="plan-work-cs",
+        claim_id="plan-work-claim",
+        base_revision="HEAD",
+        agent_id="worker",
+        session_id="session",
+        claimed_at=NOW + timedelta(seconds=2),
+        lease_seconds=300,
+    )
+    ledger.record(
+        kind="source_plan_import",
+        entity_id="weftmark/tasks",
+        payload={
+            "source_label": "weftmark/tasks",
+            "source_digest": "sha256:" + "a" * 64,
+            "native_task_ids": ["plan-work"],
+        },
+        recorded_at=NOW + timedelta(seconds=3),
+    )
+    ledger.record(
+        kind="frog_native_task_import",
+        entity_id="frog/workspace",
+        payload={
+            "source_label": "frog/workspace",
+            "source_snapshot_digest": "sha256:" + "b" * 64,
+            "native_tasks": {"plan-work": {}},
+        },
+        recorded_at=NOW + timedelta(seconds=3, microseconds=1),
+    )
+
+    payload = status_to_payload(
+        StatusService(
+            workspace, claims, workflow, tasks=tasks, ledger=ledger
+        ).summarize(observed_at=NOW + timedelta(seconds=4))
+    )
+
+    assert payload["counts"]["tasks"] == 1
+    assert payload["tasks"][0]["state"] == "in_progress"
+    assert payload["tasks"][0]["sources"] == [
+        {
+            "kind": "frog_snapshot",
+            "label": "frog/workspace",
+            "digest": "sha256:" + "b" * 64,
+        },
+        {
+            "kind": "source_plan",
+            "label": "weftmark/tasks",
+            "digest": "sha256:" + "a" * 64,
+        }
+    ]
+    assert payload["task_change_set_links"] == [
+        {
+            "task_id": "plan-work",
+            "change_set_id": "plan-work-cs",
+            "claim_id": "plan-work-claim",
+            "binding_state": "completed",
+        }
+    ]
