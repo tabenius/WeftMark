@@ -627,3 +627,21 @@ def _optional_text(value: object) -> str | None:
 def _require_aware(value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise FrogTaskImportError("imported_at must include a timezone")
+
+
+def import_result_to_payload(value: FrogTaskImportResult) -> dict[str, Any]:
+    return {
+        "source_label": value.source_label,
+        "source_snapshot_digest": value.source_snapshot_digest,
+        "imported": value.imported,
+        "created_tasks": list(value.created_tasks),
+        "existing_tasks": list(value.existing_tasks),
+        "created_dependencies": [list(pair) for pair in value.created_dependencies],
+        "existing_dependencies": [list(pair) for pair in value.existing_dependencies],
+        "created_conflicts": [list(pair) for pair in value.created_conflicts],
+        "existing_conflicts": [list(pair) for pair in value.existing_conflicts],
+        "skipped_terminal_tasks": list(value.skipped_terminal_tasks),
+        "satisfied_source_dependencies": [
+            list(pair) for pair in value.satisfied_source_dependencies
+        ],
+    }

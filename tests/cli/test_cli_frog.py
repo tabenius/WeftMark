@@ -244,3 +244,164 @@ def test_cli_records_and_inspects_frog_snapshot_receipt(
     ]
     assert main(refused) == 2
     assert "not eligible" in json.loads(capsys.readouterr().out)["error"]
+
+
+def graph_snapshot() -> FrogSnapshot:
+    records = {
+        "repos": (),
+        "tasks": (
+            {
+                "slug": "core",
+                "repo_path": "/source/project",
+                "workflow_status": "in_progress",
+                "priority": "p1",
+                "title": "Core work",
+                "created_at": "2026-08-14T10:00:00+00:00",
+            },
+            {
+                "slug": "ui",
+                "repo_path": "/source/project",
+                "workflow_status": "todo",
+                "priority": "p2",
+                "title": "UI work",
+                "created_at": "2026-08-14T10:00:00+00:00",
+            },
+            {
+                "slug": "legacy",
+                "repo_path": "/source/project",
+                "workflow_status": "done",
+                "priority": "p3",
+                "title": "Legacy cleanup",
+                "created_at": "2026-08-14T09:00:00+00:00",
+            },
+        ),
+        "task_dependencies": (
+            {"task_slug": "ui", "depends_on_slug": "core", "relation": "depends_on"},
+            {"task_slug": "core", "depends_on_slug": "legacy", "relation": "depends_on"},
+        ),
+        "task_conflicts": (),
+        "task_tags": (),
+        "task_assignments": (),
+        "agents": (),
+        "files": (),
+        "task_files": (),
+        "locks": (),
+    }
+    contents = {
+        "source_kind": "frog-agents-db",
+        "source_label": "test-frog-graph",
+        "source_schema": {"migrations": ("001_initial.sql",)},
+        "records": records,
+    }
+    canonical = json.dumps(
+        contents, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    digest = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+    return FrogSnapshot(
+        "test-frog-graph",
+        ("001_initial.sql",),
+        NOW,
+        digest,
+        records,
+    )
+
+
+def test_cli_imports_selected_frog_task_graph_into_native_intent(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    repo = repository(tmp_path)
+    value = graph_snapshot()
+    monkeypatch.setattr(
+        "weftmark.cli.main.read_frog_snapshot",
+        lambda path, source_label, captured_at: value,
+    )
+    assert main(
+        [
+            "--repo",
+            str(repo),
+            "--json",
+            "frog",
+            "snapshot",
+            "import",
+            str(tmp_path / "AGENTS.db"),
+            "--source-label",
+            "test-frog-graph",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    missing_scope = [
+        "--repo",
+        str(repo),
+        "--json",
+        "frog",
+        "task",
+        "import",
+        value.digest,
+        "--task",
+        "ui",
+        "--task",
+        "core",
+        "--scope",
+        "ui=file:src/ui/**",
+    ]
+    assert main(missing_scope) == 2
+    assert "scope mapping" in json.loads(capsys.readouterr().out)["error"]
+
+    unselected_scope = [
+        "--repo",
+        str(repo),
+        "--json",
+        "frog",
+        "task",
+        "import",
+        value.digest,
+        "--task",
+        "ui",
+        "--scope",
+        "core=file:src/core/**",
+    ]
+    assert main(unselected_scope) == 2
+    assert "not selected" in json.loads(capsys.readouterr().out)["error"]
+
+    import_command = [
+        "--repo",
+        str(repo),
+        "--json",
+        "frog",
+        "task",
+        "import",
+        value.digest,
+        "--task",
+        "ui",
+        "--task",
+        "core",
+        "--task",
+        "legacy",
+        "--scope",
+        "core=file:src/core/**",
+        "--scope",
+        "ui=file:src/ui/**",
+    ]
+    assert main(import_command) == 0
+    first = json.loads(capsys.readouterr().out)["frog_task_import"]
+    assert first["imported"] is True
+    assert first["created_tasks"] == ["core", "ui"]
+    assert first["created_dependencies"] == [["ui", "core"]]
+    assert first["skipped_terminal_tasks"] == ["legacy"]
+    assert first["satisfied_source_dependencies"] == [["core", "legacy"]]
+
+    assert main(import_command) == 0
+    repeated = json.loads(capsys.readouterr().out)["frog_task_import"]
+    assert repeated["imported"] is False
+    assert repeated["existing_tasks"] == ["core", "ui"]
+
+    assert main(
+        ["--repo", str(repo), "--json", "task", "show", "core"]
+    ) == 0
+    task = json.loads(capsys.readouterr().out)["task"]
+    assert task["state"] == "todo"
+
+    assert main(
+        ["--repo", str(repo), "--json", "task", "show", "legacy"]
+    ) == 3

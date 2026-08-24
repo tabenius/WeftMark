@@ -435,7 +435,7 @@ tasks:
 
   - slug: frog-native-task-promotion
     title: Expose Frog-to-native task promotion through the CLI
-    status: blocked
+    status: review
     priority: P0
     depends:
       - frog-native-task-promotion-core
@@ -469,4 +469,5 @@ tasks:
         required: true
         criterion: CLI wording makes imported intent and native runtime authority unambiguous.
     notes:
-      - Temporarily blocked because acp-runtime-adapter-claim4 owns src/weftmark/cli/main.py; continue after ACP independent review and claim release.
+      - Unblocked once the ACP runtime adapter's independent review completed and its claim on src/weftmark/cli/main.py released.
+      - Added `weftmark frog task import` (--task repeatable, --scope TASK_SLUG=SCOPE repeatable), mirroring the existing frog task {list,next,claim,promote} CLI pattern.

@@ -52,6 +52,11 @@ from weftmark.application.frog_promotions import (
     FrogPromotionService,
     promotion_result_to_payload,
 )
+from weftmark.application.frog_task_import import (
+    FrogTaskImportError,
+    FrogTaskImportService,
+    import_result_to_payload as frog_task_import_result_to_payload,
+)
 from weftmark.application.frog_planning import (
     FrogPlanningError,
     FrogPlanningService,
@@ -387,6 +392,29 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="operator-approved local scope; imported Frog scopes are not authoritative",
     )
+    frog_task_import = frog_task_commands.add_parser(
+        "import",
+        help="promote a selected Frog task/dependency/conflict graph into native intent",
+    )
+    frog_task_import.add_argument("digest")
+    frog_task_import.add_argument(
+        "--task",
+        dest="task_slugs",
+        action="append",
+        required=True,
+        help="Frog task slug to import into native intent (repeatable)",
+    )
+    frog_task_import.add_argument(
+        "--scope",
+        dest="scopes",
+        action="append",
+        required=True,
+        metavar="TASK_SLUG=SCOPE",
+        help=(
+            "native scope for one imported task, e.g. core=file:src/core/** "
+            "(repeatable; every selected task needs at least one)"
+        ),
+    )
 
     changeset = commands.add_parser("changeset", help="manage Change Sets")
     changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
@@ -555,6 +583,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             frog_planning, frog_promotions, claims
         )
         tasks = TaskService(ledger)
+        frog_task_import = FrogTaskImportService(frog_receipts, tasks, ledger)
         task_planning = TaskPlanningService(tasks)
         task_claims = TaskClaimService(
             task_planning, tasks, workspace, claims, ledger
@@ -904,6 +933,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         if (
             args.command == "frog"
             and args.frog_command == "task"
+            and args.frog_task_command == "import"
+        ):
+            scopes_by_task = _parse_frog_import_scopes(args.scopes, args.task_slugs)
+            result = frog_task_import.import_tasks(
+                args.digest,
+                args.task_slugs,
+                scopes_by_task=scopes_by_task,
+                imported_at=_now(),
+            )
+            _emit_frog_task_import(
+                frog_task_import_result_to_payload(result), json_output=args.json
+            )
+            return 0
+        if (
+            args.command == "frog"
+            and args.frog_command == "task"
             and args.frog_task_command == "next"
         ):
             selection = frog_planning.next(
@@ -1167,6 +1212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         FrogPromotionError,
         FrogReceiptError,
         FrogTaskClaimError,
+        FrogTaskImportError,
     ) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_INVALID
@@ -1611,6 +1657,54 @@ def _emit_frog_promotion(
             f"{scope['kind']}:{scope['key']}" for scope in change_set["scopes"]
         )
     )
+
+
+def _parse_frog_import_scopes(
+    raw_scopes: Sequence[str], task_slugs: Sequence[str]
+) -> dict[str, tuple[Scope, ...]]:
+    selected = set(task_slugs)
+    by_task: dict[str, list[Scope]] = {}
+    for raw in raw_scopes:
+        slug, sep, scope_text = raw.partition("=")
+        if not sep or not slug.strip() or not scope_text.strip():
+            raise FrogTaskImportError(
+                f"--scope must look like TASK_SLUG=SCOPE, got: {raw!r}"
+            )
+        slug = slug.strip()
+        if slug not in selected:
+            raise FrogTaskImportError(
+                f"--scope names task {slug!r} which is not selected with --task"
+            )
+        by_task.setdefault(slug, []).append(Scope.parse(scope_text.strip()))
+    return {slug: tuple(values) for slug, values in by_task.items()}
+
+
+def _emit_frog_task_import(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_task_import": payload}, sort_keys=True))
+        return
+    action = "imported" if payload["imported"] else "already imported"
+    print(f"{action} {payload['source_label']}  {payload['source_snapshot_digest']}")
+    if payload["created_tasks"]:
+        print("  tasks: created " + ", ".join(payload["created_tasks"]))
+    else:
+        print("  tasks: created none")
+    if payload["existing_tasks"]:
+        print("  tasks: existing " + ", ".join(payload["existing_tasks"]))
+    if payload["skipped_terminal_tasks"]:
+        print("  skipped (terminal): " + ", ".join(payload["skipped_terminal_tasks"]))
+    if payload["created_dependencies"]:
+        print(
+            "  dependencies: "
+            + ", ".join(f"{a}->{b}" for a, b in payload["created_dependencies"])
+        )
+    if payload["created_conflicts"]:
+        print(
+            "  conflicts: "
+            + ", ".join(f"{a}<->{b}" for a, b in payload["created_conflicts"])
+        )
 
 
 def _emit_frog_task_selection(
