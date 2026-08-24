@@ -108,6 +108,43 @@ tasks:
         required: true
         criterion: Partial reservation recovery never grants ownership without a native active claim.
 
+  - slug: native-task-completion-workflow
+    title: Complete reviewed native tasks atomically
+    status: review
+    priority: P0
+    depends:
+      - native-task-claim-service
+      - review-service
+    purpose: Close claimed native intent truthfully after its exact work is merged and proven releasable.
+    scope:
+      files:
+        - src/weftmark/application/task_completion.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_task_completion.py
+        - tests/cli/test_cli_task_claims.py
+        - tasks/50-surfaces.weft.yml
+      contracts:
+        - contract:task-completion-v0
+        - surface:cli-task-completion
+    deliverables:
+      - Retry-safe completion service over the immutable native task work binding.
+      - Strict task complete command with explicit completion provenance.
+    accept:
+      - Completion requires the bound Change Set to be merged under a current releasable exact-head review.
+      - The matching active claim is safely released before the task becomes done.
+      - An identical retry returns the existing completion without duplicate task events.
+    negative:
+      - Missing work bindings, expired or mismatched claims, stale reviews and incomplete evidence fail closed.
+      - Conflicting retries cannot rewrite completion actor or rationale.
+      - Generic task transition remains unable to mark a task done.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_task_completion.py tests/cli/test_cli_task_claims.py
+      - kind: review
+        required: true
+        criterion: Completion gates and claim-release crash recovery are reviewed against contract:task-completion-v0.
+
   - slug: cli-surface
     title: Implement the first WeftMark CLI
     status: done

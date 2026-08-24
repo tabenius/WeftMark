@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from weftmark.cli.main import main
@@ -105,3 +106,99 @@ def test_native_task_claim_cli_creates_and_recovers_local_authority(
     assert main(command(repo, "task", "claim", "scopeless")) == 2
     assert "declared scopes" in json.loads(capsys.readouterr().out)["error"]
 
+
+def test_native_task_complete_cli_gates_and_closes_claimed_work(
+    tmp_path: Path, capsys
+) -> None:
+    repo = repository(tmp_path)
+    create = command(
+        repo,
+        "task",
+        "create",
+        "complete-me",
+        "--title",
+        "Complete me",
+        "--why",
+        "prove terminal workflow",
+        "--what",
+        "finish reviewed work",
+        "--scope",
+        "file:**",
+    )
+    assert main(create) == 0
+    capsys.readouterr()
+    assert main(
+        command(
+            repo,
+            "task",
+            "claim",
+            "complete-me",
+            "--changeset-id",
+            "complete-me-cs",
+            "--claim-id",
+            "complete-me-claim",
+            "--agent",
+            "worker-1",
+            "--session",
+            "session-1",
+            "--lease-seconds",
+            "3600",
+        )
+    ) == 0
+    capsys.readouterr()
+    complete = command(
+        repo,
+        "task",
+        "complete",
+        "complete-me",
+        "--actor",
+        "worker-1",
+        "--reason",
+        "merged and verified",
+    )
+    assert main(complete) == 2
+    assert "Change Set to be merged" in json.loads(capsys.readouterr().out)["error"]
+
+    assert main(
+        command(
+            repo,
+            "evidence",
+            "run",
+            "complete-me-cs",
+            "--id",
+            "complete-me-evidence",
+            "--command",
+            sys.executable,
+            "-c",
+            "pass",
+        )
+    ) == 0
+    capsys.readouterr()
+    assert main(
+        command(
+            repo,
+            "review",
+            "create",
+            "complete-me-cs",
+            "--id",
+            "complete-me-review",
+        )
+    ) == 0
+    capsys.readouterr()
+    for state in ("review", "merged"):
+        assert main(
+            command(repo, "changeset", "transition", "complete-me-cs", state)
+        ) == 0
+        capsys.readouterr()
+
+    assert main(complete) == 0
+    payload = json.loads(capsys.readouterr().out)["task_completion"]
+    assert payload["completed"] is True
+    assert payload["claim_released"] is True
+    assert payload["review_id"] == "complete-me-review"
+    assert payload["task"]["state"] == "done"
+
+    assert main(complete) == 0
+    repeated = json.loads(capsys.readouterr().out)["task_completion"]
+    assert repeated["completed"] is False
+    assert repeated["claim_released"] is False

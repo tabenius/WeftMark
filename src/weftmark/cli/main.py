@@ -107,6 +107,11 @@ from weftmark.application.task_claims import (
     TaskClaimService,
     task_claim_result_to_payload,
 )
+from weftmark.application.task_completion import (
+    TaskCompletionError,
+    TaskCompletionService,
+    task_completion_result_to_payload,
+)
 from weftmark.application.tasks import (
     TaskService,
     TaskServiceError,
@@ -214,6 +219,12 @@ def build_parser() -> argparse.ArgumentParser:
     task_claim.add_argument("--agent", default="weftmark-cli")
     task_claim.add_argument("--session", default="local-session")
     task_claim.add_argument("--lease-seconds", type=int, default=1800)
+    task_complete = task_commands.add_parser(
+        "complete", help="complete reviewed merged native work and release its claim"
+    )
+    task_complete.add_argument("id", help="native task ID")
+    task_complete.add_argument("--actor", default="weftmark-cli")
+    task_complete.add_argument("--reason", required=True)
     task_plan = task_commands.add_parser(
         "plan", help="inspect or import reviewed source-plan intent"
     )
@@ -548,6 +559,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         task_claims = TaskClaimService(
             task_planning, tasks, workspace, claims, ledger
         )
+        task_completions = TaskCompletionService(task_claims, claims, ledger)
         plan_imports = PlanImportService(tasks, ledger)
 
         def runtime_workers() -> RuntimeWorkerService:
@@ -604,6 +616,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _emit_error(f"Task not found: {args.id}", json_output=args.json)
                 return EXIT_NOT_FOUND
             _emit_task(task_to_payload(value), json_output=args.json)
+            return 0
+        if args.command == "task" and args.task_command == "complete":
+            result = task_completions.complete(
+                args.id,
+                actor_id=args.actor,
+                reason=args.reason,
+                completed_at=_now(),
+            )
+            _emit_native_task_completion(
+                task_completion_result_to_payload(result), json_output=args.json
+            )
             return 0
         if args.command == "task" and args.task_command == "list":
             state = None if args.state is None else TaskState(args.state)
@@ -1164,6 +1187,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ScopeError,
         TaskError,
         TaskClaimError,
+        TaskCompletionError,
         TaskPlanningError,
         TaskServiceError,
         RuntimeRegistryError,
@@ -1296,6 +1320,18 @@ def _emit_native_task_claim(
             for lock in payload["claim"]["locks"]
         )
     )
+
+
+def _emit_native_task_completion(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "task_completion": payload}, sort_keys=True))
+        return
+    action = "completed" if payload["completed"] else "already completed"
+    print(f"{action} {payload['task_id']}  {payload['change_set_id']}")
+    print(f"  review: {payload['review_id']}  head: {payload['head_sha']}")
+    print(f"  claim: {payload['claim_id']}  released:{payload['claim_released']}")
 
 
 def _emit_source_plan_inspection(
