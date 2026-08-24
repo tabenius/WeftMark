@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 from weftmark.cli.main import main
@@ -72,6 +73,10 @@ def test_runtime_cli_reconnects_and_refuses_unclaimed_work(tmp_path: Path, capsy
         )
     ) == 0
     capsys.readouterr()
+    claimed_base = _git(repo, "rev-parse", "HEAD")
+    (repo / "later.txt").write_text("after claim\n", encoding="utf-8")
+    _git(repo, "add", "later.txt")
+    _git(repo, "commit", "-m", "advance after claim")
     assert main(
         _command(
             repo,
@@ -82,11 +87,36 @@ def test_runtime_cli_reconnects_and_refuses_unclaimed_work(tmp_path: Path, capsy
     started = _payload(capsys)["runtime_worker"]
     assert started["provider"] == "echo"
     assert started["authority"] == "operational_observation_only"
+    runtime_worktree = repo.parent / ".weftmark-runtime-repo-owned-cs"
+    assert _git(runtime_worktree, "rev-parse", "HEAD") == claimed_base
 
+    repeated_pid = started["pid"]
     assert main(
-        _command(repo, "runtime", "status", "owned", "--runtime-provider", provider)
+        _command(
+            repo,
+            "runtime", "start", "owned", "--provider", "echo",
+            "--prompt", "must not start twice", "--runtime-provider", provider,
+        )
     ) == 0
-    assert _payload(capsys)["runtime_worker"]["state"] in {"running", "awaiting_input"}
+    assert _payload(capsys)["runtime_worker"]["pid"] == repeated_pid
+
+    deadline = time.monotonic() + 2
+    while True:
+        assert main(
+            _command(repo, "runtime", "status", "owned", "--runtime-provider", provider)
+        ) == 0
+        state = _payload(capsys)["runtime_worker"]["state"]
+        if state == "awaiting_input" or time.monotonic() >= deadline:
+            break
+        time.sleep(0.01)
+    assert state == "awaiting_input"
+    assert main(
+        _command(
+            repo, "runtime", "send-input", "owned", "--data", "continue",
+            "--runtime-provider", provider,
+        )
+    ) == 0
+    capsys.readouterr()
     assert main(
         _command(repo, "runtime", "stop", "owned", "--runtime-provider", provider)
     ) == 0

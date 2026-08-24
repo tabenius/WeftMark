@@ -50,7 +50,7 @@ class RuntimeWorkerService:
         adapter_factory: Callable[[str], RuntimePort],
         repo_path: str,
         ledger: LedgerService,
-        resolve_base: Callable[[str], GitObjectId],
+        change_set_base: Callable[[str], GitObjectId],
     ) -> None:
         self._task_claims = task_claims
         self._claims = claims
@@ -58,7 +58,7 @@ class RuntimeWorkerService:
         self._adapter_factory = adapter_factory
         self._repo_path = repo_path
         self._ledger = ledger
-        self._resolve_base = resolve_base
+        self._change_set_base = change_set_base
 
     def start(
         self,
@@ -185,7 +185,9 @@ class RuntimeWorkerService:
         workspace = adapter.attach_workspace(self._repo_path)
         try:
             change = adapter.ensure_change_workspace(
-                workspace, binding.change_set_id, self._resolve_base(binding.base_revision)
+                workspace,
+                binding.change_set_id,
+                self._change_set_base(binding.change_set_id),
             )
         except RuntimeAdapterError as error:
             raise _adapter_error(error) from error
@@ -198,7 +200,9 @@ class RuntimeWorkerService:
         workspace = adapter.attach_workspace(self._repo_path)
         try:
             change = adapter.get_change_workspace(
-                workspace, binding.change_set_id, self._resolve_base(binding.base_revision)
+                workspace,
+                binding.change_set_id,
+                self._change_set_base(binding.change_set_id),
             )
         except RuntimeAdapterError as error:
             raise _adapter_error(error) from error

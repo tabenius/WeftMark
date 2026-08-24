@@ -77,6 +77,7 @@ from weftmark.application.local_workflow import (
     review_summary_to_payload,
     scope_audit_to_payload,
 )
+from weftmark.application.ports.git import GitObjectId
 from weftmark.application.status import StatusService, status_to_payload
 from weftmark.application.runtime_registry import (
     RuntimeRegistryError,
@@ -533,7 +534,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 adapter_factory,
                 repo_path,
                 ledger,
-                lambda revision: git.resolve_ref(revision).target,
+                lambda change_set_id: GitObjectId(
+                    workspace.require_change_set(change_set_id).change_set.base_sha
+                ),
             )
 
         if args.command == "status":
