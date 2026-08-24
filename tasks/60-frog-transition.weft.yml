@@ -324,7 +324,7 @@ tasks:
 
   - slug: source-plan-native-import-core
     title: Import Weft source plans into native TaskService
-    status: review
+    status: done
     priority: P0
     depends:
       - native-task-ledger-service
@@ -360,7 +360,7 @@ tasks:
 
   - slug: source-plan-native-import
     title: Expose source-plan import through the native CLI
-    status: blocked
+    status: done
     priority: P0
     depends:
       - source-plan-native-import-core
@@ -395,7 +395,7 @@ tasks:
         required: true
         criterion: CLI wording and exit behavior make drift and non-authoritative source statuses explicit.
     notes:
-      - Temporarily blocked because acp-runtime-adapter-claim4 owns src/weftmark/cli/main.py; recover the preserved native reservation after ACP review and release.
+      - Completed from the preserved native reservation after ACP released src/weftmark/cli/main.py.
 
   - slug: frog-native-task-promotion-core
     title: Promote reviewed Frog snapshots into native TaskService intent

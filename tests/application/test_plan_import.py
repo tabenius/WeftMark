@@ -224,8 +224,11 @@ def test_weftmark_imports_its_own_reviewed_source_plan(tmp_path: Path) -> None:
     actionable = {task.slug for task in snapshot.tasks if task.status != "done"}
     assert result.imported is True
     assert {task.id for task in tasks.list()} == actionable
-    assert tasks.require("source-plan-native-import-core").state is TaskState.TODO
-    assert tasks.require("source-plan-native-import").state is TaskState.TODO
+    assert "source-plan-native-import-core" in result.skipped_terminal_tasks
+    assert "source-plan-native-import" in result.skipped_terminal_tasks
+    assert tasks.get("source-plan-native-import-core") is None
+    assert tasks.get("source-plan-native-import") is None
+    assert tasks.require("frog-native-task-promotion-core").state is TaskState.TODO
 
 
 def test_import_normalizes_ledger_refusal_without_partial_receipt(tmp_path: Path) -> None:

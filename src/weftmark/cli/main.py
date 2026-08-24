@@ -18,6 +18,7 @@ from weftmark.adapters.bundle_file import (
     write_bundle,
 )
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
+from weftmark.adapters.weft_plan import WeftPlanAdapter, WeftPlanError
 from weftmark.application.change_binding import ChangeBindingError
 from weftmark.application.bundle import (
     BundleError,
@@ -76,6 +77,14 @@ from weftmark.application.local_workflow import (
     evidence_result_to_payload,
     review_summary_to_payload,
     scope_audit_to_payload,
+)
+from weftmark.application.plan_import import (
+    PlanImportDriftError,
+    PlanImportError,
+    PlanImportService,
+    plan_drift_to_payload,
+    plan_import_result_to_payload,
+    plan_inspection_to_payload,
 )
 from weftmark.application.ports.git import GitObjectId
 from weftmark.application.status import StatusService, status_to_payload
@@ -205,6 +214,30 @@ def build_parser() -> argparse.ArgumentParser:
     task_claim.add_argument("--agent", default="weftmark-cli")
     task_claim.add_argument("--session", default="local-session")
     task_claim.add_argument("--lease-seconds", type=int, default=1800)
+    task_plan = task_commands.add_parser(
+        "plan", help="inspect or import reviewed source-plan intent"
+    )
+    task_plan_commands = task_plan.add_subparsers(
+        dest="task_plan_command", required=True
+    )
+    for task_plan_command, help_text in (
+        ("inspect", "compare source plans with the recorded import receipt"),
+        ("import", "import source plans as non-authoritative native intent"),
+    ):
+        task_plan_parser = task_plan_commands.add_parser(
+            task_plan_command, help=help_text
+        )
+        task_plan_parser.add_argument("--source-label", required=True)
+        task_plan_parser.add_argument(
+            "--plan-root",
+            help="repository root containing tasks/*.weft.yml (defaults to --repo)",
+        )
+        task_plan_parser.add_argument(
+            "--file",
+            action="append",
+            default=[],
+            help="source-plan file relative to --plan-root; repeatable",
+        )
     task_transition = task_commands.add_parser(
         "transition", help="record a non-terminal native task transition"
     )
@@ -515,6 +548,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         task_claims = TaskClaimService(
             task_planning, tasks, workspace, claims, ledger
         )
+        plan_imports = PlanImportService(tasks, ledger)
 
         def runtime_workers() -> RuntimeWorkerService:
             registry = load_runtime_registry(
@@ -601,6 +635,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit_native_task_claim(
                 task_claim_result_to_payload(result, observed_at=claimed_at),
                 json_output=args.json,
+            )
+            return 0
+        if args.command == "task" and args.task_command == "plan":
+            plan_root = args.plan_root or repository.worktree or args.repo
+            snapshot = WeftPlanAdapter(plan_root).load(args.file or None)
+            if args.task_plan_command == "inspect":
+                _emit_source_plan_inspection(
+                    plan_inspection_to_payload(
+                        plan_imports.inspect_snapshot(
+                            snapshot, source_label=args.source_label
+                        )
+                    ),
+                    json_output=args.json,
+                )
+                return 0
+            result = plan_imports.import_snapshot(
+                snapshot,
+                source_label=args.source_label,
+                imported_at=_now(),
+            )
+            _emit_source_plan_import(
+                plan_import_result_to_payload(result), json_output=args.json
             )
             return 0
         if args.command == "runtime" and args.runtime_command == "start":
@@ -1091,6 +1147,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_INVALID
+    except PlanImportDriftError as error:
+        _emit_source_plan_drift(
+            str(error), plan_drift_to_payload(error.drift), json_output=args.json
+        )
+        return EXIT_INVALID
     except (JsonlLedgerError, LedgerServiceError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_LEDGER
@@ -1110,7 +1171,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         WorkspaceError,
         EvidenceRunnerError,
         LocalWorkflowError,
+        PlanImportError,
         ValueError,
+        WeftPlanError,
     ) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_INVALID
@@ -1233,6 +1296,70 @@ def _emit_native_task_claim(
             for lock in payload["claim"]["locks"]
         )
     )
+
+
+def _emit_source_plan_inspection(
+    payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "source_plan_inspection": payload}, sort_keys=True))
+        return
+    print(
+        f"source plan {payload['source_label']}  {payload['status']}  "
+        f"{payload['source_digest']}"
+    )
+    print(f"  authority: {payload['authority']}")
+    if payload["drift"] is not None:
+        _print_source_plan_drift(payload["drift"])
+
+
+def _emit_source_plan_import(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "source_plan_import": payload}, sort_keys=True))
+        return
+    action = "imported" if payload["imported"] else "already imported"
+    print(f"{action} {payload['source_label']}  {payload['source_digest']}")
+    print(
+        f"  tasks created:{len(payload['created_tasks'])} "
+        f"existing:{len(payload['existing_tasks'])} "
+        f"terminal source-only:{len(payload['skipped_terminal_tasks'])}"
+    )
+    print(f"  authority: {payload['authority']}")
+
+
+def _emit_source_plan_drift(
+    message: str, payload: dict[str, Any], *, json_output: bool
+) -> None:
+    if json_output:
+        print(
+            json.dumps(
+                {"ok": False, "error": message, "source_plan_drift": payload},
+                sort_keys=True,
+            )
+        )
+        return
+    print(f"error: {message}", file=sys.stderr)
+    _print_source_plan_drift(payload, stream=sys.stderr)
+
+
+def _print_source_plan_drift(
+    payload: Mapping[str, Any], *, stream: Any = sys.stdout
+) -> None:
+    print(
+        f"  digest: {payload['previous_digest']} -> {payload['current_digest']}",
+        file=stream,
+    )
+    for key in (
+        "added_tasks",
+        "removed_tasks",
+        "changed_tasks",
+        "added_files",
+        "removed_files",
+        "changed_files",
+    ):
+        values = payload[key]
+        if values:
+            print(f"  {key.replace('_', ' ')}: {', '.join(values)}", file=stream)
 
 
 def _emit_runtime_worker(payload: dict[str, Any], *, json_output: bool) -> None:
