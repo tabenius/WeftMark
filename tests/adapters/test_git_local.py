@@ -108,6 +108,19 @@ def test_status_preserves_staged_unstaged_untracked_and_conflicted_paths(
     assert status.untracked_paths == ("untracked.txt",)
 
 
+def test_status_normalizes_untracked_nested_repository_directory_marker(
+    repository: Path,
+) -> None:
+    nested = repository / "nested"
+    nested.mkdir()
+    run(nested, "init")
+
+    status = LocalGit(repository).status()
+
+    assert status.untracked_paths == ("nested",)
+    assert status.paths == ("nested",)
+
+
 def test_status_preserves_both_paths_of_a_staged_rename(repository: Path) -> None:
     write(repository, "old.txt", "rename\n")
     run(repository, "add", "old.txt")

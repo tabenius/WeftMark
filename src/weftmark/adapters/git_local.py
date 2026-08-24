@@ -49,6 +49,12 @@ def _require_revision(revision: str) -> str:
     return revision
 
 
+def _normalize_untracked_path(path: str) -> str:
+    """Remove only Git's terminal marker for an untracked directory."""
+
+    return path[:-1] if path.endswith("/") else path
+
+
 def _ref_kind(name: str) -> GitRefKind:
     if name.startswith("refs/heads/"):
         return GitRefKind.LOCAL_BRANCH
@@ -167,7 +173,7 @@ class LocalGit(GitPort):
                 continue
             code, path = record[:2], record[3:]
             if code == "??":
-                untracked.append(path)
+                untracked.append(_normalize_untracked_path(path))
                 continue
             if code in {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}:
                 conflicted.append(path)
