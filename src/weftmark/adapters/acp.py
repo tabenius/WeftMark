@@ -126,7 +126,7 @@ class AcpConnection:
     def notify(self, method: str, params: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})
 
-    def close(self) -> None:
+    def close(self, *, timeout: float = 2.0) -> None:
         self._closed = True
         try:
             if self._process.stdin is not None:
@@ -134,6 +134,7 @@ class AcpConnection:
         except OSError:
             pass
         self._fail_pending("connection closed")
+        self._reader.join(timeout)
 
     def _write(self, message: dict[str, Any]) -> None:
         try:
