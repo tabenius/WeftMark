@@ -281,3 +281,50 @@ was stored at receiver ledger sequence 1. Repeating the same command returned
 This completes the same-worker sender-to-receiver product loop, but it is not
 the still-required cross-agent or cross-vendor handoff. The overall dogfood
 task therefore remains in progress.
+
+## Session 007: a real cross-agent handoff
+
+- Change Set: `acp-runtime-adapter-cs4` (author), `acp-reader-thread-teardown-cs` (receiver/continuation)
+- Goal: exercise `create, export, receive, continue, verify, review, and close`
+  across two genuinely distinct workers, not the same worker sending to
+  itself.
+- Author worker/session: `codex-weftmark` — built the ACP runtime adapter
+  end to end (PR #17, merged at `07c141f`).
+- Receiver worker/session: `claude` / `claude-cross-agent-dogfood-20260824`
+- Status: in progress (blocked only on a human merge of PR #26)
+
+Unlike Sessions 005/006, the two ends of this handoff are actually different
+workers with different vendor identities, not one worker acting as both
+sender and receiver. Claude independently reviewed `acp-runtime-adapter-cs4`
+(https://github.com/tabenius/WeftMark/pull/17#issuecomment-5395964891),
+found the review-recording gap from earlier sessions was solvable after all
+(the WeftMark ledger lives at the repository's real `.git/weftmark/`, shared
+by every worktree of the same clone — not per-worktree as previously
+assumed), and recorded a genuine independent review natively
+(`acp-runtime-independent-review-70eedfc`, author `claude`, outcome `ready`).
+
+The cross-agent exercise itself:
+
+1. `weftmark bundle export acp-runtime-adapter-cs4` from the shared ledger.
+2. A fresh `git clone` at `/tmp/weftmark-claude-receiver` — a genuinely
+   separate `.git` directory and therefore an empty WeftMark ledger, not a
+   `git worktree` sharing the source repository's ledger.
+3. `weftmark bundle verify` then `weftmark bundle import` there, recorded
+   under the receiving ledger as an `imported_bundle` receipt.
+4. Continuation: Claude's own independent review of PR #17 had flagged that
+   `AcpConnection.close()` never bounded the reader thread's teardown. That
+   finding became real follow-up work in the receiving clone: `close()` now
+   accepts a `timeout` and joins the reader thread with a bounded default,
+   with a new test (`test_close_does_not_block_on_a_subprocess_that_ignores_stdin_eof`)
+   proving `close()` no longer blocks past the bound.
+5. Verify: `python -m pytest -q` in the receiving clone — 482 passed.
+6. Review: `weftmark review create` in the receiving clone, author `claude`,
+   outcome `ready`. Change Set `acp-reader-thread-teardown-cs` transitioned
+   to lifecycle state `review`.
+7. Published as PR #26 (github.com/tabenius/WeftMark/pull/26).
+
+Close is deliberately not recorded yet. PR #26 has not merged, and closing a
+Change Set before its real merge gate is satisfied would be exactly the kind
+of fabricated evidence this task exists to rule out. Once PR #26 merges,
+`acp-reader-thread-teardown-cs` should transition `merged` then `closed`
+against its real head — that is the one remaining step to close this task.

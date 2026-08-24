@@ -132,6 +132,29 @@ def test_request_refuses_oversized_agent_message(tmp_path: Path) -> None:
     assert "1 MiB" in excinfo.value.detail
 
 
+def test_close_does_not_block_on_a_subprocess_that_ignores_stdin_eof(tmp_path: Path) -> None:
+    script = tmp_path / "stubborn_agent.py"
+    script.write_text(
+        "import time\ntime.sleep(30)\n",
+        encoding="utf-8",
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(script)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    connection = AcpConnection(process, request_handlers={}, on_notification=lambda method, params: None)
+    try:
+        started = time.monotonic()
+        connection.close(timeout=0.3)
+        elapsed = time.monotonic() - started
+        assert elapsed < 2.0, "close() blocked well past its bounded join timeout"
+    finally:
+        process.kill()
+        process.wait(timeout=5)
+
+
 _STUB_AGENT = """
 import json
 import sys
