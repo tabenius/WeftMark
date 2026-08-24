@@ -5,7 +5,7 @@ summary: Project WeftMark coordination state into a replaceable Kanban-style con
 tasks:
   - slug: unified-kanban-plan-board
     title: Unify task intent and Change Sets in the Kanban projection
-    status: review
+    status: done
     priority: P0
     depends:
       - kanban-read-model-v0
