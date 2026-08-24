@@ -11,8 +11,10 @@ import pytest
 from weftmark.application.kanban_projection import (
     KanbanCardProjection,
     KanbanLane,
+    KanbanPlanCardProjection,
     KanbanProjection,
 )
+from weftmark.application.status import TaskSource
 from weftmark.http.server import HttpReadError, _require_loopback, create_server
 
 
@@ -52,6 +54,22 @@ def projection() -> KanbanProjection:
                 attention=(),
             ),
         ),
+        plan_cards=(
+            KanbanPlanCardProjection(
+                task_id="task-1",
+                title="Task projection",
+                lane=KanbanLane.BACKLOG,
+                task_state="todo",
+                priority="p0",
+                created_at=NOW,
+                updated_at=NOW,
+                dependencies=(),
+                conflicts=(),
+                sources=(TaskSource("native", "native-ledger", None),),
+                change_set_ids=(),
+                attention=(),
+            ),
+        ),
     )
 
 
@@ -82,17 +100,19 @@ def read_json(url: str, *, token: str | None = None) -> dict:
         return json.loads(response.read())
 
 
-def test_workspace_and_single_change_routes_share_projection() -> None:
+def test_workspace_and_single_card_routes_share_projection() -> None:
     provider, server, thread, base = start_server()
     try:
         workspace = read_json(f"{base}/v0/kanban")
         single = read_json(f"{base}/v0/kanban/changes/chg-1")
+        task = read_json(f"{base}/v0/kanban/tasks/task-1")
 
         assert workspace["schema"] == "weftmark.kanban-projection.v0"
         assert workspace["authority"]["projection"] == "read_only"
         assert workspace["cards"][0]["id"] == "chg-1"
         assert single["card"] == workspace["cards"][0]
-        assert provider.calls == 2
+        assert task["card"] == workspace["plan_cards"][0]
+        assert provider.calls == 3
     finally:
         server.shutdown()
         server.server_close()
@@ -106,6 +126,20 @@ def test_unknown_change_is_404_after_one_authorized_projection_read() -> None:
             read_json(f"{base}/v0/kanban/changes/missing")
         assert exc.value.code == 404
         assert json.loads(exc.value.read())["error"] == "change_set_not_found"
+        assert provider.calls == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_unknown_task_is_404_after_one_authorized_projection_read() -> None:
+    provider, server, thread, base = start_server()
+    try:
+        with pytest.raises(HTTPError) as exc:
+            read_json(f"{base}/v0/kanban/tasks/missing")
+        assert exc.value.code == 404
+        assert json.loads(exc.value.read())["error"] == "task_not_found"
         assert provider.calls == 1
     finally:
         server.shutdown()

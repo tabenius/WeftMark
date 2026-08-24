@@ -35,6 +35,8 @@ def test_surface_supports_live_get_and_exported_file_without_mutations() -> None
     assert 'method: "GET"' in js
     assert "loadFromFile" in js
     assert '"weftmark.kanban-projection.v0"' in js
+    assert "value.plan_cards" in js
+    assert "visibleCards()" in js
     for method in ("POST", "PUT", "PATCH", "DELETE"):
         assert f'method: "{method}"' not in js
 
@@ -65,6 +67,10 @@ def test_sample_projection_covers_attention_review_and_semantic_collision() -> N
         "projection": "read_only",
     }
     assert payload["counts"]["cards"] == len(payload["cards"])
+    assert payload["counts"]["plan_cards"] == len(payload["plan_cards"])
+    assert payload["counts"]["total_cards"] == len(payload["cards"]) + len(payload["plan_cards"])
+    assert any(not card["change_set_ids"] for card in payload["plan_cards"])
+    assert payload["task_change_set_links"]
     assert any(card["review"] is not None for card in payload["cards"])
     assert any(card["evidence"]["failed"] > 0 for card in payload["cards"])
     assert any(card["scope_collisions"] for card in payload["cards"])

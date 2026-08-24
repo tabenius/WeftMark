@@ -6,11 +6,19 @@ from weftmark.application.kanban_projection import (
     KANBAN_PROJECTION_SCHEMA,
     KanbanAttention,
     KanbanLane,
+    KanbanPlanCardProjection,
     kanban_projection_to_payload,
     project_change_set,
     project_workspace,
 )
-from weftmark.application.status import ChangeSetStatus, ScopeCollision, WorkspaceStatus
+from weftmark.application.status import (
+    ChangeSetStatus,
+    ScopeCollision,
+    TaskChangeSetLink,
+    TaskSource,
+    TaskStatus,
+    WorkspaceStatus,
+)
 from weftmark.domain.scope import Scope
 
 
@@ -219,3 +227,126 @@ def test_workspace_payload_is_versioned_read_only_and_json_compatible() -> None:
     assert payload["cards"][0]["claims"]["active_ids"] == ["claim-active"]
     assert payload["cards"][0]["scope_collisions"] == []
     assert payload["cards"][0]["git"]["head_sha"] == "head-active"
+
+
+def test_projection_adds_source_labelled_plan_cards_and_explicit_links() -> None:
+    task = TaskStatus(
+        id="plan-work",
+        title="Plan work",
+        state="in_progress",
+        priority="p0",
+        created_at=NOW,
+        updated_at=NOW,
+        dependencies=("done-dependency",),
+        conflicts=("coupled-work",),
+        sources=(TaskSource("source_plan", "weftmark/tasks", "sha256:abc"),),
+    )
+    link = TaskChangeSetLink(
+        "plan-work", "active", "claim-plan-work", "completed"
+    )
+    workspace = WorkspaceStatus(
+        generated_at=NOW,
+        change_sets=(status(id="active", lifecycle_state="active"),),
+        active_claim_count=1,
+        expired_claim_count=0,
+        released_claim_count=0,
+        tasks=(task,),
+        task_change_set_links=(link,),
+    )
+
+    projection = project_workspace(workspace)
+    payload = kanban_projection_to_payload(projection)
+
+    assert isinstance(projection.plan_cards[0], KanbanPlanCardProjection)
+    assert payload["counts"] == {
+        "cards": 1,
+        "plan_cards": 1,
+        "total_cards": 2,
+        "active_claims": 1,
+        "expired_claims": 0,
+        "released_claims": 0,
+    }
+    assert payload["plan_cards"] == [
+        {
+            "kind": "task",
+            "id": "plan-work",
+            "title": "Plan work",
+            "lane": "active",
+            "task_state": "in_progress",
+            "priority": "p0",
+            "created_at": NOW.isoformat(),
+            "updated_at": NOW.isoformat(),
+            "planning": {
+                "dependencies": ["done-dependency"],
+                "conflicts": ["coupled-work"],
+            },
+            "sources": [
+                {
+                    "kind": "source_plan",
+                    "label": "weftmark/tasks",
+                    "digest": "sha256:abc",
+                }
+            ],
+            "change_set_ids": ["active"],
+            "attention": [],
+        }
+    ]
+    assert payload["task_change_set_links"] == [
+        {
+            "task_id": "plan-work",
+            "change_set_id": "active",
+            "claim_id": "claim-plan-work",
+            "binding_state": "completed",
+        }
+    ]
+    assert payload["cards"][0]["kind"] == "change_set"
+
+
+def test_unlinked_active_task_fails_visible_without_inventing_change_set() -> None:
+    task = TaskStatus(
+        id="orphan",
+        title="Orphan",
+        state="in_progress",
+        priority="p1",
+        created_at=NOW,
+        updated_at=NOW,
+        dependencies=(),
+        conflicts=(),
+        sources=(TaskSource("native", "native-ledger", None),),
+    )
+    workspace = WorkspaceStatus(NOW, (), 0, 0, 0, tasks=(task,))
+
+    payload = kanban_projection_to_payload(project_workspace(workspace))
+
+    assert payload["plan_cards"][0]["attention"] == ["missing_change_set_link"]
+    assert payload["plan_cards"][0]["change_set_ids"] == []
+
+
+def test_dangling_task_link_is_visible_without_inventing_change_set() -> None:
+    task = TaskStatus(
+        id="dangling",
+        title="Dangling",
+        state="in_progress",
+        priority="p1",
+        created_at=NOW,
+        updated_at=NOW,
+        dependencies=(),
+        conflicts=(),
+        sources=(TaskSource("native", "native-ledger", None),),
+    )
+    link = TaskChangeSetLink("dangling", "absent", "claim-dangling", "reserved")
+    workspace = WorkspaceStatus(
+        NOW,
+        (),
+        1,
+        0,
+        0,
+        tasks=(task,),
+        task_change_set_links=(link,),
+    )
+
+    payload = kanban_projection_to_payload(project_workspace(workspace))
+
+    assert payload["plan_cards"][0]["attention"] == ["missing_change_set"]
+    assert payload["plan_cards"][0]["change_set_ids"] == ["absent"]
+    assert payload["cards"] == []

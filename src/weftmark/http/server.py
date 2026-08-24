@@ -33,6 +33,7 @@ from weftmark.application.kanban_projection import (
 from weftmark.application.ledger import LedgerService
 from weftmark.application.local_workflow import LocalWorkflowError, LocalWorkflowService
 from weftmark.application.status import StatusService
+from weftmark.application.tasks import TaskService
 from weftmark.application.task_claims import TaskClaimError
 from weftmark.application.workspace import WorkspaceService
 from weftmark.domain.evidence import EvidenceProducer, ProducerKind
@@ -109,7 +110,13 @@ class LocalProjectionProvider:
             ledger,
             EvidenceProducer(ProducerKind.WORKER, "weftmark-http-read"),
         )
-        self._status = StatusService(workspace, claims, workflow)
+        self._status = StatusService(
+            workspace,
+            claims,
+            workflow,
+            tasks=TaskService(ledger),
+            ledger=ledger,
+        )
         self._lock = Lock()
 
     def __call__(self, observed_at: datetime) -> KanbanProjection:
@@ -235,9 +242,11 @@ def make_handler(
                 return
 
             prefix = "/v0/kanban/changes/"
+            task_prefix = "/v0/kanban/tasks/"
             is_workspace = path == "/v0/kanban"
             is_single = path.startswith(prefix) and len(path) > len(prefix)
-            if not is_workspace and not is_single:
+            is_task = path.startswith(task_prefix) and len(path) > len(task_prefix)
+            if not is_workspace and not is_single and not is_task:
                 self._send_json(404, {"ok": False, "error": "not_found"})
                 return
             if self._refuse_if_unauthorized():
@@ -248,8 +257,32 @@ def make_handler(
                 self._send_json(200, kanban_projection_to_payload(projection))
                 return
 
-            change_set_id = unquote(path[len(prefix) :])
             workspace_payload = kanban_projection_to_payload(projection)
+            if is_task:
+                task_id = unquote(path[len(task_prefix) :])
+                card = next(
+                    (
+                        value
+                        for value in workspace_payload["plan_cards"]
+                        if value["id"] == task_id
+                    ),
+                    None,
+                )
+                if card is None:
+                    self._send_json(404, {"ok": False, "error": "task_not_found"})
+                    return
+                self._send_json(
+                    200,
+                    {
+                        "schema": KANBAN_PROJECTION_SCHEMA,
+                        "generated_at": projection.generated_at.isoformat(),
+                        "authority": workspace_payload["authority"],
+                        "card": card,
+                    },
+                )
+                return
+
+            change_set_id = unquote(path[len(prefix) :])
             card = next(
                 (
                     value

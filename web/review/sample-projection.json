@@ -7,12 +7,53 @@
   },
   "counts": {
     "cards": 4,
+    "plan_cards": 2,
+    "total_cards": 6,
     "active_claims": 1,
     "expired_claims": 0,
     "released_claims": 1
   },
+  "task_change_set_links": [
+    {
+      "task_id": "task-auth-owner",
+      "change_set_id": "chg-auth-owner",
+      "claim_id": "claim-auth-owner",
+      "binding_state": "completed"
+    }
+  ],
+  "plan_cards": [
+    {
+      "kind": "task",
+      "id": "task-auth-owner",
+      "title": "Tighten tenant authentication checks",
+      "lane": "active",
+      "task_state": "in_progress",
+      "priority": "p0",
+      "created_at": "2026-08-19T12:00:00+00:00",
+      "updated_at": "2026-08-19T12:58:00+00:00",
+      "planning": {"dependencies": [], "conflicts": ["task-session-ui"]},
+      "sources": [{"kind": "source_plan", "label": "workspace/tasks", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],
+      "change_set_ids": ["chg-auth-owner"],
+      "attention": []
+    },
+    {
+      "kind": "task",
+      "id": "task-unclaimed",
+      "title": "Plan rollout verification",
+      "lane": "backlog",
+      "task_state": "todo",
+      "priority": "p1",
+      "created_at": "2026-08-19T12:10:00+00:00",
+      "updated_at": "2026-08-19T12:10:00+00:00",
+      "planning": {"dependencies": ["task-auth-owner"], "conflicts": []},
+      "sources": [{"kind": "native", "label": "native-ledger", "digest": null}],
+      "change_set_ids": [],
+      "attention": []
+    }
+  ],
   "cards": [
     {
+      "kind": "change_set",
       "id": "chg-auth-owner",
       "title": "Tighten tenant authentication checks",
       "lane": "active",
@@ -32,6 +73,7 @@
       "attention": []
     },
     {
+      "kind": "change_set",
       "id": "chg-session-ui",
       "title": "Update session expiry presentation",
       "lane": "active",
@@ -58,6 +100,7 @@
       "attention": ["dirty_worktree", "failed_evidence", "scope_collision"]
     },
     {
+      "kind": "change_set",
       "id": "chg-ingress",
       "title": "Document ingress authorization boundary",
       "lane": "review",
@@ -86,6 +129,7 @@
       "attention": ["obsolete_evidence", "unavailable_evidence", "evidence_incomplete"]
     },
     {
+      "kind": "change_set",
       "id": "chg-read-model",
       "title": "Expose board read model",
       "lane": "ready",
