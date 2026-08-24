@@ -51,6 +51,37 @@ tasks:
         required: true
         command: python -m pytest tests/adapters/test_git_local.py
 
+  - slug: git-untracked-directory-normalization
+    title: Normalize untracked Git directory markers
+    status: review
+    priority: P0
+    depends:
+      - local-git-adapter
+    purpose: Let native claims observe repositories containing nested Git repositories or worktrees without accepting non-canonical paths.
+    scope:
+      files:
+        - src/weftmark/adapters/git_local.py
+        - tests/adapters/test_git_local.py
+        - tasks/30-git-lineage.weft.yml
+      contracts:
+        - adapter:git-local-v0
+    deliverables:
+      - Adapter-boundary normalization for Git's trailing-slash untracked directory marker.
+      - Regression evidence using a real nested Git repository.
+    accept:
+      - Local Git status exposes the nested repository root as a normalized repository-relative path.
+      - Native Change Set binding no longer fails solely because Git rendered an untracked directory marker with a trailing slash.
+    negative:
+      - Absolute, escaping, empty, or internally non-normalized paths remain rejected by the Git port.
+      - Status normalization does not recursively claim or inspect files inside a nested repository.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_git_local.py tests/contracts/test_git_port.py tests/application/test_task_claims.py
+      - kind: review
+        required: true
+        criterion: Normalization is limited to Git's terminal directory marker and preserves the strict application-facing path contract.
+
   - slug: git-change-binding
     title: Bind Change Sets to base/head Git lineage
     status: done
