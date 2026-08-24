@@ -20,7 +20,7 @@ def test_threat_model_covers_declared_boundaries_and_required_abuse_cases() -> N
     ):
         assert boundary in document
 
-    for threat_id in range(1, 13):
+    for threat_id in range(1, 14):
         assert f"WM-T{threat_id:02d}" in document
 
     for required_topic in (

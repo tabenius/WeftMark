@@ -153,6 +153,44 @@ enterprise base URL must not be derived from repository-controlled text. Forge
 write operations remain outside v0 and require a new capability contract and
 threat-model review.
 
+### ACP runtime adapter and local control host
+
+`weftmark runtime start` spawns an operator-configured ACP-speaking binary as
+a subprocess. This is a third local execution-authority surface alongside
+`evidence-exec` and forge adapters, and it is broader than a single bounded
+command: it starts an open-ended interactive agent session rather than
+running one command to completion. Configuring `--runtime-provider`/
+`--runtime-config` is equivalent to granting that binary and its argv the
+operator's own execution authority; WeftMark does not vet, sandbox, or bound
+what the configured provider does once started.
+
+The adapter owns a disposable Change Set worktree and answers the ACP
+`fs/read_text_file`, `fs/write_text_file`, and `session/request_permission`
+callbacks the spawned agent may invoke. These callbacks are a client-side
+policy the agent must choose to use, not an operating-system sandbox: reads
+and writes are refused outside the worktree, and permission requests are
+auto-approved only for `read`/`edit` tool calls whose declared locations all
+resolve inside that worktree, but a provider binary runs with the invoking
+user's OS identity and can access anything that identity can reach through
+means other than these callbacks (its own file I/O, network calls, or shell
+execution). Operators must trust or separately sandbox the configured
+provider executable; passing ACP callback tests must never be represented as
+process isolation.
+
+A same-user local control host lets independent CLI invocations
+(`start`/`status`/`send-input`/`stop`) reconnect to one running worker. Its
+Unix socket lives in a mode-`0700` per-user directory under `/tmp`, is mode
+`0600`, and checks peer credentials (`SO_PEERCRED`) on every connection
+where the platform provides them; a stale socket path is replaced only after
+verifying it is both owned by the current UID and an actual socket, not an
+arbitrary file. Control messages are bounded to 1 MiB and must be strict
+JSON. The provider's launch command is delivered to the host over a private
+initial stdin pipe rather than process argv, so it is not visible to other
+local users via `ps` or `/proc/<pid>/cmdline`. Neither the agent prompt nor
+the provider argv is written to the coordination ledger; only operational
+telemetry (provider name, state, pid, timestamps) is recorded, explicitly
+marked as an observation, never a review or readiness verdict.
+
 ## Abuse cases and mitigations
 
 | ID | Abuse case | Current mitigation | Residual risk / required response |
@@ -169,6 +207,7 @@ threat-model review.
 | WM-T10 | A provider outage is reported as failed CI, or absent CI is reported as success. | `unavailable`, `unsupported`, `missing`, `failed`, and `stale` are separate states. | UI and policy adapters must preserve the distinctions and fail closed for required evidence. |
 | WM-T11 | Oversized requests, output, or remote responses exhaust local resources. | HTTP control bodies and evidence runtime are bounded; provider calls use bounded page/request behavior where implemented. | Raw command output is captured in memory before hashing and the ledger has no quota. Run untrusted commands in a resource-limited environment and monitor storage. |
 | WM-T12 | A dependency or generated artifact is substituted during packaging or release. | Git lineage and evidence can identify the source head; release evidence is planned separately. | The prototype does not yet provide signed releases, an SBOM, or a reproducible package gate. Do not claim release integrity before `alpha-release-evidence` is complete. |
+| WM-T13 | A configured ACP runtime provider is malicious or compromised, or another local user reaches the control host. | fs/permission callbacks are scoped to the disposable worktree; the control host binds a `0600` Unix socket in a `0700` per-user directory and checks peer UID via `SO_PEERCRED`; provider argv travels over a private stdin pipe, not process argv; neither prompt nor argv text is written to the ledger. | The spawned provider process runs with the operator's full OS identity and is not sandboxed by WeftMark; callback scoping constrains only what WeftMark does on the agent's behalf, not what the process itself can do directly. Operators must trust or separately sandbox configured provider executables. |
 
 ## Minimum secure defaults
 
@@ -183,6 +222,11 @@ The following defaults are mandatory for the prototype:
   capabilities;
 - `evidence-exec` is enabled only for a process whose caller and command policy
   are trusted, preferably inside an external sandbox;
+- ACP runtime providers are configured only from trusted binaries and argv;
+  the control host's Unix socket stays under a `0700` per-user directory,
+  mode `0600`, with same-UID peer checks; fs/permission callbacks never
+  cross the disposable worktree boundary; and no prompt or provider argv
+  text is written to the ledger;
 - HTTP binds only to loopback; control stays disabled without a separate write
   token and explicit capabilities; remote transport terminates authenticated
   TLS before reaching the loopback listener;

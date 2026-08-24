@@ -10,6 +10,7 @@ tasks:
     depends:
       - mcp-surface
       - github-forge-adapter
+      - acp-runtime-adapter
     purpose: Make trust boundaries explicit before remote adapters become routine.
     scope:
       files:
@@ -20,17 +21,22 @@ tasks:
         - boundary:credential-access
         - boundary:remote-forge
         - boundary:mcp-write
+        - boundary:runtime-execution
     deliverables:
       - Threat model, trust boundaries and abuse cases.
-      - Minimum secure defaults for local, MCP and forge integrations.
+      - Minimum secure defaults for local, MCP, forge, and runtime-provider integrations.
     accept:
       - Credential handling, actor identity, evidence tampering and review bypass are covered.
+      - Newly merged surfaces (ACP runtime adapter and its local control host) are covered, not just the surfaces present when the document was first written.
     negative:
       - Secrets are never stored in task/evidence payloads when a reference is sufficient.
     evidence:
       - kind: security
         required: true
         criterion: Threat model reviewed independently of implementation author.
+      - kind: test
+        required: true
+        command: python -m pytest tests/security
 
   - slug: packaging-alpha
     title: Package an installable alpha
