@@ -43,6 +43,14 @@ class PlanImportDriftError(PlanImportError):
 
 
 @dataclass(frozen=True, slots=True)
+class PlanInspection:
+    source_label: str
+    source_digest: str
+    status: str
+    drift: PlanDrift | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PlanImportResult:
     source_label: str
     source_digest: str
@@ -68,6 +76,27 @@ class PlanImportService:
     def __init__(self, tasks: TaskService, ledger: LedgerService) -> None:
         self._tasks = tasks
         self._ledger = ledger
+
+    def inspect_snapshot(
+        self,
+        snapshot: WeftPlanSnapshot,
+        *,
+        source_label: str,
+    ) -> PlanInspection:
+        """Compare reviewed source intent without mutating native state."""
+
+        label = _source_label(source_label)
+        previous = self._receipt(label)
+        if previous is None:
+            return PlanInspection(label, snapshot.digest, "new")
+        if previous["source_digest"] == snapshot.digest:
+            return PlanInspection(label, snapshot.digest, "unchanged")
+        return PlanInspection(
+            label,
+            snapshot.digest,
+            "drift",
+            _drift(label, previous, snapshot),
+        )
 
     def import_snapshot(
         self,
@@ -289,6 +318,52 @@ def _task_intent(task: WeftPlanTask, *, imported_at: datetime) -> TaskIntent:
         )
     except (TaskError, ValueError) as error:
         raise PlanImportError(f"source task {task.slug!r} is not native-compatible") from error
+
+
+def plan_drift_to_payload(drift: PlanDrift) -> dict[str, Any]:
+    return {
+        "source_label": drift.source_label,
+        "previous_digest": drift.previous_digest,
+        "current_digest": drift.current_digest,
+        "added_tasks": list(drift.added_tasks),
+        "removed_tasks": list(drift.removed_tasks),
+        "changed_tasks": list(drift.changed_tasks),
+        "added_files": list(drift.added_files),
+        "removed_files": list(drift.removed_files),
+        "changed_files": list(drift.changed_files),
+    }
+
+
+def plan_inspection_to_payload(value: PlanInspection) -> dict[str, Any]:
+    return {
+        "source_label": value.source_label,
+        "source_digest": value.source_digest,
+        "status": value.status,
+        "drift": None if value.drift is None else plan_drift_to_payload(value.drift),
+        "authority": "read-only source intent comparison; no native state mutation",
+    }
+
+
+def plan_import_result_to_payload(value: PlanImportResult) -> dict[str, Any]:
+    return {
+        "source_label": value.source_label,
+        "source_digest": value.source_digest,
+        "imported": value.imported,
+        "created_tasks": list(value.created_tasks),
+        "existing_tasks": list(value.existing_tasks),
+        "created_dependencies": [list(pair) for pair in value.created_dependencies],
+        "existing_dependencies": [list(pair) for pair in value.existing_dependencies],
+        "created_conflicts": [list(pair) for pair in value.created_conflicts],
+        "existing_conflicts": [list(pair) for pair in value.existing_conflicts],
+        "skipped_terminal_tasks": list(value.skipped_terminal_tasks),
+        "satisfied_source_dependencies": [
+            list(pair) for pair in value.satisfied_source_dependencies
+        ],
+        "authority": (
+            "reviewed source intent only; no Change Set, claim, evidence, "
+            "review, or native completion authority"
+        ),
+    }
 
 
 def _same_intent(current: TaskIntent, expected: TaskIntent) -> bool:
