@@ -396,3 +396,77 @@ tasks:
         criterion: CLI wording and exit behavior make drift and non-authoritative source statuses explicit.
     notes:
       - Temporarily blocked because acp-runtime-adapter-claim4 owns src/weftmark/cli/main.py; recover the preserved native reservation after ACP review and release.
+
+  - slug: frog-native-task-promotion-core
+    title: Promote reviewed Frog snapshots into native TaskService intent
+    status: review
+    priority: P0
+    depends:
+      - frog-snapshot-receipt-cli
+      - native-task-ledger-service
+    purpose: Move selected Frog backlog intent into the native task graph without waiting for a currently claimed CLI surface or importing legacy runtime authority.
+    scope:
+      files:
+        - docs/frog-transition.md
+        - src/weftmark/application/frog_task_import.py
+        - tests/application/test_frog_task_import.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-native-task-import-v0
+    deliverables:
+      - Retry-safe application service promoting a reviewed Frog task graph into native tasks, dependencies and conflicts.
+      - Durable source label, snapshot digest, selection, scope mapping and terminal-dependency provenance.
+    accept:
+      - Explicitly selected actionable Frog tasks receive deterministic native intent and operator-declared scopes.
+      - Exact retries recover partial creation without duplicating records or resetting native task lifecycle state.
+      - Actionable dependency and conflict relations are preserved only when the selected graph is closed.
+      - Terminal dependencies are recorded as source-satisfied observations rather than fabricated native completion.
+    negative:
+      - Frog workflow state other than idea, assignments, locks and Git status never manufacture native runtime authority.
+      - Snapshot drift, conflicting existing intent, incomplete relation closure and secret-shaped prose fail before widening native intent.
+      - Frog tasks originating from WeftMark cannot be re-imported into a publish/import loop.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_frog_task_import.py tests/application/test_tasks.py
+      - kind: review
+        required: true
+        criterion: Snapshot provenance, graph closure, loop prevention and partial retry behavior preserve the Frog/native authority boundary.
+
+  - slug: frog-native-task-promotion
+    title: Expose Frog-to-native task promotion through the CLI
+    status: blocked
+    priority: P0
+    depends:
+      - frog-native-task-promotion-core
+      - native-task-cli-surface
+    purpose: Let operators explicitly select and map Frog backlog intent into native tasks without manually rebuilding the graph.
+    scope:
+      files:
+        - src/weftmark/application/frog_task_import.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_frog_task_import.py
+        - tests/cli/test_cli_frog.py
+        - docs/frog-transition.md
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-native-task-import-v0
+        - surface:cli-frog-transition
+    deliverables:
+      - Strict JSON and human-readable CLI for selected Frog task promotion and scope mapping.
+      - Explicit output separating source observations, native intent and later runtime authority.
+    accept:
+      - Operators can inspect exactly which native tasks and relations were created, reused, skipped or source-satisfied.
+      - CLI retries preserve the application service's snapshot and immutable-intent checks.
+    negative:
+      - CLI promotion never creates a Change Set, acquires a claim, or mutates Frog.
+      - CLI convenience cannot bypass relation closure, drift refusal or loop prevention.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/cli/test_cli_frog.py tests/application/test_frog_task_import.py
+      - kind: review
+        required: true
+        criterion: CLI wording makes imported intent and native runtime authority unambiguous.
+    notes:
+      - Temporarily blocked because acp-runtime-adapter-claim4 owns src/weftmark/cli/main.py; continue after ACP independent review and claim release.

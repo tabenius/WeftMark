@@ -183,6 +183,39 @@ from a verified snapshot. That promotion must record the source identity and
 snapshot digest and must still require a new local Change Set and claim before
 work begins.
 
+### One-way native task promotion
+
+Native task promotion is a separate, explicit checkpoint before Change Set
+promotion. An operator selects a dependency- and conflict-closed set of Frog
+task slugs and supplies the canonical native scopes for every actionable task.
+WeftMark records the source label, immutable snapshot digest, selected task
+identities, normalized native intent, relations, terminal skips, and
+source-satisfied dependencies before creating native task records.
+
+The mapping is intentionally conservative:
+
+- Frog `idea` may seed native `idea`; every other actionable source status
+  seeds native `todo`;
+- terminal Frog tasks are recorded as skipped observations and never seed
+  native completion;
+- source assignments, agents, locks, Git state, and timestamps do not become
+  native ownership, authority, lineage, or evidence;
+- dependencies on terminal source tasks are recorded as source-satisfied,
+  while actionable dependencies and conflicts must be included in the selected
+  set so that the imported graph is not silently truncated;
+- the same source label is bound to one reviewed snapshot and selection until
+  an explicit drift reconciliation replaces that checkpoint;
+- exact retries recover partial creation and do not reset existing native task
+  lifecycle state;
+- tasks marked as originating from WeftMark are refused, preventing a future
+  publish-to-Frog adapter from feeding its own output back into native intent;
+- task prose that still looks secret-bearing is refused even though the Frog
+  snapshot adapter normally redacts it earlier.
+
+Promotion creates task intent and plan relations only. It neither creates a
+Change Set nor acquires a claim. Those remain later, independently auditable
+local authority transitions.
+
 ## Concepts not migrated by default
 
 The following are implementation or deployment choices, not WeftMark domain
@@ -210,10 +243,13 @@ evidence for each required surface. The dependency order is:
 2. persist idempotent imported plan observations without granting authority;
 3. expose plan/task listing, relations, and eligibility beside Change Set
    runtime status;
-4. dogfood explicit promotion from imported intent into a claimed Change Set;
-5. expose the same application services through MCP;
-6. exercise a real cross-agent handoff and recovery path;
-7. compare collision refusal, stale leases, audit, task-next, and completion
+4. promote a reviewed Frog task graph into native task intent without importing
+   source runtime authority;
+5. dogfood explicit promotion from native/imported intent into a claimed Change
+   Set;
+6. expose the same application services through MCP;
+7. exercise a real cross-agent handoff and recovery path;
+8. compare collision refusal, stale leases, audit, task-next, and completion
    behavior against Frog before changing workspace policy.
 
 Passing WeftMark unit tests or matching Frog command names is insufficient.
