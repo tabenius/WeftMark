@@ -298,6 +298,13 @@ class ForgeChangedFile:
 
     def __post_init__(self) -> None:
         if any(
+            count is not None and type(count) is not int
+            for count in (self.additions, self.deletions)
+        ):
+            raise ForgeContractError(
+                "changed-file counts must be integers or unavailable"
+            )
+        if any(
             count is not None and count < 0
             for count in (self.additions, self.deletions)
         ):
