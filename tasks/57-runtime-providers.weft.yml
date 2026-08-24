@@ -36,7 +36,7 @@ tasks:
 
   - slug: acp-runtime-adapter
     title: Implement an ACP runtime adapter
-    status: todo
+    status: review
     priority: P1
     depends:
       - runtime-port-contract
@@ -54,14 +54,16 @@ tasks:
       - Disposable Change Set git worktree creation and cleanup owned by the adapter.
       - Worktree-scoped fs/read_text_file, fs/write_text_file and session/request_permission handling; anything outside the worktree or broader than a worktree-scoped edit permission is refused.
       - Background notification-draining thread so start/send-input return without blocking for a full agent turn.
+      - Reconnectable same-user local control host so independent CLI invocations drive one ACP session without leaking its subprocess.
     accept:
       - A fixture ACP agent subprocess can be started, sent input, polled for state and stopped through RuntimePort alone.
       - Worker state transitions (idle/running/awaiting_input/exited/failed) are observable via worker_summary without blocking.
       - fs/permission requests outside the disposable worktree are refused, not silently scoped down.
     negative:
-      - The adapter does not grant the spawned agent access to files outside its own disposable worktree.
+      - ACP file callbacks do not grant the spawned agent access to paths outside its own disposable worktree.
       - The adapter does not auto-approve permission requests broader than a worktree-scoped read/edit.
       - Cleanup of a disposable worktree never touches the primary worktree or unrelated Change Sets.
+      - Callback policy is not presented as operating-system process isolation; configured provider executables remain trusted unless separately sandboxed.
     evidence:
       - kind: test
         required: true
@@ -72,7 +74,7 @@ tasks:
 
   - slug: runtime-provider-registry
     title: Configure named runtime providers
-    status: todo
+    status: review
     priority: P1
     depends:
       - runtime-port-contract
@@ -101,7 +103,7 @@ tasks:
 
   - slug: runtime-cli-surface
     title: Start and observe runtime workers from the CLI
-    status: todo
+    status: review
     priority: P1
     depends:
       - acp-runtime-adapter
@@ -117,7 +119,7 @@ tasks:
         - surface:runtime-cli-v0
     deliverables:
       - weftmark runtime start/status/send-input/stop commands scoped to a native task's active claim.
-      - Ledger-recorded worker-session provenance visible through weftmark status.
+      - Ledger-recorded worker-session provenance visible through weftmark runtime status.
     accept:
       - Starting a worker for a task without an active native claim is refused.
       - Starting a worker twice for the same active claim returns the existing session rather than a second worktree/process.

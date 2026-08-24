@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from weftmark.adapters.acp import AcpProviderSpec, AcpRuntimeProxy
 from weftmark.adapters.git_local import LocalGit, LocalGitError
 from weftmark.adapters.frog import FrogImportError, read_frog_snapshot
 from weftmark.adapters.bundle_file import (
@@ -77,6 +78,15 @@ from weftmark.application.local_workflow import (
     scope_audit_to_payload,
 )
 from weftmark.application.status import StatusService, status_to_payload
+from weftmark.application.runtime_registry import (
+    RuntimeRegistryError,
+    load_runtime_registry,
+)
+from weftmark.application.runtime_workers import (
+    RuntimeWorkerError,
+    RuntimeWorkerService,
+    runtime_worker_record_to_payload,
+)
 from weftmark.application.task_planning import (
     TaskPlanningError,
     TaskPlanningService,
@@ -237,6 +247,36 @@ def build_parser() -> argparse.ArgumentParser:
         "list", help="list native task conflicts"
     )
     task_conflict_list.add_argument("--task")
+
+    runtime = commands.add_parser(
+        "runtime", help="drive claim-gated disposable coding-agent workers"
+    )
+    runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
+
+    def add_runtime_provider_args(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--runtime-config")
+        command.add_argument(
+            "--runtime-provider",
+            action="append",
+            default=[],
+            metavar="NAME=ARGV0:ARGV1[:cap=a,b]",
+        )
+
+    runtime_start = runtime_commands.add_parser("start", help="start a worker")
+    runtime_start.add_argument("id", help="native task ID")
+    runtime_start.add_argument("--provider", required=True)
+    runtime_start.add_argument("--prompt", required=True)
+    add_runtime_provider_args(runtime_start)
+    runtime_status = runtime_commands.add_parser("status", help="observe a worker")
+    runtime_status.add_argument("id", help="native task ID")
+    add_runtime_provider_args(runtime_status)
+    runtime_input = runtime_commands.add_parser("send-input", help="send one ACP prompt")
+    runtime_input.add_argument("id", help="native task ID")
+    runtime_input.add_argument("--data", required=True)
+    add_runtime_provider_args(runtime_input)
+    runtime_stop = runtime_commands.add_parser("stop", help="stop a worker")
+    runtime_stop.add_argument("id", help="native task ID")
+    add_runtime_provider_args(runtime_stop)
 
     frog = commands.add_parser("frog", help="import and inspect Frog plan snapshots")
     frog_commands = frog.add_subparsers(dest="frog_command", required=True)
@@ -475,6 +515,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             task_planning, tasks, workspace, claims, ledger
         )
 
+        def runtime_workers() -> RuntimeWorkerService:
+            registry = load_runtime_registry(
+                config_path=args.runtime_config,
+                cli_flags=args.runtime_provider,
+            )
+
+            def adapter_factory(provider_name: str) -> AcpRuntimeProxy:
+                provider = registry.get(provider_name)
+                return AcpRuntimeProxy(AcpProviderSpec(provider.name, provider.argv))
+
+            repo_path = repository.worktree or str(Path(args.repo).resolve())
+            return RuntimeWorkerService(
+                task_claims,
+                claims,
+                registry,
+                adapter_factory,
+                repo_path,
+                ledger,
+                lambda revision: git.resolve_ref(revision).target,
+            )
+
         if args.command == "status":
             payload = status_to_payload(
                 StatusService(workspace, claims, workflow).summarize(
@@ -538,6 +599,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 task_claim_result_to_payload(result, observed_at=claimed_at),
                 json_output=args.json,
             )
+            return 0
+        if args.command == "runtime" and args.runtime_command == "start":
+            record = runtime_workers().start(
+                args.id, provider=args.provider, prompt=args.prompt, started_at=_now()
+            )
+            _emit_runtime_worker(runtime_worker_record_to_payload(record), json_output=args.json)
+            return 0
+        if args.command == "runtime" and args.runtime_command == "status":
+            record = runtime_workers().status(args.id, observed_at=_now())
+            _emit_runtime_worker(runtime_worker_record_to_payload(record), json_output=args.json)
+            return 0
+        if args.command == "runtime" and args.runtime_command == "send-input":
+            record = runtime_workers().send_input(args.id, args.data, observed_at=_now())
+            _emit_runtime_worker(runtime_worker_record_to_payload(record), json_output=args.json)
+            return 0
+        if args.command == "runtime" and args.runtime_command == "stop":
+            record = runtime_workers().stop(args.id, observed_at=_now())
+            _emit_runtime_worker(runtime_worker_record_to_payload(record), json_output=args.json)
             return 0
         if args.command == "task" and args.task_command == "transition":
             value = tasks.transition(
@@ -1023,6 +1102,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         TaskClaimError,
         TaskPlanningError,
         TaskServiceError,
+        RuntimeRegistryError,
+        RuntimeWorkerError,
         WorkspaceError,
         EvidenceRunnerError,
         LocalWorkflowError,
@@ -1149,6 +1230,14 @@ def _emit_native_task_claim(
             for lock in payload["claim"]["locks"]
         )
     )
+
+
+def _emit_runtime_worker(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "runtime_worker": payload}, sort_keys=True))
+        return
+    print(f"{payload['task_id']}  {payload['provider']}  {payload['state']}")
+    print(f"  change set: {payload['change_set_id']}")
 
 
 def _emit_task_relation(
