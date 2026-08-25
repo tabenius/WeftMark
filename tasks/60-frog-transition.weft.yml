@@ -508,7 +508,7 @@ tasks:
 
   - slug: frog-weftmark-parity-report
     title: Compare Frog and WeftMark coordination behavior
-    status: in_progress
+    status: done
     priority: P0
     depends:
       - frog-transition-board-projection
