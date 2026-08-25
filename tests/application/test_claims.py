@@ -355,6 +355,135 @@ def test_expired_claim_reacquisition_refuses_a_stale_caller_precondition(
     ) is LockState.EXPIRED
 
 
+def test_extend_scope_acquires_a_new_lock_and_widens_the_change_set(
+    tmp_path: Path,
+) -> None:
+    workspace, claims = setup(tmp_path)
+    claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW,
+        lease_seconds=60,
+    )
+
+    claim, binding = claims.extend_scope(
+        "claim-1",
+        added_scopes=(Scope.file("docs/dogfood-log.md"),),
+        reason="also documenting this claim",
+        agent_id="worker-1",
+        session_id="session-1",
+        extended_at=NOW + timedelta(seconds=1),
+    )
+
+    assert [lock.scope.canonical for lock in claim.locks] == [
+        "file:src/**",
+        "contract:shared-api",
+        "file:docs/dogfood-log.md",
+    ]
+    assert claim.state_at(NOW + timedelta(seconds=2)) is LockState.ACTIVE
+    assert binding.change_set.scopes == (
+        "contract:shared-api",
+        "file:docs/dogfood-log.md",
+        "file:src/**",
+    )
+    assert claims.get("claim-1") == claim
+    assert workspace.require_change_set("chg-1") == binding
+
+
+def test_extend_scope_refuses_a_scope_owned_by_another_active_claim(
+    tmp_path: Path,
+) -> None:
+    workspace, claims = setup(tmp_path)
+    # chg-1 and chg-2 (from setup()) both declare contract:shared-api, so
+    # acquiring both would itself conflict before extend_scope is even
+    # exercised. Use a third, non-overlapping Change Set to hold docs/**
+    # cleanly instead.
+    workspace.create_change_set(
+        id="chg-3",
+        goal="Owns docs/** cleanly",
+        base_revision="HEAD",
+        scopes=(Scope.file("docs/**"),),
+        created_at=NOW,
+    )
+    claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW,
+        lease_seconds=60,
+    )
+    claims.acquire(
+        "chg-3",
+        id="claim-2",
+        agent_id="worker-2",
+        session_id="session-2",
+        acquired_at=NOW,
+        lease_seconds=60,
+    )
+
+    with pytest.raises(ClaimConflict, match="file:docs/\\*\\*.*claim-2"):
+        claims.extend_scope(
+            "claim-1",
+            added_scopes=(Scope.file("docs/**"),),
+            reason="tries to grab a scope claim-2 already owns",
+            agent_id="worker-1",
+            session_id="session-1",
+            extended_at=NOW + timedelta(seconds=1),
+        )
+    assert [lock.scope.canonical for lock in claims.get("claim-1").locks] == [
+        "file:src/**",
+        "contract:shared-api",
+    ]
+
+
+def test_extend_scope_requires_the_owning_agent_and_session(tmp_path: Path) -> None:
+    _, claims = setup(tmp_path)
+    original = claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW,
+        lease_seconds=60,
+    )
+
+    with pytest.raises(ValueError, match="owning agent and session"):
+        claims.extend_scope(
+            "claim-1",
+            added_scopes=(Scope.file("docs/**"),),
+            reason="not my claim",
+            agent_id="worker-2",
+            session_id="session-2",
+            extended_at=NOW + timedelta(seconds=1),
+        )
+    assert claims.get("claim-1") == original
+
+
+def test_extend_scope_refuses_once_the_claim_has_expired(tmp_path: Path) -> None:
+    _, claims = setup(tmp_path)
+    claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW,
+        lease_seconds=60,
+    )
+
+    with pytest.raises(ValueError, match="no longer active"):
+        claims.extend_scope(
+            "claim-1",
+            added_scopes=(Scope.file("docs/**"),),
+            reason="too late",
+            agent_id="worker-1",
+            session_id="session-1",
+            extended_at=NOW + timedelta(seconds=61),
+        )
+
+
 def test_only_owning_agent_session_can_renew_or_release(tmp_path: Path) -> None:
     _, claims = setup(tmp_path)
     original = claims.acquire(

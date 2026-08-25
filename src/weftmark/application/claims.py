@@ -12,7 +12,7 @@ from weftmark.application.ports.ledger import (
     LedgerEntry,
     LedgerHeadChanged,
 )
-from weftmark.application.workspace import WorkspaceService
+from weftmark.application.workspace import ChangeBinding, WorkspaceService
 from weftmark.domain.lock import (
     LockEvent,
     LockEventKind,
@@ -227,6 +227,89 @@ class ClaimService:
                     ) from None
                 continue
         raise ClaimServiceError("ledger remained busy while reacquiring claim; retry")
+
+    def extend_scope(
+        self,
+        id: str,
+        *,
+        added_scopes: tuple[Scope, ...],
+        reason: str,
+        agent_id: str,
+        session_id: str,
+        extended_at: datetime,
+    ) -> tuple[Claim, ChangeBinding]:
+        """Widen an active claim's locked scope and its Change Set's declared
+        scope together, so a widened declaration is never left unprotected
+        by a matching lock.
+
+        Refuses exactly like acquire() when a requested scope is already
+        owned by another active claim.
+        """
+
+        if not added_scopes:
+            raise ClaimServiceError("extend_scope requires at least one scope")
+        for _ in range(8):
+            snapshot = self._ledger.snapshot()
+            current = _latest_claims(snapshot)
+            claim = current.get(id)
+            if claim is None:
+                raise ClaimServiceError(f"Claim not found: {id}")
+            _require_owner(claim, agent_id=agent_id, session_id=session_id)
+            if claim.state_at(extended_at) is not LockState.ACTIVE:
+                raise ClaimServiceError(f"Claim is no longer active: {id}")
+
+            existing_identities = {lock.scope.identity for lock in claim.locks}
+            genuinely_new = tuple(
+                scope for scope in added_scopes
+                if scope.identity not in existing_identities
+            )
+            if not genuinely_new:
+                raise ClaimServiceError("added_scopes are already locked by this claim")
+            expires_at = claim.locks[0].expires_at
+            new_locks = tuple(
+                SemanticLock.acquire(
+                    id=f"{id}:{len(claim.locks) + index}",
+                    scope=scope,
+                    agent_id=agent_id,
+                    session_id=session_id,
+                    change_set_id=claim.change_set_id,
+                    acquired_at=extended_at,
+                    expires_at=expires_at,
+                )
+                for index, scope in enumerate(genuinely_new, start=1)
+            )
+            for existing_id, existing in current.items():
+                if existing_id == id:
+                    continue
+                for new_lock in new_locks:
+                    for existing_lock in existing.locks:
+                        if new_lock.conflicts_with(existing_lock, at=extended_at):
+                            raise ClaimConflict(
+                                f"scope {new_lock.scope.canonical} is owned by "
+                                f"claim {existing.id} until "
+                                f"{existing_lock.expires_at.isoformat()}"
+                            )
+
+            extended = Claim(
+                id=claim.id,
+                change_set_id=claim.change_set_id,
+                agent_id=claim.agent_id,
+                session_id=claim.session_id,
+                locks=(*claim.locks, *new_locks),
+                updated_at=extended_at,
+            )
+            try:
+                self._append(extended, snapshot)
+            except LedgerHeadChanged:
+                continue
+            binding = self._workspace.amend_scope(
+                claim.change_set_id,
+                added_scopes=genuinely_new,
+                reason=reason,
+                amended_at=extended_at,
+            )
+            return extended, binding
+        raise ClaimServiceError("ledger remained busy while extending claim scope; retry")
 
     def release(
         self,

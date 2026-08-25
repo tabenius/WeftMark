@@ -499,9 +499,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scope_amend = scope_commands.add_parser(
         "amend",
-        help="explicitly widen a Change Set's declared scope; never narrows it",
+        help=(
+            "explicitly widen a Change Set's declared scope under the owning "
+            "claim; never narrows it and never bypasses claim ownership"
+        ),
     )
-    scope_amend.add_argument("changeset_id")
+    scope_amend.add_argument("claim_id", help="the active claim that owns this Change Set")
     scope_amend.add_argument(
         "--scope",
         dest="added_scopes",
@@ -514,6 +517,8 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="why this scope needed to widen after the Change Set was already claimed",
     )
+    scope_amend.add_argument("--agent", default="weftmark-cli")
+    scope_amend.add_argument("--session", default="local-session")
 
     evidence = commands.add_parser("evidence", help="capture and inspect proof")
     evidence_commands = evidence.add_subparsers(dest="evidence_command", required=True)
@@ -1145,11 +1150,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit_scope(payload, json_output=args.json)
             return 0 if result.is_within_scope else EXIT_POLICY
         if args.command == "scope" and args.scope_command == "amend":
-            amended = workspace.amend_scope(
-                args.changeset_id,
+            _claim, amended = claims.extend_scope(
+                args.claim_id,
                 added_scopes=tuple(Scope.parse(value) for value in args.added_scopes),
                 reason=args.reason,
-                amended_at=_now(),
+                agent_id=args.agent,
+                session_id=args.session,
+                extended_at=_now(),
             )
             _emit(
                 binding_to_payload(amended),

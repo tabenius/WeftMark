@@ -105,18 +105,72 @@ def test_scope_amend_widens_a_blocked_change_set_back_into_scope(
         [
             "--repo",
             str(repo),
+            "claim",
+            "acquire",
+            "chg-1",
+            "--id",
+            "claim-1",
+            "--agent",
+            "worker-1",
+            "--session",
+            "session-1",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    # Amending scope without holding the owning claim is refused, even for
+    # a scope nothing else currently owns.
+    unowned = main(
+        [
+            "--repo",
+            str(repo),
+            "--json",
             "scope",
             "amend",
-            "chg-1",
+            "claim-1",
+            "--scope",
+            "file:outside.txt",
+            "--reason",
+            "wrong agent should be refused",
+            "--agent",
+            "worker-2",
+            "--session",
+            "session-2",
+        ]
+    )
+    assert unowned == EXIT_INVALID
+    capsys.readouterr()
+
+    assert main(
+        [
+            "--repo",
+            str(repo),
+            "scope",
+            "amend",
+            "claim-1",
             "--scope",
             "file:outside.txt",
             "--reason",
             "outside.txt is a genuinely related config touched by this change",
+            "--agent",
+            "worker-1",
+            "--session",
+            "session-1",
         ]
     ) == 0
     amended = capsys.readouterr().out
     assert "scope amended chg-1  active" in amended
     assert "file:outside.txt" in amended
+
+    assert main(
+        ["--repo", str(repo), "--json", "claim", "show", "claim-1"]
+    ) == 0
+    claim = json.loads(capsys.readouterr().out)["claim"]
+    assert [lock["scope"]["key"] for lock in claim["locks"]] == [
+        "src/**",
+        "api-v1",
+        "outside.txt",
+    ]
 
     assert main(
         ["--repo", str(repo), "--json", "scope", "audit", "chg-1"]
@@ -140,11 +194,15 @@ def test_scope_amend_widens_a_blocked_change_set_back_into_scope(
             "--json",
             "scope",
             "amend",
-            "chg-1",
+            "claim-1",
             "--scope",
             "file:outside.txt",
             "--reason",
             "already declared, should be refused",
+            "--agent",
+            "worker-1",
+            "--session",
+            "session-1",
         ]
     )
     assert denied == EXIT_INVALID
