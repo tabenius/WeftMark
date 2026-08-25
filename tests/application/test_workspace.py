@@ -82,6 +82,40 @@ def test_refresh_appends_observation_and_head_lineage(tmp_path: Path) -> None:
     assert service(repo, ledger_path).require_change_set("chg-1") == refreshed
 
 
+def test_symbolic_base_is_pinned_when_ref_moves_after_creation(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    repository(repo)
+    original_base = git(repo, "rev-parse", "main")
+    git(repo, "switch", "-c", "feature")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8")
+    git(repo, "add", "feature.txt")
+    git(repo, "commit", "-m", "feature")
+    ledger_path = tmp_path / "state" / "ledger.jsonl"
+    workspace = service(repo, ledger_path)
+    created = workspace.create_change_set(
+        id="chg-symbolic",
+        goal="Keep the original base",
+        base_revision="main",
+        scopes=(Scope.file("**"),),
+        created_at=NOW,
+    )
+    git(repo, "branch", "-f", "main", "HEAD")
+
+    refreshed = workspace.refresh_change_set(
+        "chg-symbolic", observed_at=NOW + timedelta(minutes=1)
+    )
+
+    assert created.base_revision == "main"
+    assert refreshed.base_revision == "main"
+    assert refreshed.latest.base_sha == original_base
+    assert refreshed.latest.changed_paths == ("feature.txt",)
+    assert all(
+        event.kind is not LineageEventKind.REBASED
+        for event in refreshed.change_set.lineage
+    )
+
+
 def test_transition_persists_state_without_rewriting_git_observations(
     tmp_path: Path,
 ) -> None:

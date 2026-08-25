@@ -108,6 +108,39 @@ tasks:
         required: true
         command: python -m pytest tests/application/test_change_binding.py
 
+  - slug: pinned-symbolic-changeset-base
+    title: Pin symbolic ChangeSet bases across refresh
+    status: done
+    priority: P0
+    depends:
+      - git-change-binding
+    purpose: Preserve the exact review diff when a symbolic base branch advances or merges the Change Set.
+    scope:
+      files:
+        - src/weftmark/application/change_binding.py
+        - src/weftmark/application/workspace.py
+        - tests/application/test_change_binding.py
+        - tests/application/test_workspace.py
+        - tasks/30-git-lineage.weft.yml
+      contracts:
+        - boundary:git-lineage
+    deliverables:
+      - Immutable base SHA used for refresh while preserving the caller-facing revision identity.
+      - Default refreshes diff against the stored base SHA; explicit base replacement remains a recorded rebase.
+    accept:
+      - Advancing the source branch after ChangeSet creation does not change its base or erase changed paths.
+      - Existing bindings that stored symbolic base revisions recover to their latest recorded base SHA on refresh.
+    negative:
+      - A default refresh never treats a moved symbolic ref as an implicit rebase.
+      - Explicit base replacement still validates and records a rebase event.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_change_binding.py tests/application/test_workspace.py
+      - kind: review
+        required: true
+        criterion: Merge-time refresh cannot move the original diff boundary without an explicit base argument.
+
   - slug: forge-port-contract
     title: Define the optional code-forge port
     status: done

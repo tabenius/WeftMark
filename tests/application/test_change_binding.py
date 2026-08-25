@@ -52,6 +52,7 @@ class FakeGit:
         self.base = BASE
         self.entries = (GitDiffEntry("src/a.py", GitChangeKind.MODIFIED),)
         self.status_value = GitWorkingTreeStatus(untracked_paths=("notes.txt",))
+        self.commit_revisions: list[str] = []
 
     def repository(self) -> GitRepository:
         return self.repository_value
@@ -66,6 +67,9 @@ class FakeGit:
         return ()
 
     def commit(self, revision: str) -> GitCommit:
+        self.commit_revisions.append(revision)
+        if len(revision) in {40, 64}:
+            return GitCommit(GitObjectId(revision), (), NOW)
         return GitCommit(self.base, (), NOW)
 
     def diff(self, base_revision: str, head_revision: str) -> GitDiff:
@@ -151,6 +155,22 @@ def test_unchanged_refresh_still_records_observation_without_fake_lineage() -> N
     )
     assert len(refreshed.observations) == 2
     assert refreshed.change_set.lineage == binding.change_set.lineage
+
+
+def test_default_refresh_uses_pinned_base_sha_not_moved_symbolic_revision() -> None:
+    git, binding = create()
+    git.base = GitObjectId("c" * 40)
+    git.head_value = GitHead(GitObjectId("d" * 40), "feature")
+
+    refreshed = ChangeBindingService(git).refresh(
+        binding, observed_at=NOW + timedelta(seconds=2)
+    )
+
+    assert git.commit_revisions[-1] == str(BASE)
+    assert refreshed.change_set.base_sha == str(BASE)
+    assert refreshed.latest.base_revision == "main"
+    assert refreshed.base_revision == "main"
+    assert refreshed.change_set.lineage[-1].kind is LineageEventKind.HEAD_ADVANCED
 
 
 @pytest.mark.parametrize("mismatch", ("repository", "worktree", "branch", "base"))
