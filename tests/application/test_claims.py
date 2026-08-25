@@ -12,6 +12,7 @@ from weftmark.adapters.jsonl_ledger import JsonlLedger
 from weftmark.application.claims import (
     Claim,
     ClaimConflict,
+    ClaimPreconditionChanged,
     ClaimService,
     claim_to_payload,
 )
@@ -239,6 +240,119 @@ def test_renew_extends_each_lock_in_one_claim_snapshot(tmp_path: Path) -> None:
         seconds=120
     )
     assert all(lock.events[-1].kind is LockEventKind.RENEWED for lock in renewed.locks)
+
+
+def test_expired_claim_can_be_reacquired_only_by_owner_without_collision(
+    tmp_path: Path,
+) -> None:
+    _, claims = setup(tmp_path)
+    original = claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW,
+        lease_seconds=10,
+    )
+    reacquired_at = NOW + timedelta(seconds=11)
+    reacquired = claims.reacquire(
+        "claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        reacquired_at=reacquired_at,
+        lease_seconds=60,
+    )
+
+    assert reacquired.state_at(reacquired_at) is LockState.ACTIVE
+    assert reacquired.locks[0].events[:-1] == original.locks[0].events
+    assert reacquired.locks[0].events[-1].kind is LockEventKind.REACQUIRED
+
+    with pytest.raises(ValueError, match="only an expired"):
+        claims.reacquire(
+            "claim-1",
+            agent_id="worker-1",
+            session_id="session-1",
+            reacquired_at=reacquired_at + timedelta(seconds=1),
+            lease_seconds=60,
+        )
+    with pytest.raises(ValueError, match="owning agent and session"):
+        claims.reacquire(
+            "claim-1",
+            agent_id="worker-2",
+            session_id="session-2",
+            reacquired_at=reacquired_at + timedelta(seconds=61),
+            lease_seconds=60,
+        )
+
+
+def test_expired_claim_reacquisition_rechecks_current_scope_owners(
+    tmp_path: Path,
+) -> None:
+    _, claims = setup(tmp_path)
+    claims.acquire(
+        "chg-1",
+        id="claim-expired",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW,
+        lease_seconds=10,
+    )
+    claims.acquire(
+        "chg-2",
+        id="claim-current",
+        agent_id="worker-2",
+        session_id="session-2",
+        acquired_at=NOW + timedelta(seconds=11),
+        lease_seconds=60,
+    )
+
+    with pytest.raises(ClaimConflict, match="claim-current"):
+        claims.reacquire(
+            "claim-expired",
+            agent_id="worker-1",
+            session_id="session-1",
+            reacquired_at=NOW + timedelta(seconds=12),
+            lease_seconds=60,
+        )
+    assert claims.get("claim-expired").state_at(
+        NOW + timedelta(seconds=12)
+    ) is LockState.EXPIRED
+
+
+def test_expired_claim_reacquisition_refuses_a_stale_caller_precondition(
+    tmp_path: Path,
+) -> None:
+    workspace, claims = setup(tmp_path)
+    claims.acquire(
+        "chg-1",
+        id="claim-expired",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW,
+        lease_seconds=10,
+    )
+    snapshot = claims._ledger.snapshot()
+    expected = snapshot[-1].digest
+    workspace.create_change_set(
+        id="unrelated-work",
+        goal="Advance the ledger head",
+        base_revision="HEAD",
+        scopes=(Scope.file("unrelated/**"),),
+        created_at=NOW + timedelta(seconds=11),
+    )
+
+    with pytest.raises(ClaimPreconditionChanged, match="changed before"):
+        claims.reacquire(
+            "claim-expired",
+            agent_id="worker-1",
+            session_id="session-1",
+            reacquired_at=NOW + timedelta(seconds=12),
+            lease_seconds=60,
+            expected_ledger_digest=expected,
+        )
+    assert claims.get("claim-expired").state_at(
+        NOW + timedelta(seconds=12)
+    ) is LockState.EXPIRED
 
 
 def test_only_owning_agent_session_can_renew_or_release(tmp_path: Path) -> None:

@@ -87,6 +87,40 @@ tasks:
         required: true
         criterion: Five completed Change Sets and lessons are documented.
 
+  - slug: native-expired-task-claim-recovery
+    title: Recover an expired native task claim without losing its binding
+    status: done
+    priority: P0
+    depends:
+      - native-task-claim-service
+    purpose: Let interrupted workers safely resume bound native tasks after an ordinary lease expiry.
+    scope:
+      files:
+        - src/weftmark/domain/lock.py
+        - src/weftmark/application/claims.py
+        - src/weftmark/application/task_claims.py
+        - tests/domain/test_lock.py
+        - tests/application/test_claims.py
+        - tests/application/test_task_claims.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:native-task-claim-v1
+    deliverables:
+      - Owner-only reacquisition of an expired claim through the existing retry-safe task claim workflow.
+      - Preserved lease history and atomic scope-conflict checks during reacquisition.
+    accept:
+      - The original bound agent and session can restore expired authority without changing task, Change Set, or claim identity.
+      - Reacquisition records a distinct event and rechecks all current scope owners before granting authority.
+    negative:
+      - Active, released, foreign, inconsistent, or colliding claims cannot be reacquired.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_lock.py tests/application/test_claims.py tests/application/test_task_claims.py
+      - kind: review
+        required: true
+        criterion: Recovery preserves provenance and does not weaken ownership or collision refusal.
+
   - slug: portable-changeset-bundle
     title: Export and verify portable Change Set records
     status: done
