@@ -417,12 +417,15 @@ class FrogParityService:
         captured_at: datetime,
         repo_path: str | None,
     ) -> ParityCheck:
+        task_repos = _source_task_repos(records, imported_ids)
         source_files: dict[str, set[str]] = {}
         for value in records["task_files"]:
             task_id = str(value.get("task_slug") or "")
             if task_id in imported_ids:
                 source_files.setdefault(task_id, set()).add(
-                    _frog_file_path(value.get("file_path"))
+                    _frog_file_path(
+                        value.get("file_path"), repo_path=task_repos[task_id]
+                    )
                 )
         lock_files: dict[str, set[str]] = {}
         for value in records["locks"]:
@@ -436,8 +439,11 @@ class FrogParityService:
                 )
                 == "active"
             ):
+                lock_repo = _frog_lock_repo(value)
                 lock_files.setdefault(scope[5:], set()).update(
-                    _frog_file_paths(value.get("file_paths"))
+                    _frog_file_paths(
+                        value.get("file_paths"), repo_path=lock_repo
+                    )
                 )
         bindings = {value.change_set.id: value for value in self._workspace.list_change_sets()}
         task_claims = TaskClaimService(
@@ -572,12 +578,19 @@ def _frog_lock_state(
 
 
 def _lock_matches_repo(value: Mapping[str, Any], repo_path: str | None) -> bool:
+    value_repo = _frog_lock_repo(value)
     if repo_path is None:
         return True
-    value_repo = value.get("repo_path")
-    if not isinstance(value_repo, str) or not value_repo.strip():
-        raise FrogParityError("Frog lock lacks a valid repository path")
     return value_repo == repo_path
+
+
+def _frog_lock_repo(value: Mapping[str, Any]) -> str:
+    raw = value.get("repo_path")
+    if not isinstance(raw, str) or not raw.strip() or not raw.startswith("/"):
+        raise FrogParityError("Frog lock lacks a valid repository path")
+    if posixpath.normpath(raw) != raw:
+        raise FrogParityError("Frog lock repository path is not canonical")
+    return raw
 
 
 def _requested_repo_path(value: str) -> str:
@@ -586,18 +599,41 @@ def _requested_repo_path(value: str) -> str:
     return posixpath.normpath(value)
 
 
-def _frog_file_paths(value: Any) -> tuple[str, ...]:
+def _frog_file_paths(value: Any, *, repo_path: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise FrogParityError("Frog lock file paths are malformed")
-    return tuple(_frog_file_path(item) for item in value)
+    return tuple(_frog_file_path(item, repo_path=repo_path) for item in value)
 
 
-def _frog_file_path(value: Any) -> str:
+def _frog_file_path(value: Any, *, repo_path: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise FrogParityError("Frog file path is empty or malformed")
     if not value.startswith("/") or posixpath.normpath(value) != value:
         raise FrogParityError("Frog file path is not canonical and absolute")
+    prefix = "/" if repo_path == "/" else f"{repo_path}/"
+    if not value.startswith(prefix):
+        raise FrogParityError("Frog file path escapes its repository")
     return value
+
+
+def _source_task_repos(
+    records: Mapping[str, Any], imported_ids: tuple[str, ...]
+) -> dict[str, str]:
+    wanted = set(imported_ids)
+    result: dict[str, str] = {}
+    for task in records["tasks"]:
+        task_id = _text(task, "slug")
+        if task_id not in wanted:
+            continue
+        raw = task.get("repo_path")
+        if not isinstance(raw, str) or not raw.strip() or not raw.startswith("/"):
+            raise FrogParityError("Frog task lacks a valid repository path")
+        if posixpath.normpath(raw) != raw:
+            raise FrogParityError("Frog task repository path is not canonical")
+        result[task_id] = raw
+    if set(result) != wanted:
+        raise FrogParityError("provenance-bound Frog task repository is unavailable")
+    return result
 
 
 def _ledger_head(entries: tuple[Any, ...]) -> tuple[str, int]:

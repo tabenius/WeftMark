@@ -387,3 +387,50 @@ def test_report_retries_if_native_ledger_advances_during_comparison(
     assert advancing.snapshot_calls >= 4
     assert payload["authority"]["native_ledger_digest"] == head.digest
     assert payload["authority"]["native_ledger_sequence"] == head.sequence
+
+
+def test_scope_audit_rejects_source_paths_outside_the_task_repository(
+    tmp_path: Path,
+) -> None:
+    parity, importer, receipts, tasks, workspace, claims, ledger = services(tmp_path)
+    source = snapshot(with_lock=True)
+    outside = "/source/other/outside.py"
+    source["records"]["task_files"][0]["file_path"] = outside
+    source["records"]["locks"][0]["file_paths"] = [outside]
+    contents = {
+        "source_kind": source["source_kind"],
+        "source_label": source["source_label"],
+        "source_schema": source["source_schema"],
+        "records": source["records"],
+    }
+    canonical = json.dumps(contents, sort_keys=True, separators=(",", ":"))
+    source["digest"] = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+    digest = receipts.record(source, imported_at=NOW + timedelta(seconds=2)).receipt.digest
+    importer.import_tasks(
+        digest,
+        ["core", "ui"],
+        scopes_by_task={
+            "core": (Scope.file("src/core/**"),),
+            "ui": (Scope.file("src/ui/**"),),
+        },
+        imported_at=NOW + timedelta(seconds=3),
+    )
+    TaskClaimService(
+        TaskPlanningService(tasks), tasks, workspace, claims, ledger
+    ).claim(
+        "core",
+        change_set_id="core-cs",
+        claim_id="core-claim",
+        base_revision="HEAD",
+        agent_id="worker",
+        session_id="session",
+        claimed_at=NOW + timedelta(seconds=4),
+        lease_seconds=600,
+    )
+
+    with pytest.raises(FrogParityError, match="escapes its repository"):
+        parity.compare(
+            digest,
+            observed_at=NOW + timedelta(minutes=5),
+            repo_path="/source/project",
+        )
