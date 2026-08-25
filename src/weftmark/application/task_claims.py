@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping
 
-from weftmark.application.claims import Claim, ClaimService, claim_to_payload
+from weftmark.application.claims import (
+    Claim,
+    ClaimPreconditionChanged,
+    ClaimService,
+    claim_to_payload,
+)
 from weftmark.application.identifiers import new_id
 from weftmark.application.ledger import LedgerService
 from weftmark.application.ports.ledger import LEDGER_GENESIS_DIGEST, LedgerHeadChanged
@@ -188,6 +193,7 @@ class TaskClaimService:
 
         claim = self._claims.get(binding.claim_id)
         claimed = False
+        reacquired = False
         if claim is None:
             claim = self._claims.acquire(
                 binding.change_set_id,
@@ -200,30 +206,29 @@ class TaskClaimService:
             claimed = True
         elif claim.state_at(observed_at) is LockState.EXPIRED:
             _require_matching_claim_identity(claim, binding)
-            claim = self._claims.reacquire(
-                binding.claim_id,
-                agent_id=binding.agent_id,
-                session_id=binding.session_id,
-                reacquired_at=observed_at,
-                lease_seconds=lease_seconds,
+            claim = self._reacquire_for_runnable_task(
+                binding, observed_at=observed_at, lease_seconds=lease_seconds
             )
             claimed = True
+            reacquired = True
         else:
             _require_matching_active_claim(claim, binding, observed_at=observed_at)
 
-        current = self._tasks.require(binding.task_id)
-        if current.state is TaskState.TODO:
-            self._tasks.transition(
-                binding.task_id,
-                state=TaskState.IN_PROGRESS,
-                actor_id=binding.agent_id,
-                rationale=f"native claim {binding.claim_id} acquired",
-                occurred_at=observed_at,
-            )
-        elif current.state is not TaskState.IN_PROGRESS:
-            raise TaskClaimError(
-                f"reserved native task has incompatible state: {current.state.value}"
-            )
+        if not reacquired:
+            current = self._tasks.require(binding.task_id)
+            if current.state is TaskState.TODO:
+                self._tasks.transition(
+                    binding.task_id,
+                    state=TaskState.IN_PROGRESS,
+                    actor_id=binding.agent_id,
+                    rationale=f"native claim {binding.claim_id} acquired",
+                    occurred_at=observed_at,
+                )
+            elif current.state is not TaskState.IN_PROGRESS:
+                raise TaskClaimError(
+                    f"reserved native task has incompatible state: "
+                    f"{current.state.value}"
+                )
 
         completed = self._complete(binding, recorded_at=observed_at)
         return TaskClaimResult(
@@ -231,6 +236,41 @@ class TaskClaimService:
             binding_to_payload(change_set),
             claim,
             claimed,
+        )
+
+    def _reacquire_for_runnable_task(
+        self,
+        binding: TaskWorkBinding,
+        *,
+        observed_at: datetime,
+        lease_seconds: int,
+    ) -> Claim:
+        for _ in range(8):
+            before = self._ledger.snapshot()
+            expected = before[-1].digest if before else LEDGER_GENESIS_DIGEST
+            task = self._tasks.require(binding.task_id)
+            after = self._ledger.snapshot()
+            actual = after[-1].digest if after else LEDGER_GENESIS_DIGEST
+            if actual != expected:
+                continue
+            if task.state is not TaskState.IN_PROGRESS:
+                raise TaskClaimError(
+                    f"reserved native task has incompatible state: "
+                    f"{task.state.value}"
+                )
+            try:
+                return self._claims.reacquire(
+                    binding.claim_id,
+                    agent_id=binding.agent_id,
+                    session_id=binding.session_id,
+                    reacquired_at=observed_at,
+                    lease_seconds=lease_seconds,
+                    expected_ledger_digest=expected,
+                )
+            except ClaimPreconditionChanged:
+                continue
+        raise TaskClaimError(
+            "ledger remained busy while validating expired task claim recovery"
         )
 
     def _complete(

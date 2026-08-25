@@ -30,6 +30,10 @@ class ClaimConflict(ClaimServiceError):
     """Raised when an active claim already owns an overlapping scope."""
 
 
+class ClaimPreconditionChanged(ClaimServiceError):
+    """Raised when a caller's ledger-bound claim precondition became stale."""
+
+
 @dataclass(frozen=True, slots=True)
 class Claim:
     id: str
@@ -164,12 +168,23 @@ class ClaimService:
         session_id: str,
         reacquired_at: datetime,
         lease_seconds: int,
+        expected_ledger_digest: str | None = None,
     ) -> Claim:
         """Reacquire an expired claim without changing its bound identity."""
 
         _require_lease_seconds(lease_seconds)
         for _ in range(8):
             snapshot = self._ledger.snapshot()
+            actual_digest = (
+                snapshot[-1].digest if snapshot else LEDGER_GENESIS_DIGEST
+            )
+            if (
+                expected_ledger_digest is not None
+                and actual_digest != expected_ledger_digest
+            ):
+                raise ClaimPreconditionChanged(
+                    "ledger changed before claim reacquisition"
+                )
             current = _latest_claims(snapshot)
             claim = current.get(id)
             if claim is None:
@@ -206,6 +221,10 @@ class ClaimService:
                 self._append(reacquired, snapshot)
                 return reacquired
             except LedgerHeadChanged:
+                if expected_ledger_digest is not None:
+                    raise ClaimPreconditionChanged(
+                        "ledger changed during claim reacquisition"
+                    ) from None
                 continue
         raise ClaimServiceError("ledger remained busy while reacquiring claim; retry")
 

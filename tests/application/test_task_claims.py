@@ -152,6 +152,48 @@ def test_native_task_claim_recovers_its_expired_bound_claim(tmp_path: Path) -> N
     assert len(ledger.snapshot()) == before + 1
 
 
+def test_native_task_claim_does_not_recover_after_task_is_blocked(
+    tmp_path: Path,
+) -> None:
+    service, tasks, _, claims, ledger = services(tmp_path)
+    tasks.create(intent("task-a", Scope.contract("api-v1")))
+    service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="HEAD",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW,
+        lease_seconds=10,
+    )
+    tasks.transition(
+        "task-a",
+        state=TaskState.BLOCKED,
+        actor_id="planner",
+        rationale="dependency became unavailable",
+        occurred_at=NOW + timedelta(seconds=11),
+    )
+    before = ledger.snapshot()
+
+    with pytest.raises(TaskClaimError, match="incompatible state: blocked"):
+        service.claim(
+            "task-a",
+            change_set_id="task-a-work",
+            claim_id="task-a-claim",
+            base_revision="HEAD",
+            agent_id="worker-1",
+            session_id="session-1",
+            claimed_at=NOW + timedelta(seconds=12),
+            lease_seconds=300,
+        )
+
+    assert ledger.snapshot() == before
+    assert claims.get("task-a-claim").state_at(
+        NOW + timedelta(seconds=12)
+    ) is LockState.EXPIRED
+
+
 def test_native_task_claim_refuses_ineligible_scopeless_and_invalid_requests(
     tmp_path: Path,
 ) -> None:
