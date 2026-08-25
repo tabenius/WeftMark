@@ -103,6 +103,53 @@ def test_lineage_cannot_move_before_activation_or_after_merge() -> None:
         merged.advance_head("b" * 40)
 
 
+def test_amend_scope_widens_declared_scope_as_an_explicit_append_only_event() -> None:
+    active = planned().activate()
+
+    amended = active.amend_scope(
+        ("file:docs/dogfood-log.md",), reason="documenting this session's dogfood exercise"
+    )
+
+    assert amended.scopes == (
+        "contract:tenant-authentication",
+        "file:docs/dogfood-log.md",
+        "src/ingress/**",
+    )
+    assert active.scopes == ("src/ingress/**", "contract:tenant-authentication")
+    assert amended.scope_amendments[-1].added_scopes == ("file:docs/dogfood-log.md",)
+    assert amended.scope_amendments[-1].reason == "documenting this session's dogfood exercise"
+
+
+def test_amend_scope_ignores_already_declared_scopes_but_requires_something_new() -> None:
+    active = planned().activate()
+
+    with pytest.raises(ChangeSetError):
+        active.amend_scope(("src/ingress/**",), reason="already covered")
+
+
+def test_amend_scope_rejects_empty_reason_or_scopes() -> None:
+    active = planned().activate()
+
+    with pytest.raises(ChangeSetError):
+        active.amend_scope((), reason="need something")
+    with pytest.raises(ChangeSetError):
+        active.amend_scope(("file:new/**",), reason="   ")
+
+
+def test_amend_scope_cannot_move_before_activation_or_after_merge() -> None:
+    with pytest.raises(InvalidLineageChange):
+        planned().amend_scope(("file:new/**",), reason="too early")
+
+    merged = (
+        planned()
+        .activate()
+        .transition(ChangeSetState.REVIEW)
+        .transition(ChangeSetState.MERGED)
+    )
+    with pytest.raises(InvalidLineageChange):
+        merged.amend_scope(("file:new/**",), reason="too late")
+
+
 def test_noop_lineage_events_are_rejected() -> None:
     active = planned().activate()
 

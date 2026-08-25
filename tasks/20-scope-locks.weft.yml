@@ -82,6 +82,46 @@ tasks:
         required: true
         command: python -m pytest tests/application/test_scope_audit.py
 
+  - slug: changeset-scope-amendment
+    title: Explicitly widen a claimed Change Set's declared scope
+    status: review
+    priority: P2
+    depends:
+      - scope-audit-service
+      - native-task-claim-service
+    purpose: Let an operator legitimately widen an already-claimed Change Set's scope with an explicit, audited reason, instead of the only recovery being to abandon and re-claim under a different, correctly-scoped task.
+    scope:
+      files:
+        - src/weftmark/domain/changeset.py
+        - src/weftmark/application/workspace.py
+        - src/weftmark/cli/main.py
+        - tests/domain/test_changeset.py
+        - tests/application/test_workspace.py
+        - tests/cli/test_cli_workflow.py
+        - docs/contracts/changeset-scope-amendment-v0.md
+        - tasks/20-scope-locks.weft.yml
+      contracts:
+        - contract:changeset-scope-amendment-v0
+    deliverables:
+      - An explicit, append-only ScopeAmendment domain event that widens ChangeSet.scopes and records a reason, distinct from Git lineage events.
+      - weftmark scope amend <changeset_id> --scope SCOPE [--scope SCOPE ...] --reason "..." CLI command.
+      - A subsequent scope audit/review immediately sees the widened scope, since both read the persisted ChangeSet.scopes.
+    accept:
+      - Amending scope only ever adds scopes; it cannot remove or replace an existing declared scope.
+      - Re-declaring an already-covered scope is refused rather than silently accepted as a no-op amendment.
+      - Amendment history (added scopes, reason, timestamp) is durable and visible on the Change Set.
+    negative:
+      - Scope amendment is refused outside the active/review lifecycle states, matching every other lineage-adjacent mutation.
+      - Scope amendment never mutates the immutable native TaskIntent that originally declared the claim's scope — only the Change Set's own scope widens.
+      - The CLI cannot amend scope without an explicit --reason.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/domain/test_changeset.py tests/application/test_workspace.py tests/cli/test_cli_workflow.py
+      - kind: review
+        required: true
+        criterion: Amendment stays append-only and auditable; it cannot be used to silently launder unrelated changes into an already-claimed Change Set.
+
   - slug: native-claim-workflow
     title: Persist and operate semantic Change Set claims locally
     status: done

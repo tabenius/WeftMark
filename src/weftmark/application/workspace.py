@@ -17,6 +17,7 @@ from weftmark.domain.changeset import (
     ChangeSetState,
     LineageEvent,
     LineageEventKind,
+    ScopeAmendment,
 )
 from weftmark.domain.scope import Scope
 
@@ -114,6 +115,28 @@ class WorkspaceService:
         self._record(transitioned, recorded_at=transitioned_at)
         return transitioned
 
+    def amend_scope(
+        self,
+        id: str,
+        *,
+        added_scopes: tuple[Scope, ...],
+        reason: str,
+        amended_at: datetime,
+    ) -> ChangeBinding:
+        current = self.require_change_set(id)
+        changed = current.change_set.amend_scope(
+            tuple(scope.canonical for scope in added_scopes),
+            reason=reason,
+            at=amended_at,
+        )
+        amended = ChangeBinding(
+            changed,
+            current.base_revision,
+            current.observations,
+        )
+        self._record(amended, recorded_at=amended_at)
+        return amended
+
     def _record(self, binding: ChangeBinding, *, recorded_at: datetime) -> None:
         self._ledger.record(
             kind="changeset",
@@ -144,6 +167,10 @@ def binding_to_payload(binding: ChangeBinding) -> dict[str, Any]:
         "created_at": binding.change_set.created_at.isoformat(),
         "updated_at": binding.change_set.updated_at.isoformat(),
         "lineage": [_lineage_to_dict(event) for event in binding.change_set.lineage],
+        "scope_amendments": [
+            _scope_amendment_to_dict(value)
+            for value in binding.change_set.scope_amendments
+        ],
         "observations": [_observation_to_dict(value) for value in binding.observations],
     }
 
@@ -158,9 +185,14 @@ def binding_from_payload(payload: Mapping[str, Any]) -> ChangeBinding:
             observations = tuple(
                 _observation_from_dict(value) for value in payload["observations"]
             )
+            scope_amendments = tuple(
+                _scope_amendment_from_dict(value)
+                for value in payload.get("scope_amendments", [])
+            )
         else:
             lineage = (_legacy_activation(payload, updated_at),)
             observations = (_legacy_observation(payload, updated_at),)
+            scope_amendments = ()
         change_set = ChangeSet(
             id=str(payload["id"]),
             goal=str(payload["goal"]),
@@ -174,6 +206,7 @@ def binding_from_payload(payload: Mapping[str, Any]) -> ChangeBinding:
             created_at=created_at,
             updated_at=updated_at,
             lineage=lineage,
+            scope_amendments=scope_amendments,
         )
         return ChangeBinding(change_set, str(payload["base_revision"]), observations)
     except (KeyError, TypeError, ValueError) as error:
@@ -203,6 +236,22 @@ def _lineage_from_dict(value: Mapping[str, Any]) -> LineageEvent:
         head_sha=str(value["head_sha"]),
         previous_branch=str(value["previous_branch"]),
         branch=str(value["branch"]),
+    )
+
+
+def _scope_amendment_to_dict(value: ScopeAmendment) -> dict[str, Any]:
+    return {
+        "occurred_at": value.occurred_at.isoformat(),
+        "added_scopes": list(value.added_scopes),
+        "reason": value.reason,
+    }
+
+
+def _scope_amendment_from_dict(value: Mapping[str, Any]) -> ScopeAmendment:
+    return ScopeAmendment(
+        occurred_at=datetime.fromisoformat(str(value["occurred_at"])),
+        added_scopes=tuple(str(scope) for scope in value["added_scopes"]),
+        reason=str(value["reason"]),
     )
 
 

@@ -139,6 +139,36 @@ def test_transition_persists_state_without_rewriting_git_observations(
     assert service(repo, ledger_path).require_change_set("chg-1") == transitioned
 
 
+def test_amend_scope_persists_widened_scope_and_reason(tmp_path: Path) -> None:
+    repo = repository(tmp_path)
+    ledger_path = tmp_path / "state" / "ledger.jsonl"
+    workspace = service(repo, ledger_path)
+    workspace.create_change_set(
+        id="chg-1",
+        goal="Needs one more legitimate file",
+        base_revision="HEAD",
+        scopes=(Scope.file("src/**"),),
+        created_at=NOW,
+    )
+
+    amended = workspace.amend_scope(
+        "chg-1",
+        added_scopes=(Scope.file("docs/dogfood-log.md"),),
+        reason="recording this session in the dogfood log",
+        amended_at=NOW + timedelta(minutes=1),
+    )
+
+    assert amended.change_set.scopes == ("file:docs/dogfood-log.md", "file:src/**")
+    assert amended.change_set.scope_amendments[-1].added_scopes == (
+        "file:docs/dogfood-log.md",
+    )
+    assert (
+        amended.change_set.scope_amendments[-1].reason
+        == "recording this session in the dogfood log"
+    )
+    assert service(repo, ledger_path).require_change_set("chg-1") == amended
+
+
 def test_initial_cli_flat_snapshot_is_migrated_on_read() -> None:
     payload = {
         "id": "chg-old",

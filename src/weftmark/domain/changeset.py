@@ -47,6 +47,15 @@ class LineageEvent:
     branch: str
 
 
+@dataclass(frozen=True, slots=True)
+class ScopeAmendment:
+    """An explicit, append-only widening of declared scope; never a narrowing."""
+
+    occurred_at: datetime
+    added_scopes: tuple[str, ...]
+    reason: str
+
+
 _ALLOWED_TRANSITIONS: dict[ChangeSetState, frozenset[ChangeSetState]] = {
     ChangeSetState.PLANNED: frozenset({ChangeSetState.ABANDONED}),
     ChangeSetState.ACTIVE: frozenset(
@@ -97,6 +106,7 @@ class ChangeSet:
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
     lineage: tuple[LineageEvent, ...] = ()
+    scope_amendments: tuple[ScopeAmendment, ...] = ()
 
     def __post_init__(self) -> None:
         for name in (
@@ -193,6 +203,46 @@ class ChangeSet:
             base_sha=base_sha,
             head_sha=head_sha,
             at=at,
+        )
+
+    def amend_scope(
+        self,
+        added_scopes: tuple[str, ...],
+        *,
+        reason: str,
+        at: datetime | None = None,
+    ) -> ChangeSet:
+        """Explicitly widen declared scope; never narrows or silently widens.
+
+        Scope amendment is not Git lineage: it does not touch base/head/branch
+        and is recorded separately in ``scope_amendments``, append-only.
+        """
+        if self.state not in _LINEAGE_STATES:
+            raise InvalidLineageChange(
+                f"cannot amend scope while change set is {self.state}"
+            )
+        if not added_scopes:
+            raise ChangeSetError("amend_scope requires at least one scope")
+        if len(set(added_scopes)) != len(added_scopes):
+            raise ChangeSetError("added_scopes must not contain duplicates")
+        _require_text("reason", reason)
+        genuinely_new = tuple(
+            scope for scope in added_scopes if scope not in self.scopes
+        )
+        if not genuinely_new:
+            raise ChangeSetError("added_scopes are already declared")
+
+        timestamp = self._operation_time(at)
+        amendment = ScopeAmendment(
+            occurred_at=timestamp,
+            added_scopes=genuinely_new,
+            reason=reason.strip(),
+        )
+        return replace(
+            self,
+            scopes=tuple(sorted((*self.scopes, *genuinely_new))),
+            updated_at=timestamp,
+            scope_amendments=(*self.scope_amendments, amendment),
         )
 
     def _record_lineage(

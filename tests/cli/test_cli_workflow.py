@@ -85,6 +85,71 @@ def test_scope_audit_reports_clean_and_blocking_drift(
     assert len(drift["scope_audit"]["findings"]) == 2
 
 
+def test_scope_amend_widens_a_blocked_change_set_back_into_scope(
+    tmp_path: Path, capsys
+) -> None:
+    repo = setup(tmp_path)
+    capsys.readouterr()
+    (repo / "outside.txt").write_text("outside\n", encoding="utf-8")
+    git(repo, "add", "outside.txt")
+    git(repo, "commit", "-m", "outside")
+
+    assert main(
+        ["--repo", str(repo), "--json", "scope", "audit", "chg-1"]
+    ) == EXIT_POLICY
+    blocked = json.loads(capsys.readouterr().out)
+    assert not blocked["ok"]
+    assert blocked["scope_audit"]["findings"][0]["scope"]["key"] == "outside.txt"
+
+    assert main(
+        [
+            "--repo",
+            str(repo),
+            "scope",
+            "amend",
+            "chg-1",
+            "--scope",
+            "file:outside.txt",
+            "--reason",
+            "outside.txt is a genuinely related config touched by this change",
+        ]
+    ) == 0
+    amended = capsys.readouterr().out
+    assert "scope amended chg-1  active" in amended
+    assert "file:outside.txt" in amended
+
+    assert main(
+        ["--repo", str(repo), "--json", "scope", "audit", "chg-1"]
+    ) == 0
+    clean_again = json.loads(capsys.readouterr().out)
+    assert clean_again["ok"]
+    assert clean_again["scope_audit"]["findings"] == []
+
+    assert main(["--repo", str(repo), "--json", "changeset", "show", "chg-1"]) == 0
+    shown = json.loads(capsys.readouterr().out)["changeset"]
+    assert shown["scope_amendments"][-1]["added_scopes"] == ["file:outside.txt"]
+    assert (
+        shown["scope_amendments"][-1]["reason"]
+        == "outside.txt is a genuinely related config touched by this change"
+    )
+
+    denied = main(
+        [
+            "--repo",
+            str(repo),
+            "--json",
+            "scope",
+            "amend",
+            "chg-1",
+            "--scope",
+            "file:outside.txt",
+            "--reason",
+            "already declared, should be refused",
+        ]
+    )
+    assert denied == EXIT_INVALID
+
+
 def test_evidence_run_show_and_list_are_durable(tmp_path: Path, capsys) -> None:
     repo = setup(tmp_path)
     capsys.readouterr()

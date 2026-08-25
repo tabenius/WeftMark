@@ -497,6 +497,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="observed non-file scope such as contract:api-v1",
     )
+    scope_amend = scope_commands.add_parser(
+        "amend",
+        help="explicitly widen a Change Set's declared scope; never narrows it",
+    )
+    scope_amend.add_argument("changeset_id")
+    scope_amend.add_argument(
+        "--scope",
+        dest="added_scopes",
+        action="append",
+        required=True,
+        help="scope to add, e.g. file:docs/dogfood-log.md (repeatable)",
+    )
+    scope_amend.add_argument(
+        "--reason",
+        required=True,
+        help="why this scope needed to widen after the Change Set was already claimed",
+    )
 
     evidence = commands.add_parser("evidence", help="capture and inspect proof")
     evidence_commands = evidence.add_subparsers(dest="evidence_command", required=True)
@@ -1127,6 +1144,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             _emit_scope(payload, json_output=args.json)
             return 0 if result.is_within_scope else EXIT_POLICY
+        if args.command == "scope" and args.scope_command == "amend":
+            amended = workspace.amend_scope(
+                args.changeset_id,
+                added_scopes=tuple(Scope.parse(value) for value in args.added_scopes),
+                reason=args.reason,
+                amended_at=_now(),
+            )
+            _emit(
+                binding_to_payload(amended),
+                json_output=args.json,
+                action="scope amended",
+            )
+            return 0
         if args.command == "evidence" and args.evidence_command == "run":
             argv = tuple(args.argv)
             binding = workspace.require_change_set(args.changeset_id)
