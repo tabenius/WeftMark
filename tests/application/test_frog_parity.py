@@ -6,11 +6,14 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from weftmark.adapters.git_local import LocalGit
 from weftmark.adapters.jsonl_ledger import JsonlLedger
 from weftmark.application.claims import ClaimService
 from weftmark.application.frog_parity import (
     FROG_PARITY_SCHEMA,
+    FrogParityError,
     FrogParityService,
     frog_parity_to_payload,
 )
@@ -98,6 +101,7 @@ def snapshot(*, with_lock: bool = False) -> dict[str, object]:
                         "status": "active",
                         "started_at": NOW.isoformat(),
                         "lease_seconds": 600,
+                        "repo_path": "/source/project",
                         "file_paths": ["/source/project/src/core/value.py"],
                     }
                 ]
@@ -136,6 +140,26 @@ def services(tmp_path: Path):
     )
 
 
+class AdvancingReadLedger:
+    def __init__(self, inner: LedgerService) -> None:
+        self.inner = inner
+        self.snapshot_calls = 0
+
+    def snapshot(self):
+        self.snapshot_calls += 1
+        if self.snapshot_calls == 2:
+            self.inner.record(
+                kind="test_observation",
+                entity_id="concurrent-write",
+                payload={"value": "advanced"},
+                recorded_at=NOW + timedelta(seconds=4),
+            )
+        return self.inner.snapshot()
+
+    def __getattr__(self, name: str):
+        return getattr(self.inner, name)
+
+
 def test_report_matches_imported_graph_and_refuses_to_invent_behavioral_proof(
     tmp_path: Path,
 ) -> None:
@@ -163,6 +187,8 @@ def test_report_matches_imported_graph_and_refuses_to_invent_behavioral_proof(
 
     assert payload["schema"] == FROG_PARITY_SCHEMA
     assert payload["authority"]["mode"] == "read_only_comparison"
+    assert payload["authority"]["native_ledger_digest"] == before[-1].digest
+    assert payload["authority"]["native_ledger_sequence"] == before[-1].sequence
     assert payload["cutover_ready"] is False
     checks = {value["id"]: value for value in payload["checks"]}
     assert checks["source_freshness"]["classification"] == "match"
@@ -291,3 +317,73 @@ def test_repo_filter_limits_both_source_and_provenance_bound_native_graph(
         "dependencies": 0,
         "conflicts": 0,
     }
+
+
+def test_report_rejects_unknown_or_future_source_lock_time(
+    tmp_path: Path,
+) -> None:
+    for status, started_at in (
+        ("corrupt", NOW.isoformat()),
+        ("active", (NOW + timedelta(minutes=1)).isoformat()),
+    ):
+        case_path = tmp_path / status
+        case_path.mkdir()
+        parity, importer, receipts, _, _, _, _ = services(case_path)
+        source = snapshot(with_lock=True)
+        source["records"]["locks"][0]["status"] = status
+        source["records"]["locks"][0]["started_at"] = started_at
+        contents = {
+            "source_kind": source["source_kind"],
+            "source_label": source["source_label"],
+            "source_schema": source["source_schema"],
+            "records": source["records"],
+        }
+        canonical = json.dumps(contents, sort_keys=True, separators=(",", ":"))
+        source["digest"] = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+        digest = receipts.record(
+            source, imported_at=NOW + timedelta(seconds=2)
+        ).receipt.digest
+        importer.import_tasks(
+            digest,
+            ["core", "ui"],
+            scopes_by_task={
+                "core": (Scope.file("src/core/**"),),
+                "ui": (Scope.file("src/ui/**"),),
+            },
+            imported_at=NOW + timedelta(seconds=3),
+        )
+
+        with pytest.raises(FrogParityError):
+            parity.compare(
+                digest,
+                observed_at=NOW + timedelta(minutes=5),
+                repo_path="/source/project",
+            )
+
+
+def test_report_retries_if_native_ledger_advances_during_comparison(
+    tmp_path: Path,
+) -> None:
+    parity, importer, receipts, _, _, _, ledger = services(tmp_path)
+    source = snapshot()
+    digest = receipts.record(source, imported_at=NOW + timedelta(seconds=2)).receipt.digest
+    importer.import_tasks(
+        digest,
+        ["core", "ui"],
+        scopes_by_task={
+            "core": (Scope.file("src/core/**"),),
+            "ui": (Scope.file("src/ui/**"),),
+        },
+        imported_at=NOW + timedelta(seconds=3),
+    )
+    advancing = AdvancingReadLedger(ledger)
+    parity._ledger = advancing
+
+    payload = frog_parity_to_payload(
+        parity.compare(digest, observed_at=NOW + timedelta(minutes=5))
+    )
+
+    head = ledger.snapshot()[-1]
+    assert advancing.snapshot_calls >= 4
+    assert payload["authority"]["native_ledger_digest"] == head.digest
+    assert payload["authority"]["native_ledger_sequence"] == head.sequence

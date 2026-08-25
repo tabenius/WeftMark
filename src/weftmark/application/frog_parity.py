@@ -5,12 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
+import posixpath
 from typing import Any, Mapping
 
 from weftmark.application.claims import ClaimService
 from weftmark.application.frog_planning import FrogPlanningService
 from weftmark.application.frog_receipts import FrogReceiptService
+from weftmark.application.frog_task_import import (
+    FrogTaskImportError,
+    _validate_receipt as _validate_import_receipt,
+)
 from weftmark.application.ledger import LedgerService
+from weftmark.application.ports.ledger import LEDGER_GENESIS_DIGEST
 from weftmark.application.scope_audit import ScopeAuditService
 from weftmark.application.task_claims import TaskClaimService
 from weftmark.application.task_planning import TaskPlanningService
@@ -54,6 +60,8 @@ class FrogParityReport:
     captured_at: datetime
     observed_at: datetime
     repo_path: str | None
+    native_ledger_digest: str
+    native_ledger_sequence: int
     checks: tuple[ParityCheck, ...]
 
     @property
@@ -96,6 +104,34 @@ class FrogParityService:
         _require_aware(observed_at, "observed_at")
         if stale_after_seconds < 1:
             raise FrogParityError("stale_after_seconds must be positive")
+        if repo_path is not None:
+            repo_path = _requested_repo_path(repo_path)
+        for _ in range(8):
+            before = self._ledger.snapshot()
+            digest, sequence = _ledger_head(before)
+            report = self._compare_once(
+                snapshot_digest,
+                observed_at=observed_at,
+                repo_path=repo_path,
+                stale_after_seconds=stale_after_seconds,
+                native_ledger_digest=digest,
+                native_ledger_sequence=sequence,
+            )
+            after = self._ledger.snapshot()
+            if _ledger_head(after) == (digest, sequence):
+                return report
+        raise FrogParityError("native ledger changed throughout parity comparison")
+
+    def _compare_once(
+        self,
+        snapshot_digest: str,
+        *,
+        observed_at: datetime,
+        repo_path: str | None,
+        stale_after_seconds: int,
+        native_ledger_digest: str,
+        native_ledger_sequence: int,
+    ) -> FrogParityReport:
         receipt = self._receipts.get(snapshot_digest)
         if receipt is None:
             raise FrogParityError(f"Frog snapshot not found: {snapshot_digest}")
@@ -126,8 +162,20 @@ class FrogParityService:
             self._task_graph_check(source_tasks, import_receipt, imported_ids),
             self._eligibility_check(snapshot_digest, source_tasks, imported_ids),
             self._collision_check(records, observed_at),
-            self._lease_check(records, imported_ids, observed_at),
-            self._audit_check(records, imported_ids, observed_at),
+            self._lease_check(
+                records,
+                imported_ids,
+                observed_at,
+                receipt.captured_at,
+                repo_path,
+            ),
+            self._audit_check(
+                records,
+                imported_ids,
+                observed_at,
+                receipt.captured_at,
+                repo_path,
+            ),
             self._completion_check(source_tasks, imported_ids),
         )
         return FrogParityReport(
@@ -136,6 +184,8 @@ class FrogParityService:
             receipt.captured_at,
             observed_at,
             repo_path,
+            native_ledger_digest,
+            native_ledger_sequence,
             checks,
         )
 
@@ -153,24 +203,12 @@ class FrogParityService:
             return None
         payload = matches[-1]
         try:
-            if (
-                payload["schema_version"] != 1
-                or payload["source_label"] != source_label
-                or payload["source_snapshot_digest"] != snapshot_digest
-                or payload["state"] != "completed"
-                or not isinstance(payload["native_tasks"], Mapping)
-                or not isinstance(payload["dependencies"], list)
-                or not isinstance(payload["conflicts"], list)
-            ):
+            payload = _validate_import_receipt(payload, source_label)
+            if payload["source_snapshot_digest"] != snapshot_digest:
+                raise ValueError("receipt targets another snapshot")
+            if payload["state"] != "completed":
                 raise ValueError("receipt mismatch")
-            if any(
-                not isinstance(task_id, str)
-                or not task_id
-                or not isinstance(task, Mapping)
-                for task_id, task in payload["native_tasks"].items()
-            ):
-                raise ValueError("native task mapping is malformed")
-        except (KeyError, TypeError, ValueError) as error:
+        except (FrogTaskImportError, KeyError, TypeError, ValueError) as error:
             raise FrogParityError(
                 "stored Frog native task import is malformed or targets another snapshot"
             ) from error
@@ -317,6 +355,8 @@ class FrogParityService:
         records: Mapping[str, Any],
         imported_ids: tuple[str, ...],
         observed_at: datetime,
+        captured_at: datetime,
+        repo_path: str | None,
     ) -> ParityCheck:
         source_by_task: dict[str, str] = {}
         for value in records["locks"]:
@@ -326,7 +366,11 @@ class FrogParityService:
             task_id = scope[5:]
             if task_id not in imported_ids:
                 continue
-            source_by_task[task_id] = _frog_lock_state(value, observed_at)
+            if not _lock_matches_repo(value, repo_path):
+                continue
+            source_by_task[task_id] = _frog_lock_state(
+                value, observed_at, captured_at=captured_at
+            )
         task_claims = TaskClaimService(
             self._native_planning,
             self._tasks,
@@ -370,13 +414,15 @@ class FrogParityService:
         records: Mapping[str, Any],
         imported_ids: tuple[str, ...],
         observed_at: datetime,
+        captured_at: datetime,
+        repo_path: str | None,
     ) -> ParityCheck:
         source_files: dict[str, set[str]] = {}
         for value in records["task_files"]:
             task_id = str(value.get("task_slug") or "")
             if task_id in imported_ids:
                 source_files.setdefault(task_id, set()).add(
-                    str(value.get("file_path") or "")
+                    _frog_file_path(value.get("file_path"))
                 )
         lock_files: dict[str, set[str]] = {}
         for value in records["locks"]:
@@ -384,10 +430,14 @@ class FrogParityService:
             if (
                 scope.startswith("task:")
                 and scope[5:] in imported_ids
-                and _frog_lock_state(value, observed_at) == "active"
+                and _lock_matches_repo(value, repo_path)
+                and _frog_lock_state(
+                    value, observed_at, captured_at=captured_at
+                )
+                == "active"
             ):
                 lock_files.setdefault(scope[5:], set()).update(
-                    str(item) for item in value.get("file_paths", ())
+                    _frog_file_paths(value.get("file_paths"))
                 )
         bindings = {value.change_set.id: value for value in self._workspace.list_change_sets()}
         task_claims = TaskClaimService(
@@ -494,19 +544,66 @@ def _freshness_check(
     )
 
 
-def _frog_lock_state(value: Mapping[str, Any], observed_at: datetime) -> str:
+def _frog_lock_state(
+    value: Mapping[str, Any],
+    observed_at: datetime,
+    *,
+    captured_at: datetime,
+) -> str:
     status = str(value.get("status") or "").casefold()
+    if status in {"stale", "expired"}:
+        return "expired"
+    if status == "released":
+        return "released"
     if status != "active":
-        return status or "unknown"
+        raise FrogParityError("Frog lock has an unsupported status")
     try:
         started_at = datetime.fromisoformat(str(value["started_at"]))
         _require_aware(started_at, "Frog lock started_at")
+        if started_at > captured_at:
+            raise ValueError("lock starts after source capture")
         lease_seconds = value["lease_seconds"]
         if type(lease_seconds) is not int or lease_seconds < 1:
             raise ValueError("invalid lease")
-    except (KeyError, TypeError, ValueError) as error:
+        expires_at = started_at + timedelta(seconds=lease_seconds)
+    except (KeyError, OverflowError, TypeError, ValueError) as error:
         raise FrogParityError("Frog lock lease observation is malformed") from error
-    return "expired" if observed_at >= started_at + timedelta(seconds=lease_seconds) else "active"
+    return "expired" if observed_at >= expires_at else "active"
+
+
+def _lock_matches_repo(value: Mapping[str, Any], repo_path: str | None) -> bool:
+    if repo_path is None:
+        return True
+    value_repo = value.get("repo_path")
+    if not isinstance(value_repo, str) or not value_repo.strip():
+        raise FrogParityError("Frog lock lacks a valid repository path")
+    return value_repo == repo_path
+
+
+def _requested_repo_path(value: str) -> str:
+    if not value.strip() or not value.startswith("/"):
+        raise FrogParityError("repo_path must be a non-empty absolute path")
+    return posixpath.normpath(value)
+
+
+def _frog_file_paths(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise FrogParityError("Frog lock file paths are malformed")
+    return tuple(_frog_file_path(item) for item in value)
+
+
+def _frog_file_path(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise FrogParityError("Frog file path is empty or malformed")
+    if not value.startswith("/") or posixpath.normpath(value) != value:
+        raise FrogParityError("Frog file path is not canonical and absolute")
+    return value
+
+
+def _ledger_head(entries: tuple[Any, ...]) -> tuple[str, int]:
+    if not entries:
+        return LEDGER_GENESIS_DIGEST, 0
+    return entries[-1].digest, entries[-1].sequence
 
 
 def _pairs(value: Any) -> tuple[tuple[str, str], ...]:
@@ -572,6 +669,8 @@ def frog_parity_to_payload(value: FrogParityReport) -> dict[str, Any]:
             "mode": "read_only_comparison",
             "frog": "source_observation",
             "weftmark": "native_ledger",
+            "native_ledger_digest": value.native_ledger_digest,
+            "native_ledger_sequence": value.native_ledger_sequence,
         },
         "cutover_ready": value.cutover_ready,
         "counts": {"checks": len(value.checks), **counts},
