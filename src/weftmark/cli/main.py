@@ -62,6 +62,11 @@ from weftmark.application.frog_planning import (
     FrogPlanningService,
     selection_to_payload,
 )
+from weftmark.application.frog_parity import (
+    FrogParityError,
+    FrogParityService,
+    frog_parity_to_payload,
+)
 from weftmark.application.frog_task_claims import (
     FrogTaskClaimError,
     FrogTaskClaimService,
@@ -346,6 +351,12 @@ def build_parser() -> argparse.ArgumentParser:
         "show", help="show one Frog snapshot receipt"
     )
     frog_show.add_argument("digest")
+    frog_parity = frog_commands.add_parser(
+        "parity", help="compare one Frog snapshot with native WeftMark state"
+    )
+    frog_parity.add_argument("digest")
+    frog_parity.add_argument("--repo-path")
+    frog_parity.add_argument("--stale-after-seconds", type=int, default=3600)
     frog_task = frog_commands.add_parser("task", help="inspect imported Frog tasks")
     frog_task_commands = frog_task.add_subparsers(
         dest="frog_task_command", required=True
@@ -584,6 +595,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         tasks = TaskService(ledger)
         frog_task_import = FrogTaskImportService(frog_receipts, tasks, ledger)
+        frog_parity = FrogParityService(
+            frog_receipts, tasks, workspace, claims, ledger
+        )
         task_planning = TaskPlanningService(tasks)
         task_claims = TaskClaimService(
             task_planning, tasks, workspace, claims, ledger
@@ -897,6 +911,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if (
             args.command == "frog"
+            and args.frog_command == "parity"
+        ):
+            report = frog_parity.compare(
+                args.digest,
+                observed_at=_now(),
+                repo_path=args.repo_path,
+                stale_after_seconds=args.stale_after_seconds,
+            )
+            payload = frog_parity_to_payload(report)
+            _emit_frog_parity(payload, json_output=args.json)
+            return 0 if report.cutover_ready else EXIT_POLICY
+        if (
+            args.command == "frog"
             and args.frog_command == "task"
             and args.frog_task_command == "list"
         ):
@@ -1208,6 +1235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_BUNDLE
     except (
         FrogImportError,
+        FrogParityError,
         FrogPlanningError,
         FrogPromotionError,
         FrogReceiptError,
@@ -1637,6 +1665,18 @@ def _emit_frog_task_list(
         print(
             f"{payload['slug']}  {payload['workflow_status']}  "
             f"{payload['priority']}  {payload['title']}"
+        )
+
+
+def _emit_frog_parity(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps({"ok": True, "frog_parity": payload}, sort_keys=True))
+        return
+    readiness = "cutover ready" if payload["cutover_ready"] else "cutover blocked"
+    print(f"{readiness}  {payload['source']['label']}  {payload['source']['digest']}")
+    for check in payload["checks"]:
+        print(
+            f"  {check['classification']}: {check['id']} - {check['summary']}"
         )
 
 

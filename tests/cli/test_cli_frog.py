@@ -397,6 +397,27 @@ def test_cli_imports_selected_frog_task_graph_into_native_intent(
     assert repeated["existing_tasks"] == ["core", "ui"]
 
     assert main(
+        [
+            "--repo",
+            str(repo),
+            "--json",
+            "frog",
+            "parity",
+            value.digest,
+            "--repo-path",
+            "/source/project",
+            "--stale-after-seconds",
+            "9999999",
+        ]
+    ) == 5
+    parity = json.loads(capsys.readouterr().out)["frog_parity"]
+    checks = {item["id"]: item for item in parity["checks"]}
+    assert parity["cutover_ready"] is False
+    assert checks["task_graph"]["classification"] == "match"
+    assert checks["eligibility"]["classification"] == "match"
+    assert checks["collision_refusal"]["classification"] == "unavailable"
+
+    assert main(
         ["--repo", str(repo), "--json", "task", "show", "core"]
     ) == 0
     task = json.loads(capsys.readouterr().out)["task"]
