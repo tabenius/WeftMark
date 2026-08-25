@@ -152,9 +152,13 @@ class ChangeBindingService:
         base_revision: str | None = None,
     ) -> ChangeBinding:
         revision = base_revision or binding.base_revision
+        # Preserve the caller-facing revision identity for retry compatibility,
+        # but resolve a default refresh through the immutable recorded SHA.
+        resolved_revision = base_revision or binding.change_set.base_sha
         observation = self._observe(
             binding.change_set,
             base_revision=revision,
+            resolved_base_revision=resolved_revision,
             sequence=len(binding.observations) + 1,
             observed_at=observed_at,
         )
@@ -192,6 +196,7 @@ class ChangeBindingService:
         change_set: ChangeSet,
         *,
         base_revision: str,
+        resolved_base_revision: str | None = None,
         sequence: int,
         observed_at: datetime,
     ) -> GitLineageObservation:
@@ -199,7 +204,7 @@ class ChangeBindingService:
         repository = self._git.repository()
         head = self._git.head()
         self._validate_context(change_set, repository, head)
-        base = self._git.commit(base_revision).id
+        base = self._git.commit(resolved_base_revision or base_revision).id
         diff = self._git.diff(str(base), str(head.target))
         status = self._git.status()
         assert repository.worktree is not None
