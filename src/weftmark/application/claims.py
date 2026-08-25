@@ -156,6 +156,59 @@ class ClaimService:
                 continue
         raise ClaimServiceError("ledger remained busy while renewing claim; retry")
 
+    def reacquire(
+        self,
+        id: str,
+        *,
+        agent_id: str,
+        session_id: str,
+        reacquired_at: datetime,
+        lease_seconds: int,
+    ) -> Claim:
+        """Reacquire an expired claim without changing its bound identity."""
+
+        _require_lease_seconds(lease_seconds)
+        for _ in range(8):
+            snapshot = self._ledger.snapshot()
+            current = _latest_claims(snapshot)
+            claim = current.get(id)
+            if claim is None:
+                raise ClaimServiceError(f"Claim not found: {id}")
+            _require_owner(claim, agent_id=agent_id, session_id=session_id)
+            if claim.state_at(reacquired_at) is not LockState.EXPIRED:
+                raise ClaimServiceError("only an expired claim can be reacquired")
+            expires_at = reacquired_at + timedelta(seconds=lease_seconds)
+            reacquired = Claim(
+                id=claim.id,
+                change_set_id=claim.change_set_id,
+                agent_id=claim.agent_id,
+                session_id=claim.session_id,
+                locks=tuple(
+                    lock.reacquire(at=reacquired_at, expires_at=expires_at)
+                    for lock in claim.locks
+                ),
+                updated_at=reacquired_at,
+            )
+            for existing_id, existing in current.items():
+                if existing_id == id:
+                    continue
+                for requested_lock in reacquired.locks:
+                    for existing_lock in existing.locks:
+                        if requested_lock.conflicts_with(
+                            existing_lock, at=reacquired_at
+                        ):
+                            raise ClaimConflict(
+                                f"scope {requested_lock.scope.canonical} is owned by "
+                                f"claim {existing.id} until "
+                                f"{existing_lock.expires_at.isoformat()}"
+                            )
+            try:
+                self._append(reacquired, snapshot)
+                return reacquired
+            except LedgerHeadChanged:
+                continue
+        raise ClaimServiceError("ledger remained busy while reacquiring claim; retry")
+
     def release(
         self,
         id: str,

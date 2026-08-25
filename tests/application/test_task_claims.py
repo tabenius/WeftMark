@@ -14,6 +14,7 @@ from weftmark.application.task_claims import TaskClaimError, TaskClaimService
 from weftmark.application.task_planning import TaskPlanningService
 from weftmark.application.tasks import TaskService
 from weftmark.application.workspace import WorkspaceService
+from weftmark.domain.lock import LockState
 from weftmark.domain.scope import Scope
 from weftmark.domain.task import TaskIntent, TaskPriority, TaskState
 
@@ -116,6 +117,39 @@ def test_native_task_claim_is_retry_safe_and_transitions_task(tmp_path: Path) ->
             claimed_at=NOW + timedelta(seconds=2),
             lease_seconds=300,
         )
+
+
+def test_native_task_claim_recovers_its_expired_bound_claim(tmp_path: Path) -> None:
+    service, tasks, _, _, ledger = services(tmp_path)
+    tasks.create(intent("task-a", Scope.contract("api-v1")))
+    first = service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="HEAD",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW,
+        lease_seconds=10,
+    )
+    before = len(ledger.snapshot())
+
+    recovered = service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="HEAD",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW + timedelta(seconds=11),
+        lease_seconds=300,
+    )
+
+    assert recovered.claimed is True
+    assert recovered.binding == first.binding
+    assert recovered.claim.locks[0].events[-1].kind.value == "reacquired"
+    assert recovered.claim.state_at(NOW + timedelta(seconds=11)) is LockState.ACTIVE
+    assert len(ledger.snapshot()) == before + 1
 
 
 def test_native_task_claim_refuses_ineligible_scopeless_and_invalid_requests(
@@ -227,4 +261,3 @@ def test_reserved_binding_recovers_after_native_scope_conflict(tmp_path: Path) -
     assert recovered.claimed is True
     assert recovered.binding.completed is True
     assert tasks.require("task-a").state is TaskState.IN_PROGRESS
-

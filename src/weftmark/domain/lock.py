@@ -26,6 +26,7 @@ class LockState(StrEnum):
 
 class LockEventKind(StrEnum):
     ACQUIRED = "acquired"
+    REACQUIRED = "reacquired"
     RENEWED = "renewed"
     RELEASED = "released"
     EXPIRED = "expired"
@@ -127,6 +128,31 @@ class SemanticLock:
         return replace(
             self,
             expires_at=expires_at,
+            updated_at=at,
+            events=(*self.events, event),
+        )
+
+    def reacquire(self, *, at: datetime, expires_at: datetime) -> SemanticLock:
+        """Restore an expired lease while preserving its ownership history."""
+
+        _require_aware("operation time", at)
+        _require_aware("expires_at", expires_at)
+        if self.state_at(at) is not LockState.EXPIRED:
+            raise InvalidLockOperation("only an expired lease can be reacquired")
+        if self.updated_at is not None and at < self.updated_at:
+            raise InvalidLockOperation("operation time precedes the previous event")
+        if expires_at <= at:
+            raise InvalidLockOperation("reacquired lease must expire after operation time")
+        event = LockEvent(
+            LockEventKind.REACQUIRED,
+            occurred_at=at,
+            previous_expires_at=self.expires_at,
+            expires_at=expires_at,
+        )
+        return replace(
+            self,
+            expires_at=expires_at,
+            state=LockState.ACTIVE,
             updated_at=at,
             events=(*self.events, event),
         )

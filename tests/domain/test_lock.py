@@ -118,3 +118,34 @@ def test_renewal_extends_only_a_current_active_lease() -> None:
 
     with pytest.raises(InvalidLockOperation, match="previous event"):
         renewed.release(at=NOW + timedelta(minutes=5), reason="clock moved back")
+
+
+def test_reacquisition_restores_only_an_expired_lease_with_history() -> None:
+    active = lease("lock-1", Scope.schema("events/v1"))
+    reacquired = active.reacquire(
+        at=NOW + timedelta(minutes=31),
+        expires_at=NOW + timedelta(minutes=61),
+    )
+
+    assert reacquired.state_at(NOW + timedelta(minutes=31)) is LockState.ACTIVE
+    assert reacquired.acquired_at == active.acquired_at
+    assert reacquired.events[:-1] == active.events
+    assert reacquired.events[-1].kind is LockEventKind.REACQUIRED
+    assert reacquired.events[-1].previous_expires_at == active.expires_at
+
+    with pytest.raises(InvalidLockOperation, match="only an expired"):
+        active.reacquire(
+            at=NOW + timedelta(minutes=1),
+            expires_at=NOW + timedelta(minutes=61),
+        )
+    released = active.release(at=NOW + timedelta(minutes=1), reason="done")
+    with pytest.raises(InvalidLockOperation, match="only an expired"):
+        released.reacquire(
+            at=NOW + timedelta(minutes=31),
+            expires_at=NOW + timedelta(minutes=61),
+        )
+    with pytest.raises(InvalidLockOperation, match="after operation time"):
+        active.reacquire(
+            at=NOW + timedelta(minutes=31),
+            expires_at=NOW + timedelta(minutes=31),
+        )

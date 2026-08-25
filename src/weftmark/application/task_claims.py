@@ -198,6 +198,16 @@ class TaskClaimService:
                 lease_seconds=lease_seconds,
             )
             claimed = True
+        elif claim.state_at(observed_at) is LockState.EXPIRED:
+            _require_matching_claim_identity(claim, binding)
+            claim = self._claims.reacquire(
+                binding.claim_id,
+                agent_id=binding.agent_id,
+                session_id=binding.session_id,
+                reacquired_at=observed_at,
+                lease_seconds=lease_seconds,
+            )
+            claimed = True
         else:
             _require_matching_active_claim(claim, binding, observed_at=observed_at)
 
@@ -345,14 +355,18 @@ def _require_same_request(
 def _require_matching_active_claim(
     claim: Claim, binding: TaskWorkBinding, *, observed_at: datetime
 ) -> None:
+    _require_matching_claim_identity(claim, binding)
+    if claim.state_at(observed_at) is not LockState.ACTIVE:
+        raise TaskClaimError(f"Claim is no longer active: {claim.id}")
+
+
+def _require_matching_claim_identity(claim: Claim, binding: TaskWorkBinding) -> None:
     if (
         claim.change_set_id != binding.change_set_id
         or claim.agent_id != binding.agent_id
         or claim.session_id != binding.session_id
     ):
         raise TaskClaimError(f"Claim already exists with different intent: {claim.id}")
-    if claim.state_at(observed_at) is not LockState.ACTIVE:
-        raise TaskClaimError(f"Claim is no longer active: {claim.id}")
 
 
 def _validate_request(
@@ -382,4 +396,3 @@ def _validate_request(
         raise TaskClaimError(
             "lease duration must be between 1 and 604800 seconds"
         )
-
