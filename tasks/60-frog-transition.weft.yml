@@ -89,7 +89,7 @@ tasks:
 
   - slug: native-expired-task-claim-recovery
     title: Recover an expired native task claim without losing its binding
-    status: in_progress
+    status: done
     priority: P0
     depends:
       - native-task-claim-service
