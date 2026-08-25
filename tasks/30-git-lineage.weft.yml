@@ -110,7 +110,7 @@ tasks:
 
   - slug: pinned-symbolic-changeset-base
     title: Pin symbolic ChangeSet bases across refresh
-    status: in_progress
+    status: done
     priority: P0
     depends:
       - git-change-binding
