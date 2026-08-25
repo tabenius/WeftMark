@@ -216,6 +216,34 @@ Promotion creates task intent and plan relations only. It neither creates a
 Change Set nor acquires a claim. Those remain later, independently auditable
 local authority transitions.
 
+## Behavioral parity reports
+
+`weftmark frog parity <snapshot-digest>` compares one immutable Frog receipt
+with provenance-bound native state. The report is read-only and classifies each
+required check as `match`, `explained_difference`, `unavailable`, or `blocker`.
+Automation receives a policy exit while any required check is unavailable or
+blocked; the JSON report remains available for diagnosis.
+
+The first report can directly compare imported task identity, priority,
+dependencies, conflicts, and advisory eligibility. It can compare effective
+lease state and declared-file coverage only when the same imported task has a
+source lock observation and a native task work binding. A locally advanced
+native lifecycle is an explained difference, not an excuse to copy Frog status
+into native authority.
+
+Two important checks deliberately remain unavailable from the current snapshot
+shape:
+
+- current non-overlap cannot prove that either system refused a competing lock
+  or claim, because failed acquisition attempts are absent;
+- a Frog terminal task row cannot prove that `frog task finish` ran its build,
+  audit, release, or other gates, because finish events and target-run evidence
+  are excluded from the receipt.
+
+Those unavailable results block cutover. A later parity-evidence adapter may
+accept bounded, provenance-bearing refusal and finish receipts, but must not
+infer them from timestamps, status strings, or an empty current-conflict set.
+
 ## Concepts not migrated by default
 
 The following are implementation or deployment choices, not WeftMark domain

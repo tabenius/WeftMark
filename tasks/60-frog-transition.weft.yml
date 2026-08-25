@@ -505,3 +505,42 @@ tasks:
     notes:
       - Unblocked once the ACP runtime adapter's independent review completed and its claim on src/weftmark/cli/main.py released.
       - Added `weftmark frog task import` (--task repeatable, --scope TASK_SLUG=SCOPE repeatable), mirroring the existing frog task {list,next,claim,promote} CLI pattern.
+
+  - slug: frog-weftmark-parity-report
+    title: Compare Frog and WeftMark coordination behavior
+    status: done
+    priority: P0
+    depends:
+      - frog-transition-board-projection
+      - source-plan-native-import
+    purpose: Make the Frog cutover gate depend on observable behavior rather than matching command names or unit-test counts.
+    scope:
+      files:
+        - docs/frog-transition.md
+        - src/weftmark/application/frog_parity.py
+        - src/weftmark/cli/main.py
+        - tests/application/test_frog_parity.py
+        - tests/cli/test_cli_frog.py
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-weftmark-parity-v0
+        - surface:frog-parity-cli
+    deliverables:
+      - Read-only parity report over one immutable Frog receipt and provenance-bound native state.
+      - Explicit match, explained-difference, unavailable and blocker classifications for cutover-relevant checks.
+      - Automation-safe CLI exit behavior that blocks cutover while required evidence is unavailable.
+    accept:
+      - Imported task identity, relations and eligibility are compared without trusting equal slugs as provenance.
+      - Paired lease and scope-audit observations are compared when both sides contain enough data.
+      - Stale source data, native graph drift and uncovered files are visible blockers.
+    negative:
+      - Current non-overlap is not presented as proof that either system refused a collision.
+      - Frog terminal status is not presented as proof of equivalent finish/evidence/review gates.
+      - Producing a report never mutates Frog, native task state, Change Sets, claims or the ledger.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/application/test_frog_parity.py tests/cli/test_cli_frog.py
+      - kind: review
+        required: true
+        criterion: Unavailable or temporally incomparable source evidence cannot silently satisfy the Frog cutover gate.
