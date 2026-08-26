@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   validate-and-build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
 
@@ -66,7 +66,7 @@ jobs:
   publish-rev0:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate-and-build
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: write
     steps:
