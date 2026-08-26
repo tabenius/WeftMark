@@ -18,6 +18,7 @@ from weftmark.application.ports.ledger import LEDGER_GENESIS_DIGEST, LedgerHeadC
 from weftmark.application.task_planning import TaskPlanningService
 from weftmark.application.tasks import TaskService
 from weftmark.application.workspace import WorkspaceService, binding_to_payload
+from weftmark.domain.changeset import LineageEventKind
 from weftmark.domain.lock import LockState
 from weftmark.domain.scope import Scope
 from weftmark.domain.task import TaskState
@@ -178,10 +179,7 @@ class TaskClaimService:
             payload = binding_to_payload(change_set)
             if (
                 payload["goal"] != task.title
-                or (
-                    binding.base_revision != "HEAD"
-                    and payload["base_revision"] != binding.base_revision
-                )
+                or not _base_revision_is_compatible(binding, change_set)
                 or tuple(
                     sorted(Scope.from_dict(value).canonical for value in payload["scopes"])
                 )
@@ -390,6 +388,29 @@ def _require_same_request(
         raise TaskClaimError(
             f"native task already has different work binding: {binding.task_id}"
         )
+
+
+def _base_revision_is_compatible(
+    binding: TaskWorkBinding, change_set: Any
+) -> bool:
+    """Accept an unchanged request or an explicitly recorded immutable rebase.
+
+    A task binding preserves the caller's requested revision for retries.  A
+    Change Set may later be deliberately rebased to a corrected immutable SHA;
+    that must not strand an expired claim.  The exception is deliberately
+    narrow: only a recorded rebase to the Change Set's current base may differ
+    from the original request.
+    """
+
+    if binding.base_revision == "HEAD":
+        return True
+    if change_set.base_revision == binding.base_revision:
+        return True
+    return any(
+        event.kind is LineageEventKind.REBASED
+        and event.base_sha == change_set.change_set.base_sha
+        for event in change_set.change_set.lineage
+    )
 
 
 def _require_matching_active_claim(
