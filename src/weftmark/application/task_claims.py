@@ -176,16 +176,17 @@ class TaskClaimService:
             )
         else:
             payload = binding_to_payload(change_set)
+            change_set_scopes = {
+                Scope.from_dict(value).canonical for value in payload["scopes"]
+            }
+            task_scopes = {scope.canonical for scope in scopes}
             if (
                 payload["goal"] != task.title
                 or (
                     binding.base_revision != "HEAD"
                     and payload["base_revision"] != binding.base_revision
                 )
-                or tuple(
-                    sorted(Scope.from_dict(value).canonical for value in payload["scopes"])
-                )
-                != tuple(sorted(scope.canonical for scope in scopes))
+                or not task_scopes.issubset(change_set_scopes)
             ):
                 raise TaskClaimError(
                     "reserved Change Set exists with different native task intent"
