@@ -16,14 +16,19 @@ dependencies = []
 [project.scripts]
 weftmark = "weftmark.cli.main:main"
 weftmark-mcp = "weftmark.mcp.server:main"
+weftmark-tui = "weftmark.tui.app:main"
 
 [project.optional-dependencies]
 mcp = [
   "mcp>=2,<3",
 ]
+tui = [
+  "textual>=8,<9",
+]
 test = [
   "pytest>=8,<9",
   "mcp>=2,<3",
+  "textual>=8,<9",
 ]
 
 [tool.setuptools.packages.find]
