@@ -75,7 +75,10 @@ class ChangeSetListScreen(Screen):
         self.app.exit()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        status = self._by_id[str(event.row_key.value)]
+        status = self._by_id.get(str(event.row_key.value))
+        if status is None:
+            self.notify("Selected Change Set is no longer available.", severity="warning")
+            return
         self.app.push_screen(ChangeSetDetailScreen(status))
 
 
