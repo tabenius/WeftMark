@@ -66,6 +66,19 @@ release evidence.
 
 <!-- assurance:end -->
 
+## Installation
+
+WeftMark is not yet published to PyPI; install it from a local clone.
+See [`docs/INSTALL.md`](docs/INSTALL.md) for the full guide (supported
+Python versions, optional extras, and a verification walkthrough). The
+short version:
+
+```bash
+git clone https://github.com/tabenius/WeftMark.git
+cd WeftMark
+pip install .
+```
+
 ## From Frog to WeftMark
 
 Frog remains a useful reference implementation and a source of hard-earned
