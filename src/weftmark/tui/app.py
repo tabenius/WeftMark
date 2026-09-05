@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 
@@ -11,6 +12,13 @@ from textual.app import App
 from weftmark.application.status import WorkspaceStatus
 from weftmark.tui.data import TuiError, load_workspace_status
 from weftmark.tui.screens import ChangeSetListScreen
+
+# Mirrors weftmark.cli.main.EXIT_INVALID. Duplicated (not imported) so that
+# weftmark.tui.app never depends on weftmark.cli.main — importing the base
+# CLI module from here would work against the module boundary this package
+# is built around (the base CLI must never import Textual, and this keeps
+# the dependency arrow pointing the same direction it already does).
+_EXIT_INVALID = 2
 
 
 class ReviewApp(App):
@@ -37,12 +45,24 @@ class ReviewApp(App):
         return status
 
 
-def run_tui(repo: str, ledger_override: str | None) -> int:
+def _emit_error(message: str, *, json_output: bool) -> None:
+    """Mirrors weftmark.cli.main._emit_error's tiny if/else — not real
+    business logic, so duplicating it here (rather than importing from
+    weftmark.cli.main) keeps this module free of a dependency on the base
+    CLI module."""
+
+    if json_output:
+        print(json.dumps({"ok": False, "error": message}, sort_keys=True))
+    else:
+        print(f"error: {message}", file=sys.stderr)
+
+
+def run_tui(repo: str, ledger_override: str | None, *, json_output: bool = False) -> int:
     try:
         initial_status = load_workspace_status(repo, ledger_override)
     except TuiError as error:
-        print(f"weftmark tui: {error}", file=sys.stderr)
-        return 1
+        _emit_error(str(error), json_output=json_output)
+        return _EXIT_INVALID
     app = ReviewApp(
         repo=repo, ledger_override=ledger_override, initial_status=initial_status
     )

@@ -97,6 +97,6 @@ def test_run_tui_reports_clear_error_for_invalid_repo(tmp_path, capsys) -> None:
 
     exit_code = run_tui(str(not_a_repo), None)
 
-    assert exit_code == 1
+    assert exit_code == 2
     err = capsys.readouterr().err
     assert "not a git repository" in err

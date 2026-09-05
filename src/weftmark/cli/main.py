@@ -606,7 +606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            return run_tui(args.repo, args.ledger)
+            return run_tui(args.repo, args.ledger, json_output=args.json)
         git = LocalGit(args.repo)
         repository = git.repository()
         ledger_path = _ledger_path(args.ledger, repository.id)
