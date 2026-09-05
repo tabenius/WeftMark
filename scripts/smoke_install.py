@@ -26,13 +26,26 @@ class SmokeInstallError(RuntimeError):
     """Raised when a build, install, or smoke-command step fails."""
 
 
+_SUBPROCESS_TIMEOUT_SECONDS = 300
+
+
 def _run(command: list[str], *, cwd: Path | None = None) -> None:
-    result = subprocess.run(
-        command,
-        cwd=cwd or ROOT,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd or ROOT,
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+        )
+    except (FileNotFoundError, OSError) as error:
+        raise SmokeInstallError(
+            f"command not found: {command[0]} (is it installed and on PATH?)"
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise SmokeInstallError(
+            f"timed out after {_SUBPROCESS_TIMEOUT_SECONDS}s: {' '.join(command)}"
+        ) from error
     if result.returncode != 0:
         raise SmokeInstallError(
             f"command failed ({result.returncode}): {' '.join(command)}\n"
@@ -114,17 +127,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
 
+    current_version: str | None = None
     try:
         wheel = build_wheel()
-        print(f"built {wheel.relative_to(ROOT)}")
+        print(f"built {wheel.relative_to(ROOT)}", flush=True)
         with tempfile.TemporaryDirectory(prefix="weftmark-smoke-") as tmp:
             work_root = Path(tmp)
             for version in SUPPORTED_PYTHON_VERSIONS:
-                print(f"smoke-testing Python {version} ...")
+                current_version = version
+                print(f"smoke-testing Python {version} ...", flush=True)
                 smoke_one_version(version, wheel, work_root)
-                print(f"Python {version}: ok")
+                print(f"Python {version}: ok", flush=True)
     except SmokeInstallError as error:
-        print(f"smoke_install: {error}", file=sys.stderr)
+        where = f" (Python {current_version})" if current_version else ""
+        print(f"smoke_install{where}: {error}", file=sys.stderr)
         return 1
 
     print(
