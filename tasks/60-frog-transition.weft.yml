@@ -60,7 +60,7 @@ tasks:
 
   - slug: weftmark-dogfood
     title: Use WeftMark to develop WeftMark
-    status: in_progress
+    status: review
     priority: P0
     depends:
       - cli-surface

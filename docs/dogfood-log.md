@@ -323,8 +323,40 @@ The cross-agent exercise itself:
    to lifecycle state `review`.
 7. Published as PR #26 (github.com/tabenius/WeftMark/pull/26).
 
-Close is deliberately not recorded yet. PR #26 has not merged, and closing a
-Change Set before its real merge gate is satisfied would be exactly the kind
-of fabricated evidence this task exists to rule out. Once PR #26 merges,
-`acp-reader-thread-teardown-cs` should transition `merged` then `closed`
-against its real head — that is the one remaining step to close this task.
+Close was deliberately not recorded until PR #26's real merge gate was
+satisfied. PR #26 merged 2026-08-24T22:37:39Z at commit
+`9b19eaf56363604350576e8c0fda8cd51056d597`, merged by the human
+(`tabenius`), not self-merged.
+
+By the time this session (2026-09-05) attempted the final `merged`/`closed`
+lifecycle transitions on `acp-reader-thread-teardown-cs`, the receiving
+clone at `/tmp/weftmark-claude-receiver` had lost its `.git` internals and
+its entire `.git/weftmark/` ledger directory — consistent with `/tmp` being
+cleaned between sessions on this host. The receiver's own WeftMark ledger
+record of session 007 (the `imported_bundle` receipt, the continuation
+evidence, the `ready` review) no longer exists to transition or inspect.
+
+This is exactly the risk flagged as unaddressed back in Session 001:
+"Durable local records live under `.git/weftmark/ledger.jsonl`, ... publication
+and cross-machine transport remain future work." A demonstration clone
+created for a one-off cross-agent exercise is not a durable location for
+WeftMark's own coordination ledger, and nothing in this project currently
+warns a session before it stores continuation-critical evidence somewhere
+`/tmp`-ephemeral. **Design correction:** WeftMark should either refuse (or
+loudly warn on) ledger writes under a path that looks like a system temp
+directory, or `docs/dogfood-log.md`'s own convention should require
+durable clone locations for any session meant to close later.
+
+The underlying cross-agent/vendor deliverable is not in doubt, though: it
+is independently, durably provable via Git and GitHub regardless of the
+lost local ledger — PR #17 (author `codex-weftmark`, merged
+`07c141f`), Claude's independent review comment
+(github.com/tabenius/WeftMark/pull/17#issuecomment-5395964891), PR #26
+itself (author `claude`, merged `9b19eaf5`), and the bounded
+`AcpConnection.close(*, timeout: float = 2.0)` implementation
+(`src/weftmark/adapters/acp.py:129`) plus its regression test, both
+currently on `main` and covered by the passing suite. The accept criterion
+("at least one handoff crosses agent/vendor boundaries") is satisfied by
+this durable record even though WeftMark's own ledger transitions for the
+receiving side were lost to environment cleanup before this session could
+observe or close them.
