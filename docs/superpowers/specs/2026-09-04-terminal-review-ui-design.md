@@ -43,6 +43,12 @@ CLI/MCP" — so this is a presentation layer, not a new read model.
    extras for MCP) and making Textual a required dependency (changes the
    zero-dependency posture for every install, including CI/MCP-only use).
 
+   **Post-implementation note:** what shipped pins `textual>=8,<9`, not
+   `>=0.60,<1`. `0.60` was verified stale against live PyPI during
+   implementation; `8.2.8` was the current release at the time and is what
+   was installed and exercised by the test suite throughout. The optional-
+   extra decision itself (this section's actual point) is unchanged.
+
 3. **Interactive, navigable, no auto-refresh.** Two screens: a master list
    (one row per Change Set — id, `lifecycle_state`, `readiness`, evidence
    counts, active claim, blocker count — sorted blockers/attention-needed
@@ -56,6 +62,17 @@ CLI/MCP" — so this is a presentation layer, not a new read model.
    "Read-mostly" deliverable wording and avoiding a second write-model
    surface to keep consistent with CLI/MCP.
 
+   **Post-implementation note:** the detail screen shows evidence *counts*
+   (current/total, obsolete, unavailable, failed), not the "full evidence
+   list (kind, state, command, bound commit)" described above. The reused
+   read model — `ChangeSetStatus` from `StatusService.summarize()` — only
+   carries counts, not individual evidence records; producing the full
+   per-record list would need a new read call outside `StatusService`,
+   which decision 1 rules out ("reuse `StatusService.summarize()` verbatim,
+   no new read logic"). Counts are what shipped and are consistent with
+   decision 1's constraint. Everything else in this decision (navigation,
+   `detail_text` layout, no-write posture) shipped as described.
+
 4. **"Workspace with at least 50 repositories" (the required benchmark)
    means 50 `repository_id`/worktree entries in one shared ledger, not 50
    separate `--repo` invocations.** Native WeftMark's ledger is
@@ -66,6 +83,13 @@ CLI/MCP" — so this is a presentation layer, not a new read model.
    worktree/branch values. The benchmark test builds a synthetic ledger
    fixture with 50+ such Change Sets and asserts `summarize()` plus first
    render stays under ~500ms ("interactive").
+
+   **Post-implementation note:** the shipped benchmark
+   (`tests/tui/test_benchmark.py`) asserts a 1.0s budget, not ~500ms.
+   Measured actual startup on this fixture is ~0.272s — well within the
+   original ~500ms figure — so the wider budget was chosen deliberately
+   for headroom against a self-hosted CI runner under load, not because
+   500ms turned out to be unachievable.
 
 ## Package layout
 
