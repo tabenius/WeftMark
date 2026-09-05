@@ -40,7 +40,7 @@ tasks:
 
   - slug: packaging-alpha
     title: Package an installable alpha
-    status: todo
+    status: review
     priority: P1
     depends:
       - weftmark-dogfood
