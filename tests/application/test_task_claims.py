@@ -152,6 +152,77 @@ def test_native_task_claim_recovers_its_expired_bound_claim(tmp_path: Path) -> N
     assert len(ledger.snapshot()) == before + 1
 
 
+def test_native_task_claim_recovers_after_an_explicit_pinned_base_correction(
+    tmp_path: Path,
+) -> None:
+    service, tasks, workspace, _, _ = services(tmp_path)
+    tasks.create(intent("task-a", Scope.contract("api-v1")))
+    service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="main",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW,
+        lease_seconds=10,
+    )
+    git(tmp_path, "commit", "--allow-empty", "-m", "corrected base")
+    workspace.refresh_change_set(
+        "task-a-work",
+        observed_at=NOW + timedelta(seconds=1),
+        base_revision="HEAD",
+    )
+
+    recovered = service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="main",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW + timedelta(seconds=11),
+        lease_seconds=300,
+    )
+
+    assert recovered.claimed is True
+    assert recovered.claim.state_at(NOW + timedelta(seconds=11)) is LockState.ACTIVE
+
+
+def test_native_task_claim_refuses_base_revision_mismatch_without_rebase(
+    tmp_path: Path,
+) -> None:
+    service, tasks, workspace, _, _ = services(tmp_path)
+    tasks.create(intent("task-a", Scope.contract("api-v1")))
+    service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="main",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW,
+        lease_seconds=10,
+    )
+    workspace.refresh_change_set(
+        "task-a-work",
+        observed_at=NOW + timedelta(seconds=1),
+        base_revision="HEAD",
+    )
+
+    with pytest.raises(TaskClaimError, match="different native task intent"):
+        service.claim(
+            "task-a",
+            change_set_id="task-a-work",
+            claim_id="task-a-claim",
+            base_revision="main",
+            agent_id="worker-1",
+            session_id="session-1",
+            claimed_at=NOW + timedelta(seconds=11),
+            lease_seconds=300,
+        )
+
+
 def test_native_task_claim_does_not_recover_after_task_is_blocked(
     tmp_path: Path,
 ) -> None:
