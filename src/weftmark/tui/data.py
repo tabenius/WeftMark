@@ -8,12 +8,17 @@ from pathlib import Path
 from weftmark.adapters.git_local import LocalGit, LocalGitError
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
 from weftmark.application.change_binding import ChangeBindingError
-from weftmark.application.claims import ClaimService
+from weftmark.application.claims import ClaimService, ClaimServiceError
 from weftmark.application.ledger import LedgerService, LedgerServiceError
-from weftmark.application.local_workflow import LocalWorkflowService
+from weftmark.application.local_workflow import (
+    LocalWorkflowError,
+    LocalWorkflowService,
+)
 from weftmark.application.status import StatusService, WorkspaceStatus
-from weftmark.application.workspace import WorkspaceService
+from weftmark.application.workspace import WorkspaceError, WorkspaceService
+from weftmark.domain.changeset import ChangeSetError
 from weftmark.domain.evidence import EvidenceProducer, ProducerKind
+from weftmark.domain.scope import ScopeError
 
 
 class TuiError(Exception):
@@ -55,5 +60,11 @@ def load_workspace_status(
         JsonlLedgerError,
         LedgerServiceError,
         ChangeBindingError,
+        ScopeError,
+        ChangeSetError,
+        WorkspaceError,
+        ClaimServiceError,
+        LocalWorkflowError,
+        ValueError,
     ) as error:
         raise TuiError(str(error)) from error
