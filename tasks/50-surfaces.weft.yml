@@ -283,6 +283,10 @@ tasks:
     scope:
       files:
         - src/weftmark/tui/**
+        - src/weftmark/cli/main.py
+        - pyproject.toml
+        - tests/tui/**
+        - tests/cli/test_cli_tui.py
       contracts:
         - surface:tui-review-v0
     deliverables:
