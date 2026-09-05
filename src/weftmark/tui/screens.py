@@ -30,6 +30,7 @@ class ChangeSetListScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield DataTable(id="change-sets")
+        yield Static("No Change Sets in this workspace.", id="empty-message")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -53,6 +54,7 @@ class ChangeSetListScreen(Screen):
                 str(len(status.scope_collisions)),
                 key=status.id,
             )
+        self.query_one("#empty-message", Static).display = not ordered
 
     def action_cursor_down(self) -> None:
         self.query_one(DataTable).action_cursor_down()
