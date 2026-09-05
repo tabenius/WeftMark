@@ -170,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("status", help="summarize current local workspace records")
+    commands.add_parser("tui", help="open the interactive terminal reviewer")
 
     bundle = commands.add_parser("bundle", help="export and verify portable records")
     bundle_commands = bundle.add_subparsers(dest="bundle_command", required=True)
@@ -595,6 +596,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             verification = verification_to_payload(verify_bundle(read_bundle(args.path)))
             _emit_bundle_verification(verification, json_output=args.json)
             return 0
+        if args.command == "tui":
+            try:
+                from weftmark.tui.app import run_tui
+            except ImportError:
+                print(
+                    "weftmark tui: the terminal reviewer needs the 'tui' extra: "
+                    "pip install weftmark[tui]",
+                    file=sys.stderr,
+                )
+                return 1
+            return run_tui(args.repo, args.ledger, json_output=args.json)
         git = LocalGit(args.repo)
         repository = git.repository()
         ledger_path = _ledger_path(args.ledger, repository.id)

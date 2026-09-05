@@ -374,3 +374,49 @@ def test_reserved_binding_recovers_after_native_scope_conflict(tmp_path: Path) -
     assert recovered.claimed is True
     assert recovered.binding.completed is True
     assert tasks.require("task-a").state is TaskState.IN_PROGRESS
+
+
+def test_native_task_claim_recovers_after_change_set_scope_amendment(
+    tmp_path: Path,
+) -> None:
+    service, tasks, workspace, claims, _ = services(tmp_path)
+    tasks.create(intent("task-a", Scope.contract("api-v1")))
+
+    first = service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="HEAD",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW,
+        lease_seconds=300,
+    )
+    assert first.claimed is True
+
+    claims.extend_scope(
+        "task-a-claim",
+        added_scopes=(Scope.contract("api-v2"),),
+        reason="follow-up fix legitimately touched an additional contract",
+        agent_id="worker-1",
+        session_id="session-1",
+        extended_at=NOW + timedelta(seconds=1),
+    )
+
+    retried = service.claim(
+        "task-a",
+        change_set_id="task-a-work",
+        claim_id="task-a-claim",
+        base_revision="HEAD",
+        agent_id="worker-1",
+        session_id="session-1",
+        claimed_at=NOW + timedelta(seconds=2),
+        lease_seconds=300,
+    )
+
+    assert retried.claimed is False
+    assert retried.binding == first.binding
+    assert workspace.require_change_set("task-a-work").change_set.scopes == (
+        "contract:api-v1",
+        "contract:api-v2",
+    )
