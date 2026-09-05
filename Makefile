@@ -30,4 +30,4 @@ rev0: figures logo pdf
 	cp build/weftmark_A5.pdf docs/artifacts/weftmark_rev0.pdf
 
 clean:
-	rm -rf build/*
+	rm -rf build/* dist src/weftmark.egg-info

@@ -70,6 +70,8 @@ and the A5 PDF, then snapshots the document to `docs/artifacts/weftmark_rev0.*`.
 The GitHub bootstrap workflow performs this once on the first successful `main`
 build and thereafter treats rev0 as immutable.
 
-`make clean` removes only disposable files under `build/`. It deliberately
-preserves the committed rev0 figures and logo derivatives; refresh those with
-the explicit `figures` and `logo` targets when their canonical sources change.
+`make clean` removes disposable files under `build/`, plus packaging build
+artifacts under `dist/` and `src/weftmark.egg-info/` produced by `make smoke`
+(`uv build`). It deliberately preserves the committed rev0 figures and logo
+derivatives; refresh those with the explicit `figures` and `logo` targets
+when their canonical sources change.
