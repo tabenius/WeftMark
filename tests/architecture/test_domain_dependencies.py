@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 from pathlib import Path
 
 import weftmark
@@ -82,4 +84,30 @@ from weftmark.adapters.git_local import LocalGit
         "sqlite3",
         "weftmark.adapters.git_local",
     }
+
+
+def test_base_cli_import_does_not_pull_textual() -> None:
+    """The base `weftmark` CLI must stay importable without the `tui` extra.
+
+    `weftmark.tui.app`'s import of Textual is local to the `tui` subcommand's
+    dispatch branch specifically so that `import weftmark.cli.main` never
+    imports Textual. Nothing else exercises this guarantee, so a regression
+    (e.g. a top-level `from weftmark.tui.app import run_tui`) would otherwise
+    go unnoticed — the CI test extra already installs `textual`, so an
+    accidental top-level import wouldn't fail any other existing test.
+    """
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import weftmark.cli.main; "
+            "print(any(m.split('.')[0] == 'textual' for m in sys.modules))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "False"
 
