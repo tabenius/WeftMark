@@ -602,7 +602,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             except ImportError:
                 print(
                     "weftmark tui: the terminal reviewer needs the 'tui' extra: "
-                    "pip install weftmark[tui]",
+                    "pip install '.[tui]' (from a clone; see docs/INSTALL.md)",
                     file=sys.stderr,
                 )
                 return 1
