@@ -51,6 +51,11 @@ tasks:
         - pyproject.toml
         - README.md
         - docs/INSTALL.md
+        - scripts/smoke_install.py
+        - Makefile
+        - .github/workflows/ci.yml
+        - .gitignore
+        - src/weftmark/cli/main.py
       contracts:
         - contract:package-v0
     deliverables:
