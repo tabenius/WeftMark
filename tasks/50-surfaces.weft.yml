@@ -275,7 +275,7 @@ tasks:
 
   - slug: terminal-review-ui
     title: Add a compact terminal reviewer view
-    status: todo
+    status: review
     priority: P2
     depends:
       - cli-surface
