@@ -52,11 +52,14 @@ uv build          # or: python -m build
 pip install dist/weftmark-*.whl
 ```
 
-Extras work the same way from a wheel, quoted so the shell doesn't expand
-the brackets:
+Extras work the same way from a wheel — resolve the exact wheel filename
+first, since pip doesn't glob-expand paths and a bracket suffix attached
+directly to a glob pattern can confuse shell expansion instead of fixing
+it:
 
 ```bash
-pip install 'dist/weftmark-*.whl[mcp]'
+WHEEL=$(ls dist/weftmark-*.whl)
+pip install "${WHEEL}[mcp]"
 ```
 
 ## Verifying your install
