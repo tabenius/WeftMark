@@ -544,3 +544,38 @@ tasks:
       - kind: review
         required: true
         criterion: Unavailable or temporally incomparable source evidence cannot silently satisfy the Frog cutover gate.
+
+  - slug: frog-cutover-runbook
+    title: Define gated Frog to WeftMark workspace cutover
+    status: review
+    priority: P0
+    depends:
+      - frog-weftmark-parity-report
+    purpose: Give operators a recoverable sequence for moving and reversing coordination authority instead of an implicit one-way switch.
+    scope:
+      files:
+        - docs/frog-cutover-runbook.md
+        - docs/frog-transition.md
+        - tasks/60-frog-transition.weft.yml
+      contracts:
+        - contract:frog-weftmark-parity-v0
+        - contract:frog-transition-map-v0
+    deliverables:
+      - Staged dual-read, native-write pilot, freeze, cutover, rollback and retention procedure with per-stage authority and exit criteria.
+      - Required-check inventory distinguishing derivable parity results from the two that are structurally unavailable.
+      - Ordered success gates and an explicit list of actions the runbook does not authorize.
+    accept:
+      - Every stage before decommission states its rollback path and which system holds coordination authority.
+      - The runbook states that the parity gate cannot pass until refusal and finish receipts exist, rather than implying a schedulable cutover date.
+      - Retention keeps the Frog database and every snapshot/parity receipt beyond cutover, with decommission as a separate approval.
+    negative:
+      - No stage authorizes writing to a Frog database.
+      - Threshold tuning, forced lock release and elapsed time are not presented as ways to satisfy a gate.
+      - Passing unit tests or matching command names are not treated as cutover evidence.
+    evidence:
+      - kind: docs
+        required: true
+        criterion: Procedure cites the actual parity check identifiers, CLI surface and policy exit code rather than aspirational commands.
+      - kind: review
+        required: true
+        criterion: An operator confirms the staged sequence is executable and that the blocked-gate prerequisite is stated before any cutover date.
