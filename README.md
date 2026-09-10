@@ -4,16 +4,13 @@
   <img src="assets/weftmark.svg" alt="WeftMark logo" width="280">
 </p>
 
-**WeftMark is the proposed RAGBAZ control plane for multi-agent software work:**
-a vendor-neutral ledger for scope, Git lineage, evidence, handoff, review, and
-merge/release readiness.
+**WeftMark is an open-source prototype control plane for human and AI software
+work:** a vendor-neutral ledger for task intent, scope, Git lineage, evidence,
+handoff, review, and merge/release readiness.
 
-It grows out of the operational lessons encoded in **RAGBAZ Frog** without
-trying to become another coding agent, issue tracker, or build system. Frog has
-already proven useful primitives around agent identity, task claiming, locks,
-dependency-aware scheduling, affected builds, workspace federation, MCP, event
-history, and causality. WeftMark narrows the next product boundary around the
-question that becomes scarce when many agents can write code at once:
+It grows out of the operational lessons encoded in **RAGBAZ Frog**, but it is
+not another coding agent, issue tracker, or build system. WeftMark concentrates
+on the question that becomes scarce when many workers can write code at once:
 
 > **Can we explain why a worker was allowed to change something, what actually
 > changed, what evidence says it works, who reviewed it, and whether it is
@@ -21,11 +18,36 @@ question that becomes scarce when many agents can write code at once:
 
 ## Repository status
 
-This repository now contains a **prototype WeftMark runtime** as well as its
-executable design and implementation record. Local Change Sets, semantic claims,
-Git lineage, evidence, review, handoff, CLI/status surfaces, and the read-only
-Kanban/mobile projection and tablet/phone review surface are implemented; this
-is still prototype software, not a production or released control plane.
+This repository contains a working **local-first prototype** and its executable
+design record. The full test suite passes locally at this branch head (441
+tests), but WeftMark is not yet a packaged alpha or a production control plane.
+The project deliberately keeps `implemented`, `verified`, `reviewed`, and
+`releasable` separate.
+
+What works today:
+
+- Native dependency-aware task intent, explicit promotion from imported Frog
+  intent, and atomic task-to-Change-Set claim composition.
+- Change Sets bound to Git lineage, file and semantic scopes, leased claims,
+  scope collision detection, and dirty-worktree observation.
+- Exact-head command evidence, review decisions, continuation handoffs,
+  lifecycle policy, portable bundles, and offline bundle verification.
+- CLI, MCP, loopback-only HTTP reads, a stable Kanban projection, and a
+  dependency-free tablet/phone review client.
+- Read-only Frog snapshot receipts, eligibility planning, promotion, and native
+  claim workflows for an incremental migration rather than a flag-day rewrite.
+- A provider-neutral runtime port. The ACP stdio adapter, named provider
+  registry, and claim-gated `weftmark runtime` CLI are implemented and locally
+  verified on this branch, and remain in review.
+
+Current gates:
+
+- Independent security review of the threat model and ACP callback/process
+  boundary.
+- Cross-agent dogfood with durable evidence and handoff at an exact Git head.
+- Unified native/Frog task projection, parity reporting, and a cutover runbook.
+- Packaging, installation smoke tests, release evidence, and an explicit alpha
+  decision.
 
 - `src/weftmark/` contains the local runtime and application/domain layers.
 - `tests/` contains executable runtime and contract evidence used by CI.
@@ -66,11 +88,60 @@ release evidence.
 
 <!-- assurance:end -->
 
+## Try it locally
+
+WeftMark currently targets Python 3.11+ and has no runtime dependency beyond
+the standard library. From a checkout:
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -e ".[test]"
+
+python scripts/validate_tasks.py
+python -m pytest -q
+weftmark --help
+```
+
+A minimal native workflow is intentionally explicit:
+
+```bash
+weftmark --repo . task create example \
+  --title "Example change" \
+  --why "make the intended outcome inspectable" \
+  --what "change the declared surface and record evidence" \
+  --priority p1 \
+  --scope file:src/example.py \
+  --scope contract:example-v0
+
+weftmark --repo . task next
+weftmark --repo . task claim example --agent local-worker --session terminal-1
+weftmark --repo . status
+```
+
+Runtime providers are opt-in and never selected implicitly. A claimed task can
+be handed to an ACP-speaking executable with either a JSON config file or an
+explicit argument vector:
+
+```bash
+weftmark --repo . runtime start example \
+  --provider local-acp \
+  --prompt "Implement the claimed task and preserve its acceptance criteria." \
+  --runtime-provider 'local-acp=["my-acp-agent","--stdio"]'
+```
+
+The ACP callback policy confines WeftMark-served file operations and automatic
+permissions to the disposable worktree. It is not an operating-system sandbox;
+the configured provider executable still runs with the invoking user's OS
+identity and must be trusted or separately sandboxed.
+
 ## From Frog to WeftMark
 
-Frog remains a useful reference implementation and a source of hard-earned
-workflow lessons. The intended transition is conceptual rather than a blind
-rewrite or schema fork.
+Frog remains an active migration source and a reference implementation. The
+transition is incremental: immutable snapshots are imported as observations,
+dependency-eligible intent is selected, and an operator explicitly promotes and
+claims work under native WeftMark authority. Imported assignments and locks do
+not become local authority.
 
 | Frog has demonstrated | WeftMark makes first-class |
 | --- | --- |
@@ -83,9 +154,10 @@ rewrite or schema fork.
 | board/status views | reviewer-facing readiness decisions |
 | MCP and remote workspaces | adapters around one vendor-neutral application model |
 
-The implementation plan therefore starts with domain concepts and evidence
-semantics, then adds Git/forge adapters and surfaces. It does **not** begin by
-building a web dashboard or another agent loop.
+The next migration milestone is a dual-read task projection and parity report,
+followed by cross-agent dogfood and a documented cutover. Automatic bidirectional
+sync is intentionally out of scope; any future publish-back path must be
+explicit, idempotent, and auditable.
 
 ## Documentation build
 
