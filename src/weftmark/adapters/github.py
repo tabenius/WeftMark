@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request
 
-from weftmark.adapters._http import build_forge_opener
+from weftmark.adapters._http import build_forge_opener, read_capped
 
 from weftmark.application.ports.forge import (
     ForgeActor,
@@ -69,13 +69,17 @@ class UrlLibGithubTransport:
             with self._opener.open(request, timeout=self._timeout_seconds) as response:
                 return GithubHttpResponse(
                     response.status,
-                    response.read(),
+                    read_capped(response),
                     dict(response.headers.items()),
                 )
         except HTTPError as error:
+            try:
+                body = read_capped(error)
+            except URLError as oversized:
+                raise GithubTransportError("GitHub transport unavailable") from oversized
             return GithubHttpResponse(
                 error.code,
-                error.read(),
+                body,
                 dict(error.headers.items()) if error.headers is not None else {},
             )
         except (URLError, TimeoutError, socket.timeout, OSError) as error:
@@ -107,6 +111,10 @@ class GithubForgeAdapter(ForgePort):
         self._token = token
         self._api_base = _base_url("api_base", api_base)
         self._web_base = _base_url("web_base", web_base)
+        if self._token is not None and self._api_base.startswith("http://"):
+            raise GithubAdapterError(
+                "api_base must use https when a token is configured"
+            )
         self._transport = transport or UrlLibGithubTransport()
 
     def repository(self) -> ForgeRepository:
