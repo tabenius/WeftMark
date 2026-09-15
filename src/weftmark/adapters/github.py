@@ -9,7 +9,9 @@ from datetime import datetime
 from typing import Any, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from weftmark.adapters._http import build_forge_opener
 
 from weftmark.application.ports.forge import (
     ForgeActor,
@@ -59,11 +61,12 @@ class UrlLibGithubTransport:
         if timeout_seconds <= 0:
             raise GithubAdapterError("timeout_seconds must be positive")
         self._timeout_seconds = timeout_seconds
+        self._opener = build_forge_opener()
 
     def get(self, url: str, *, headers: Mapping[str, str]) -> GithubHttpResponse:
         request = Request(url, headers=dict(headers), method="GET")
         try:
-            with urlopen(request, timeout=self._timeout_seconds) as response:
+            with self._opener.open(request, timeout=self._timeout_seconds) as response:
                 return GithubHttpResponse(
                     response.status,
                     response.read(),
