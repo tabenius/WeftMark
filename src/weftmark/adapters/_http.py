@@ -69,3 +69,34 @@ def build_forge_opener() -> OpenerDirector:
     """
 
     return build_opener(_SameOriginRedirectHandler())
+
+
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+"""Cap on a single forge response body (one REST page); pagination is
+separately bounded by each adapter."""
+
+
+class ResponseTooLargeError(URLError):
+    """Raised when a forge response body exceeds the read cap.
+
+    Subclasses :class:`urllib.error.URLError` so the adapters' existing
+    transport-unavailable path treats an oversized body as unavailable.
+    """
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(f"forge response body exceeded {max_bytes}-byte read cap")
+
+
+def read_capped(fp: Any, *, max_bytes: int = MAX_RESPONSE_BYTES) -> bytes:
+    """Read at most ``max_bytes`` from ``fp``, refusing a larger body.
+
+    A hostile or malfunctioning forge (the untrusted side of
+    ``boundary:remote-forge``) can otherwise return an unbounded body and
+    exhaust memory. One byte past the cap is read to detect overflow
+    without buffering the whole response.
+    """
+
+    data = fp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ResponseTooLargeError(max_bytes)
+    return data
