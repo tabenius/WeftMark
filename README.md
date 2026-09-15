@@ -28,6 +28,10 @@ Kanban/mobile projection and tablet/phone review surface are implemented; this
 is still prototype software, not a production or released control plane.
 
 - `src/weftmark/` contains the local runtime and application/domain layers.
+- `src/weftmark/adapters/` contains read-only observation adapters for six
+  code forges (GitHub, GitLab, Gitea, Forgejo, Bitbucket, Azure DevOps), the
+  ACP runtime adapter, and the local Git and ledger adapters; the forge
+  adapters never mutate forge state.
 - `tests/` contains executable runtime and contract evidence used by CI.
 - `web/review/` contains the dependency-free read-only tablet/phone review client.
 - `docs/weftmark.mdx` remains the editable source of truth for the product and
@@ -112,6 +116,9 @@ Requirements:
 
 - Python 3.11+
 - Pandoc
+- WeasyPrint's native libraries (Pango and its dependencies); see the
+  [WeasyPrint installation guide](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html)
+  for the packages your platform needs
 - packages in `requirements-docs.txt`
 
 ```bash

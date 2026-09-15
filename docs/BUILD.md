@@ -42,7 +42,9 @@ python scripts/build_pdf.py
 ```
 
 The script first rebuilds HTML, then invokes WeasyPrint against that file. The
-same CSS therefore governs browser/tablet and A5 print output.
+same CSS therefore governs browser/tablet and A5 print output. WeasyPrint links
+against native libraries (Pango and its dependencies), so install those for your
+platform first; see the WeasyPrint installation guide.
 
 ## Logos
 
