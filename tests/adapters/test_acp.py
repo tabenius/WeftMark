@@ -428,3 +428,52 @@ def test_proxy_reconnects_across_instances_without_leaking_worker(tmp_path: Path
     assert summary.state is RuntimeWorkerState.AWAITING_INPUT
     assert second.stop_worker(found).state is RuntimeWorkerState.EXITED
     second.cleanup_change_workspace(found)
+
+
+def test_symlink_and_traversal_escape_from_worktree_are_refused(tmp_path: Path) -> None:
+    """The fs boundary resolves symlinks before containment, so an agent
+
+    cannot read or write outside its disposable worktree via a symlink or a
+    ``..`` component -- the guarantee behind ``_resolve_path_in``'s
+    ``resolve()`` + ``relative_to`` check.
+    """
+    repo, head = _init_repo(tmp_path)
+    adapter = _spawn_stub_adapter(tmp_path / "stub")
+    workspace = adapter.attach_workspace(str(repo))
+    change = adapter.ensure_change_workspace(workspace, "chg-esc", GitObjectId(head))
+    worktree = Path(change.worktree_path)
+    try:
+        secret = tmp_path / "secret.txt"
+        secret.write_text("classified", encoding="utf-8")
+
+        # 1. a symlink inside the worktree pointing at an external file
+        file_link = worktree / "escape.txt"
+        file_link.symlink_to(secret)
+        with pytest.raises(RuntimeAdapterError) as read_err:
+            adapter._handle_read_text_file({"path": str(file_link)})
+        assert read_err.value.code is RuntimeErrorCode.PERMISSION_DENIED
+
+        # 2. a symlink inside the worktree pointing at an external directory
+        dir_link = worktree / "outdir"
+        dir_link.symlink_to(tmp_path, target_is_directory=True)
+        with pytest.raises(RuntimeAdapterError) as write_err:
+            adapter._handle_write_text_file(
+                {"path": str(dir_link / "pwned.txt"), "content": "x"}
+            )
+        assert write_err.value.code is RuntimeErrorCode.PERMISSION_DENIED
+        assert not (tmp_path / "pwned.txt").exists()
+
+        # 3. a plain ".." traversal component
+        with pytest.raises(RuntimeAdapterError) as trav_err:
+            adapter._handle_write_text_file(
+                {"path": str(worktree / ".." / "climb.txt"), "content": "x"}
+            )
+        assert trav_err.value.code is RuntimeErrorCode.PERMISSION_DENIED
+
+        # 4. fails closed when no worktree is bound yet
+        adapter._current_worktree_hint = ""
+        with pytest.raises(RuntimeAdapterError) as unbound_err:
+            adapter._handle_read_text_file({"path": str(worktree / "README.md")})
+        assert unbound_err.value.code is RuntimeErrorCode.PERMISSION_DENIED
+    finally:
+        adapter.cleanup_change_workspace(change)
