@@ -51,6 +51,22 @@ def test_evidence_can_bind_to_every_subject_kind(kind: SubjectKind) -> None:
     assert evidence.subject.kind is kind
 
 
+@pytest.mark.parametrize("kind", list(EvidenceKind))
+def test_every_evidence_kind_reaches_passed(kind: EvidenceKind) -> None:
+    passed = declared(kind=kind).start().pass_()
+
+    assert passed.state is EvidenceState.PASSED
+    assert passed.kind is kind
+
+
+def test_governance_is_a_dedicated_evidence_kind() -> None:
+    governance = declared(kind=EvidenceKind.GOVERNANCE)
+
+    assert governance.kind is EvidenceKind.GOVERNANCE
+    assert governance.kind.value == "governance"
+    assert EvidenceKind.GOVERNANCE in list(EvidenceKind)
+
+
 def test_successful_execution_has_explicit_running_and_passed_states() -> None:
     running = declared().start(at=NOW + timedelta(seconds=1))
     passed = running.pass_(at=NOW + timedelta(seconds=2))

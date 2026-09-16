@@ -15,6 +15,7 @@ def _task(
     depends: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
     contract: str = "adapter:local-v0",
+    evidence_kind: str = "test",
 ) -> str:
     depends_yaml = "".join(f"\n      - {value}" for value in depends) or " []"
     conflicts_yaml = "".join(f"\n      - {value}" for value in conflicts) or " []"
@@ -37,7 +38,7 @@ def _task(
     negative:
       - Authority is not inferred.
     evidence:
-      - kind: test
+      - kind: {evidence_kind}
         command: python -m pytest
 """
 
@@ -80,6 +81,27 @@ def test_adapter_loads_complete_graph_and_maps_source_contract_kinds(
         "file:src/worker.py",
     )
     assert WeftPlanAdapter(tmp_path).load() == snapshot
+
+
+def test_adapter_accepts_governance_evidence_kind(tmp_path: Path) -> None:
+    _write_plan(
+        tmp_path / "tasks" / "governed.weft.yml",
+        _task("governed", evidence_kind="governance"),
+    )
+
+    snapshot = WeftPlanAdapter(tmp_path).load()
+
+    assert [task.slug for task in snapshot.tasks] == ["governed"]
+
+
+def test_adapter_rejects_unknown_evidence_kind(tmp_path: Path) -> None:
+    _write_plan(
+        tmp_path / "tasks" / "unknown.weft.yml",
+        _task("unknown", evidence_kind="magic"),
+    )
+
+    with pytest.raises(WeftPlanError, match="invalid evidence record"):
+        WeftPlanAdapter(tmp_path).load()
 
 
 @pytest.mark.parametrize(
