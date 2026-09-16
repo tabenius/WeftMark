@@ -22,7 +22,7 @@ class EvidenceKind(StrEnum):
     BENCHMARK = "benchmark"
     DEPLOYMENT = "deployment"
     SECURITY = "security"
-    GOVERNANCE = "governance"
+    SECURITY_GOVERNANCE = "security:governance"
     DOCS = "docs"
     ARTIFACT = "artifact"
 

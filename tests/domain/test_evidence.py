@@ -59,12 +59,12 @@ def test_every_evidence_kind_reaches_passed(kind: EvidenceKind) -> None:
     assert passed.kind is kind
 
 
-def test_governance_is_a_dedicated_evidence_kind() -> None:
-    governance = declared(kind=EvidenceKind.GOVERNANCE)
+def test_security_governance_is_a_dedicated_evidence_kind() -> None:
+    governance = declared(kind=EvidenceKind.SECURITY_GOVERNANCE)
 
-    assert governance.kind is EvidenceKind.GOVERNANCE
-    assert governance.kind.value == "governance"
-    assert EvidenceKind.GOVERNANCE in list(EvidenceKind)
+    assert governance.kind is EvidenceKind.SECURITY_GOVERNANCE
+    assert governance.kind.value == "security:governance"
+    assert EvidenceKind.SECURITY_GOVERNANCE in list(EvidenceKind)
 
 
 def test_successful_execution_has_explicit_running_and_passed_states() -> None:

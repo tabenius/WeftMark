@@ -83,10 +83,10 @@ def test_adapter_loads_complete_graph_and_maps_source_contract_kinds(
     assert WeftPlanAdapter(tmp_path).load() == snapshot
 
 
-def test_adapter_accepts_governance_evidence_kind(tmp_path: Path) -> None:
+def test_adapter_accepts_security_governance_evidence_kind(tmp_path: Path) -> None:
     _write_plan(
         tmp_path / "tasks" / "governed.weft.yml",
-        _task("governed", evidence_kind="governance"),
+        _task("governed", evidence_kind="security:governance"),
     )
 
     snapshot = WeftPlanAdapter(tmp_path).load()

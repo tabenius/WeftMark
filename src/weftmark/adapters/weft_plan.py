@@ -47,7 +47,7 @@ class WeftPlanSnapshot:
 
 _STATUSES = frozenset({"idea", "todo", "in_progress", "blocked", "review", "done"})
 _EVIDENCE_KINDS = frozenset(
-    {"test", "ci", "review", "benchmark", "deployment", "security", "governance", "docs"}
+    {"test", "ci", "review", "benchmark", "deployment", "security", "security:governance", "docs"}
 )
 _TASK_FIELDS = frozenset(
     {
