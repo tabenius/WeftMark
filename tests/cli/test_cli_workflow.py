@@ -251,6 +251,40 @@ def test_evidence_run_show_and_list_are_durable(tmp_path: Path, capsys) -> None:
     assert len(json.loads(capsys.readouterr().out)["evidence"]) == 1
 
 
+def test_evidence_producer_attribution_is_configurable(
+    tmp_path: Path, capsys
+) -> None:
+    repo = setup(tmp_path)
+    capsys.readouterr()
+    ok = [sys.executable, "-c", "print('ok')"]
+    # An external worker (e.g. a Sylvae run) names itself as the producer.
+    assert main(
+        [
+            "--repo", str(repo), "--json",
+            "--producer-id", "sylvae:run/abc123",
+            "--producer-kind", "worker",
+            "evidence", "run", "chg-1", "--id", "ev-sylvae", "--kind", "test",
+            "--command", *ok,
+        ]
+    ) == 0
+    capsys.readouterr()
+    assert main(["--repo", str(repo), "--json", "evidence", "show", "ev-sylvae"]) == 0
+    shown = json.loads(capsys.readouterr().out)["evidence"]
+    assert shown["producer"] == {"kind": "worker", "id": "sylvae:run/abc123"}
+
+    # The default preserves the plain CLI producer.
+    assert main(
+        [
+            "--repo", str(repo), "--json",
+            "evidence", "run", "chg-1", "--id", "ev-default", "--command", *ok,
+        ]
+    ) == 0
+    capsys.readouterr()
+    assert main(["--repo", str(repo), "--json", "evidence", "show", "ev-default"]) == 0
+    default_shown = json.loads(capsys.readouterr().out)["evidence"]
+    assert default_shown["producer"]["id"] == "weftmark-cli"
+
+
 def test_evidence_exit_codes_distinguish_failure_and_unavailability(
     tmp_path: Path, capsys
 ) -> None:

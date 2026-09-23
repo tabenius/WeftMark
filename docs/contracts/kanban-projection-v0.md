@@ -223,6 +223,12 @@ the producing tool, and resolving it to a link belongs to the consumer. The
 board (`GET /v0/kanban`) does not carry `evidence_refs`; only the detail route
 does.
 
+On the write side, a caller attributes the evidence it records with the
+global `--producer-id` / `--producer-kind` options
+(`weftmark --producer-id sylvae:run/<id> evidence run …`). The default is the
+plain `worker`/`weftmark-cli` producer, so existing callers are unaffected; the
+id is stored verbatim and never interpreted by WeftMark.
+
 ## Versioning
 
 V0 consumers must ignore unknown object fields and unknown attention-flag strings.
