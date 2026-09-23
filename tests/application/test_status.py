@@ -60,6 +60,34 @@ def setup(
     return workspace, claims, workflow
 
 
+def test_summary_surfaces_evidence_producer_runtime_identity(
+    tmp_path: Path,
+) -> None:
+    workspace, claims, workflow = setup(tmp_path)
+    workflow.run_evidence(
+        "chg-1",
+        CommandEvidenceRequest(
+            id="ev-1",
+            kind=EvidenceKind.TEST,
+            argv=(sys.executable, "-c", "pass"),
+            cwd=str(tmp_path),
+        ),
+        observed_at=NOW + timedelta(seconds=2),
+    )
+    summary = StatusService(workspace, claims, workflow).summarize(
+        observed_at=NOW + timedelta(seconds=5)
+    )
+    refs = summary.change_sets[0].evidence_refs
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.id == "ev-1"
+    assert ref.kind == "test"
+    assert ref.state == "passed"
+    # The producer identity the detail view resolves to an OpenCode/Sylvae ref.
+    assert ref.producer_kind == "worker"
+    assert ref.producer_id == "test-worker"
+
+
 def test_status_composes_current_claim_evidence_review_and_handoff(
     tmp_path: Path,
 ) -> None:

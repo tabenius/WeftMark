@@ -13,6 +13,7 @@ from weftmark.application.kanban_projection import (
 )
 from weftmark.application.status import (
     ChangeSetStatus,
+    EvidenceRef,
     ScopeCollision,
     TaskChangeSetLink,
     TaskSource,
@@ -40,6 +41,7 @@ def status(
     latest_handoff_id: str | None = None,
     latest_handoff_is_current: bool = False,
     scope_collisions: tuple[ScopeCollision, ...] = (),
+    evidence_refs: tuple[EvidenceRef, ...] = (),
 ) -> ChangeSetStatus:
     return ChangeSetStatus(
         id=id,
@@ -67,7 +69,48 @@ def status(
         ),
         latest_handoff_is_current=latest_handoff_is_current,
         scope_collisions=scope_collisions,
+        evidence_refs=evidence_refs,
     )
+
+
+def test_evidence_runtime_refs_are_detail_only_and_additive() -> None:
+    value = status(
+        id="chg",
+        lifecycle_state="active",
+        evidence_refs=(
+            EvidenceRef(
+                id="ev-1",
+                kind="test",
+                state="passed",
+                producer_kind="worker",
+                producer_id="sylvae:run/abc",
+                artifacts=("sylvae://run/abc",),
+            ),
+        ),
+    )
+    projection = project_workspace(
+        WorkspaceStatus(
+            generated_at=NOW,
+            change_sets=(value,),
+            active_claim_count=0,
+            expired_claim_count=0,
+            released_claim_count=0,
+        )
+    )
+    # The board projection stays lean: no per-evidence runtime identity.
+    lean = kanban_projection_to_payload(projection)
+    assert "evidence_refs" not in lean["cards"][0]
+    # The detail projection carries it, additively.
+    detailed = kanban_projection_to_payload(projection, include_evidence_refs=True)
+    assert detailed["cards"][0]["evidence_refs"] == [
+        {
+            "id": "ev-1",
+            "kind": "test",
+            "state": "passed",
+            "producer": {"kind": "worker", "id": "sylvae:run/abc"},
+            "artifacts": ["sylvae://run/abc"],
+        }
+    ]
 
 
 def test_projection_maps_domain_lifecycle_to_small_board_lane_set() -> None:

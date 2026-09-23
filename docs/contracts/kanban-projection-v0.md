@@ -196,12 +196,40 @@ Example:
 }
 ```
 
+## Change Set detail: evidence runtime identity
+
+The single-Change-Set detail route (`GET /v0/kanban/changes/{id}`) returns the
+same Change Set card as the workspace projection, plus one additive field the
+board projection omits to keep its card face lean:
+
+- `evidence_refs` — the change set's evidence distilled to what a detail view
+  needs, one entry per evidence record:
+
+```json
+{
+  "id": "ev-1",
+  "kind": "test",
+  "state": "passed",
+  "producer": {"kind": "worker", "id": "sylvae:run/abc123"},
+  "artifacts": ["sylvae://run/abc123"]
+}
+```
+
+`producer.id` and `artifacts` are the seam through which the worker that
+recorded the evidence — an OpenCode session, a Sylvae run, CI, or a human —
+identifies itself. WeftMark keeps `producer.id` an opaque string; the
+namespacing convention (e.g. `sylvae:run/…`, `opencode:session/…`) belongs to
+the producing tool, and resolving it to a link belongs to the consumer. The
+board (`GET /v0/kanban`) does not carry `evidence_refs`; only the detail route
+does.
+
 ## Versioning
 
 V0 consumers must ignore unknown object fields and unknown attention-flag strings.
-`plan_cards`, `task_change_set_links`, their count fields, and the Change Set
-card `kind` discriminator are additive: legacy `cards` remain Change Set cards
-and `counts.cards` retains its original meaning. Existing fields and known
+`plan_cards`, `task_change_set_links`, their count fields, the Change Set
+card `kind` discriminator, and the detail route's `evidence_refs` field are
+additive: legacy `cards` remain Change Set cards and `counts.cards` retains its
+original meaning. Existing fields and known
 values must not silently change meaning. A semantic change to lane derivation,
 authority, readiness interpretation, or scope-overlap meaning requires a new
 schema identifier.
@@ -210,7 +238,8 @@ schema identifier.
 
 V0 does not yet expose:
 
-- worker/agent runtime identity;
+- worker/agent runtime identity *on the board projection* (the detail route now
+  surfaces it additively via `evidence_refs`, see above);
 - terminal endpoints;
 - diff endpoints;
 - mutation operations;

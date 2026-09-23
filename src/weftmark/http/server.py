@@ -283,10 +283,15 @@ def make_handler(
                 return
 
             change_set_id = unquote(path[len(prefix) :])
+            # The single-Change-Set detail carries the runtime identity
+            # (evidence producers/artifacts) that the board projection omits.
+            detail_payload = kanban_projection_to_payload(
+                projection, include_evidence_refs=True
+            )
             card = next(
                 (
                     value
-                    for value in workspace_payload["cards"]
+                    for value in detail_payload["cards"]
                     if value["id"] == change_set_id
                 ),
                 None,

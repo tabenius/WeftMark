@@ -14,6 +14,7 @@ from typing import Any
 
 from weftmark.application.status import (
     ChangeSetStatus,
+    EvidenceRef,
     ScopeCollision,
     TaskChangeSetLink,
     TaskSource,
@@ -72,6 +73,7 @@ class KanbanCardProjection:
     latest_handoff_is_current: bool
     attention: tuple[KanbanAttention, ...]
     scope_collisions: tuple[ScopeCollision, ...] = ()
+    evidence_refs: tuple[EvidenceRef, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +178,7 @@ def project_change_set(status: ChangeSetStatus) -> KanbanCardProjection:
         latest_handoff_is_current=status.latest_handoff_is_current,
         attention=_attention_for(status),
         scope_collisions=status.scope_collisions,
+        evidence_refs=status.evidence_refs,
     )
 
 
@@ -254,7 +257,80 @@ def _collision_to_payload(value: ScopeCollision) -> dict[str, Any]:
     }
 
 
-def kanban_projection_to_payload(projection: KanbanProjection) -> dict[str, Any]:
+def _evidence_ref_to_payload(ref: EvidenceRef) -> dict[str, Any]:
+    return {
+        "id": ref.id,
+        "kind": ref.kind,
+        "state": ref.state,
+        "producer": {"kind": ref.producer_kind, "id": ref.producer_id},
+        "artifacts": list(ref.artifacts),
+    }
+
+
+def _change_set_card_to_payload(
+    card: KanbanCardProjection, *, include_evidence_refs: bool
+) -> dict[str, Any]:
+    payload = {
+        "kind": "change_set",
+        "id": card.change_set_id,
+        "title": card.title,
+        "lane": card.lane.value,
+        "lifecycle_state": card.lifecycle_state,
+        "readiness": card.readiness,
+        "git": {
+            "branch": card.branch,
+            "head_sha": card.head_sha,
+            "observed_at": card.observed_at.isoformat(),
+            "dirty_paths": list(card.dirty_paths),
+        },
+        "claims": {
+            "active_ids": list(card.active_claim_ids),
+        },
+        "scope_collisions": [
+            _collision_to_payload(value) for value in card.scope_collisions
+        ],
+        "evidence": {
+            "total": card.evidence_total,
+            "current": card.evidence_current,
+            "obsolete": card.evidence_obsolete,
+            "failed": card.evidence_failed,
+            "unavailable": card.evidence_unavailable,
+        },
+        "review": (
+            None
+            if card.latest_review_id is None
+            else {
+                "id": card.latest_review_id,
+                "outcome": card.latest_review_outcome,
+                "head_sha": card.latest_review_head_sha,
+                "is_current": card.latest_review_is_current,
+            }
+        ),
+        "handoff": (
+            None
+            if card.latest_handoff_id is None
+            else {
+                "id": card.latest_handoff_id,
+                "head_sha": card.latest_handoff_head_sha,
+                "is_current": card.latest_handoff_is_current,
+            }
+        ),
+        "attention": [value.value for value in card.attention],
+    }
+    # Additive detail-only field (contract v0 requires ignoring unknown keys):
+    # worker/agent runtime identity from evidence producers/artifacts. Omitted
+    # from the board projection to keep the board face lean; included by the
+    # single-Change-Set detail endpoint.
+    if include_evidence_refs:
+        payload["evidence_refs"] = [
+            _evidence_ref_to_payload(ref) for ref in card.evidence_refs
+        ]
+    return payload
+
+
+def kanban_projection_to_payload(
+    projection: KanbanProjection, *, include_evidence_refs: bool = False
+) -> dict[str, Any]:
     """Serialize the versioned projection using JSON-compatible primitives."""
 
     return {
@@ -311,53 +387,9 @@ def kanban_projection_to_payload(projection: KanbanProjection) -> dict[str, Any]
             for card in projection.plan_cards
         ],
         "cards": [
-            {
-                "kind": "change_set",
-                "id": card.change_set_id,
-                "title": card.title,
-                "lane": card.lane.value,
-                "lifecycle_state": card.lifecycle_state,
-                "readiness": card.readiness,
-                "git": {
-                    "branch": card.branch,
-                    "head_sha": card.head_sha,
-                    "observed_at": card.observed_at.isoformat(),
-                    "dirty_paths": list(card.dirty_paths),
-                },
-                "claims": {
-                    "active_ids": list(card.active_claim_ids),
-                },
-                "scope_collisions": [
-                    _collision_to_payload(value) for value in card.scope_collisions
-                ],
-                "evidence": {
-                    "total": card.evidence_total,
-                    "current": card.evidence_current,
-                    "obsolete": card.evidence_obsolete,
-                    "failed": card.evidence_failed,
-                    "unavailable": card.evidence_unavailable,
-                },
-                "review": (
-                    None
-                    if card.latest_review_id is None
-                    else {
-                        "id": card.latest_review_id,
-                        "outcome": card.latest_review_outcome,
-                        "head_sha": card.latest_review_head_sha,
-                        "is_current": card.latest_review_is_current,
-                    }
-                ),
-                "handoff": (
-                    None
-                    if card.latest_handoff_id is None
-                    else {
-                        "id": card.latest_handoff_id,
-                        "head_sha": card.latest_handoff_head_sha,
-                        "is_current": card.latest_handoff_is_current,
-                    }
-                ),
-                "attention": [value.value for value in card.attention],
-            }
+            _change_set_card_to_payload(
+                card, include_evidence_refs=include_evidence_refs
+            )
             for card in projection.cards
         ],
     }

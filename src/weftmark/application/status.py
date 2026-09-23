@@ -28,6 +28,25 @@ class ScopeCollision:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceRef:
+    """A change set's evidence distilled to the facts a detail view needs.
+
+    ``producer_kind``/``producer_id`` and ``artifacts`` are the seam through
+    which an external worker (e.g. an OpenCode session or a Sylvae run) that
+    recorded the evidence identifies itself. WeftMark keeps the producer id
+    opaque; the naming convention belongs to the producing tool and the
+    consumer that resolves it.
+    """
+
+    id: str
+    kind: str
+    state: str
+    producer_kind: str
+    producer_id: str
+    artifacts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ChangeSetStatus:
     id: str
     goal: str
@@ -50,6 +69,7 @@ class ChangeSetStatus:
     latest_handoff_head_sha: str | None
     latest_handoff_is_current: bool
     scope_collisions: tuple[ScopeCollision, ...] = ()
+    evidence_refs: tuple[EvidenceRef, ...] = ()
 
     @property
     def readiness(self) -> str:
@@ -261,6 +281,19 @@ class StatusService:
                             claims=claims,
                             observed_at=observed_at,
                         )
+                    ),
+                    evidence_refs=tuple(
+                        EvidenceRef(
+                            id=item.id,
+                            kind=item.kind.value,
+                            state=item.state.value,
+                            producer_kind=item.producer.kind.value,
+                            producer_id=item.producer.id,
+                            artifacts=tuple(
+                                artifact.uri for artifact in item.artifacts
+                            ),
+                        )
+                        for item in matching_evidence
                     ),
                 )
             )
