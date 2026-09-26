@@ -285,6 +285,31 @@ def test_evidence_producer_attribution_is_configurable(
     assert default_shown["producer"]["id"] == "weftmark-cli"
 
 
+def test_evidence_inspector_surfaces_producer_identity(tmp_path: Path, capsys) -> None:
+    repo = setup(tmp_path)
+    capsys.readouterr()
+    ok = [sys.executable, "-c", "print('ok')"]
+    assert main(
+        [
+            "--repo", str(repo),
+            "--producer-id", "sylvae:run/abc123", "--producer-kind", "worker",
+            "evidence", "run", "chg-1", "--id", "ev-sylvae", "--kind", "test",
+            "--command", *ok,
+        ]
+    ) == 0
+
+    # The human-readable inspector shows which worker produced the proof.
+    capsys.readouterr()
+    assert main(["--repo", str(repo), "evidence", "show", "ev-sylvae"]) == 0
+    shown = capsys.readouterr().out
+    assert "producer:" in shown and "sylvae:run/abc123" in shown
+
+    capsys.readouterr()
+    assert main(["--repo", str(repo), "evidence", "list", "--changeset", "chg-1"]) == 0
+    listed = capsys.readouterr().out
+    assert "sylvae:run/abc123" in listed
+
+
 def test_evidence_exit_codes_distinguish_failure_and_unavailability(
     tmp_path: Path, capsys
 ) -> None:
