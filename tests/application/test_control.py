@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -9,14 +10,14 @@ import pytest
 from weftmark.adapters.git_local import LocalGit
 from weftmark.adapters.jsonl_ledger import JsonlLedger
 from weftmark.application.claims import ClaimService
-from weftmark.application.control import ControlConflict, ControlService
+from weftmark.application.control import ControlConflict, ControlRejected, ControlService
 from weftmark.application.ledger import LedgerService
 from weftmark.application.local_workflow import LocalWorkflowService
 from weftmark.application.task_claims import TaskClaimService
 from weftmark.application.task_planning import TaskPlanningService
 from weftmark.application.tasks import TaskService
 from weftmark.application.workspace import WorkspaceService
-from weftmark.domain.evidence import EvidenceProducer, ProducerKind
+from weftmark.domain.evidence import EvidenceKind, EvidenceProducer, ProducerKind
 from weftmark.domain.scope import Scope
 from weftmark.domain.task import TaskIntent, TaskPriority, TaskState
 
@@ -226,3 +227,66 @@ def test_existing_handoff_id_with_different_intent_fails_closed(tmp_path: Path) 
             created_by="worker-a",
             requested_at=NOW + timedelta(seconds=2),
         )
+
+
+# ── a person's readiness review (as RAGBAZ Dash records one via Rebekah) ──────
+# The outcome stays WeftMark's; the reviewer adds their identity and, when they
+# request changes, a blocking finding.
+
+
+def _review(control, *, key="review-request-1", review_id="review-a", author="ada@example.com", **extra):
+    return control.record_review(
+        "chg-a",
+        idempotency_key=key,
+        review_id=review_id,
+        author_id=author,
+        requested_at=NOW + timedelta(seconds=5),
+        **extra,
+    )
+
+
+def test_requesting_changes_records_a_blocked_review_by_that_person(tmp_path: Path) -> None:
+    control, tasks, _, _ = services(tmp_path)
+    create_task(tasks)
+    claim(control)
+
+    result = _review(control, request_changes="Please add a test for the retry path.")
+
+    decision = result.payload["decision"]
+    assert result.replayed is False
+    assert decision["author_id"] == "ada@example.com"
+    assert decision["outcome"] == "blocked"
+    assert decision["change_set_id"] == "chg-a"
+    assert "Please add a test for the retry path." in json.dumps(result.payload)
+
+
+def test_a_review_without_requested_changes_keeps_weftmarks_outcome(tmp_path: Path) -> None:
+    control, tasks, _, _ = services(tmp_path)
+    create_task(tasks)
+    claim(control)
+
+    result = _review(control, required_kinds=(EvidenceKind.TEST,))
+
+    # No test evidence yet: the person cannot make it ready by saying so.
+    assert result.payload["decision"]["outcome"] == "evidence_incomplete"
+    assert result.payload["decision"]["author_id"] == "ada@example.com"
+
+
+def test_review_is_retry_safe_and_ids_cannot_be_reused(tmp_path: Path) -> None:
+    control, tasks, _, _ = services(tmp_path)
+    create_task(tasks)
+    claim(control)
+
+    first = _review(control, request_changes="Not yet.")
+    again = _review(control, request_changes="Not yet.")
+    assert again.replayed is True
+    assert again.payload == first.payload
+
+    with pytest.raises(ControlConflict):
+        _review(control, key="review-request-2", author="mallory@example.com")
+
+
+def test_review_of_an_unknown_change_set_is_rejected(tmp_path: Path) -> None:
+    control, _, _, _ = services(tmp_path)
+    with pytest.raises(ControlRejected):
+        _review(control)

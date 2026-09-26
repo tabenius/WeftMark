@@ -31,6 +31,7 @@ V0 capabilities are:
 | `claim` | claim an eligible native task through `TaskClaimService` |
 | `release` | release an owned semantic claim through `ClaimService` |
 | `handoff` | create a clean-head handoff through `LocalWorkflowService` |
+| `review` | record a person's readiness review through `LocalWorkflowService.review` |
 
 A read token does not authorize writes unless the operator deliberately configures the same secret as both tokens.
 
@@ -94,6 +95,28 @@ Optional fields:
 
 The existing handoff rules remain authoritative, including clean-worktree requirements, Git lineage capture, secret refusal, and supersedes-chain identity.
 
+### Record review
+
+`POST /v0/control/changes/{change_set_id}/reviews`
+
+```json
+{
+  "review_id": "review-example",
+  "author_id": "ada@example.com",
+  "request_changes": "Please add a test for the retry path.",
+  "required_kinds": ["test"]
+}
+```
+
+`request_changes` and `required_kinds` are optional; `required_kinds` defaults to `["test"]`.
+
+This is how a person outside the host (e.g. a reviewer in RAGBAZ Dash, through Rebekah) records a readiness review. The **outcome is WeftMark's**: the review is evaluated against the evidence and scope bound to the Change Set's current head, exactly like `weftmark review create`. The reviewer contributes:
+
+- their identity, stored as the decision's `author_id`;
+- when `request_changes` is given, a `blocking` finding with that rationale (scope `surface:review/human`), so the outcome is `blocked`.
+
+A reviewer cannot make a Change Set ready by saying so: without the required evidence the outcome stays `evidence_incomplete`. An unknown Change Set or an invalid review is `409 review_rejected`.
+
 ## Idempotency
 
 Every mutation requires an `Idempotency-Key` request header.
@@ -113,7 +136,8 @@ Operation-specific recovery also covers the narrow crash interval after domain m
 
 - claims use explicit Change Set/claim identities and the retry-safe native claim service;
 - releases recognize an already-released claim only when owner/session/reason match;
-- handoffs recognize an existing handoff ID only when its durable intent matches.
+- handoffs recognize an existing handoff ID only when its durable intent matches;
+- reviews recognize an existing review ID only when its Change Set and author match.
 
 V0 assumes **one WeftMark HTTP control process per ledger**. The file-locked ledger and underlying application services remain safe against other local writers, but `control_idempotency_v0` replay serialization is not advertised as a multi-process HTTP coordination protocol. Multiple HTTP control frontends should use a single writer or a future distributed idempotency service rather than independently racing the same client keys.
 
@@ -160,7 +184,7 @@ Typical statuses:
 - `401` missing/wrong write bearer token;
 - `403` write token lacks the requested capability;
 - `404` control is disabled;
-- `409` idempotency, ownership, scope, task-state, or handoff conflict;
+- `409` idempotency, ownership, scope, task-state, handoff or review conflict, or a rejected review (`review_rejected`);
 - `411` missing content length;
 - `413` request too large;
 - `415` non-JSON request;

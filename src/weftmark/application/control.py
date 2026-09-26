@@ -17,7 +17,16 @@ from typing import Any, Callable, Mapping
 
 from weftmark.application.claims import Claim, ClaimService, claim_to_payload
 from weftmark.application.ledger import LedgerService
-from weftmark.application.local_workflow import LocalWorkflowService
+from weftmark.application.local_workflow import (
+    LocalWorkflowError,
+    LocalWorkflowService,
+    review_summary_to_payload,
+)
+from weftmark.application.review_service import ReviewServiceError
+from weftmark.application.workspace import WorkspaceError
+from weftmark.domain.evidence import EvidenceKind
+from weftmark.domain.review import FindingSeverity, ReviewError, ReviewFinding
+from weftmark.domain.scope import Scope, ScopeError, ScopeKind
 from weftmark.application.task_claims import TaskClaimService, task_claim_result_to_payload
 from weftmark.domain.lock import LockEventKind, LockState
 
@@ -28,6 +37,14 @@ class ControlServiceError(ValueError):
 
 class ControlConflict(ControlServiceError):
     """Raised when an idempotency key or durable result conflicts with a retry."""
+
+
+class ControlRejected(ControlServiceError):
+    """Raised when the workflow refuses a well-formed request (e.g. no such Change Set)."""
+
+
+# The scope a person's "request changes" finding is filed under.
+HUMAN_REVIEW_SCOPE = Scope(ScopeKind.SURFACE, "review/human")
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,6 +276,92 @@ class ControlService:
 
         return self._execute(
             operation="create_handoff",
+            target_id=change_set_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            requested_at=requested_at,
+            execute=execute,
+        )
+
+    def record_review(
+        self,
+        change_set_id: str,
+        *,
+        idempotency_key: str,
+        review_id: str,
+        author_id: str,
+        requested_at: datetime,
+        request_changes: str | None = None,
+        required_kinds: tuple[EvidenceKind, ...] = (EvidenceKind.TEST,),
+    ) -> ControlResult:
+        """Record a person's readiness review of a Change Set.
+
+        The outcome is WeftMark's, from the evidence and findings bound to the
+        current head; the reviewer contributes their identity and, when they
+        request changes, a blocking finding carrying their reasons (so the
+        outcome is ``blocked``).
+        """
+        change_set_id = _require_text("change_set_id", change_set_id)
+        review_id = _require_text("review_id", review_id)
+        author_id = _require_text("author_id", author_id)
+        request_changes = _optional_text("request_changes", request_changes)
+        if not required_kinds or len(set(required_kinds)) != len(required_kinds):
+            raise ControlServiceError("required_kinds must be non-empty and unique")
+        _require_time(requested_at)
+        request = {
+            "review_id": review_id,
+            "author_id": author_id,
+            "request_changes": request_changes,
+            "required_kinds": [kind.value for kind in required_kinds],
+        }
+
+        def execute() -> Mapping[str, Any]:
+            current = self._workflow.get_review(review_id)
+            if current is not None:
+                decision = current.get("decision", {})
+                if (
+                    decision.get("change_set_id") != change_set_id
+                    or decision.get("author_id") != author_id
+                ):
+                    raise ControlConflict(
+                        f"review id already exists with different intent: {review_id}"
+                    )
+                # Crash recovery after the durable review but before the
+                # control idempotency record.
+                return current
+            findings: tuple[ReviewFinding, ...] = ()
+            if request_changes is not None:
+                findings = (
+                    ReviewFinding(
+                        id=f"{review_id}:changes-requested",
+                        severity=FindingSeverity.BLOCKING,
+                        scope=HUMAN_REVIEW_SCOPE,
+                        rationale=request_changes,
+                        created_at=requested_at,
+                        updated_at=requested_at,
+                    ),
+                )
+            try:
+                summary = self._workflow.review(
+                    change_set_id,
+                    decision_id=review_id,
+                    author_id=author_id,
+                    required_kinds=required_kinds,
+                    additional_findings=findings,
+                    decided_at=requested_at,
+                )
+            except (
+                LocalWorkflowError,
+                ReviewServiceError,
+                ReviewError,
+                ScopeError,
+                WorkspaceError,
+            ) as error:
+                raise ControlRejected(str(error)) from error
+            return review_summary_to_payload(summary)
+
+        return self._execute(
+            operation="record_review",
             target_id=change_set_id,
             idempotency_key=idempotency_key,
             request=request,
