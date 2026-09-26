@@ -88,6 +88,58 @@ def test_summary_surfaces_evidence_producer_runtime_identity(
     assert ref.producer_id == "test-worker"
 
 
+def test_summary_surfaces_active_claim_runtime_identity(tmp_path: Path) -> None:
+    workspace, claims, workflow = setup(tmp_path)
+    claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="opencode:session/ses_abc123",
+        acquired_at=NOW + timedelta(seconds=1),
+        lease_seconds=300,
+    )
+    summary = StatusService(workspace, claims, workflow).summarize(
+        observed_at=NOW + timedelta(seconds=5)
+    )
+    status = summary.change_sets[0]
+    # The id-only list is unchanged; the additive active_claims carries the
+    # agent/session identity a consumer resolves to a link before evidence.
+    assert status.active_claim_ids == ("claim-1",)
+    assert len(status.active_claims) == 1
+    ref = status.active_claims[0]
+    assert ref.id == "claim-1"
+    assert ref.agent_id == "worker-1"
+    assert ref.session_id == "opencode:session/ses_abc123"
+
+
+def test_summary_omits_released_claim_from_active_runtime_identity(
+    tmp_path: Path,
+) -> None:
+    workspace, claims, workflow = setup(tmp_path)
+    claims.acquire(
+        "chg-1",
+        id="claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        acquired_at=NOW + timedelta(seconds=1),
+        lease_seconds=300,
+    )
+    claims.release(
+        "claim-1",
+        agent_id="worker-1",
+        session_id="session-1",
+        released_at=NOW + timedelta(seconds=2),
+        reason="done",
+    )
+    status = (
+        StatusService(workspace, claims, workflow)
+        .summarize(observed_at=NOW + timedelta(seconds=5))
+        .change_sets[0]
+    )
+    assert status.active_claim_ids == ()
+    assert status.active_claims == ()
+
+
 def test_status_composes_current_claim_evidence_review_and_handoff(
     tmp_path: Path,
 ) -> None:

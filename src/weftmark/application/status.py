@@ -47,6 +47,24 @@ class EvidenceRef:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimRef:
+    """An active claim distilled to the runtime identity a detail view needs.
+
+    ``agent_id``/``session_id`` are the seam through which the worker currently
+    holding the Change Set identifies itself *before it has recorded any
+    evidence* — the "what is working on this right now" question the evidence
+    producer path cannot answer until a proof exists. As with an evidence
+    producer id, WeftMark keeps the session id opaque; the naming convention
+    (e.g. ``opencode:session/…``) belongs to the claiming tool and to the
+    consumer that resolves it into a link.
+    """
+
+    id: str
+    agent_id: str
+    session_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class ChangeSetStatus:
     id: str
     goal: str
@@ -70,6 +88,7 @@ class ChangeSetStatus:
     latest_handoff_is_current: bool
     scope_collisions: tuple[ScopeCollision, ...] = ()
     evidence_refs: tuple[EvidenceRef, ...] = ()
+    active_claims: tuple[ClaimRef, ...] = ()
 
     @property
     def readiness(self) -> str:
@@ -196,11 +215,12 @@ class StatusService:
             matching_claims = tuple(
                 claim for claim in claims if claim.change_set_id == change_set_id
             )
-            active_claim_ids = tuple(
-                claim.id
+            active_matching_claims = tuple(
+                claim
                 for claim in matching_claims
                 if claim.state_at(observed_at) is LockState.ACTIVE
             )
+            active_claim_ids = tuple(claim.id for claim in active_matching_claims)
             matching_evidence = tuple(
                 result.evidence
                 for result in evidence
@@ -294,6 +314,14 @@ class StatusService:
                             ),
                         )
                         for item in matching_evidence
+                    ),
+                    active_claims=tuple(
+                        ClaimRef(
+                            id=claim.id,
+                            agent_id=claim.agent_id,
+                            session_id=claim.session_id,
+                        )
+                        for claim in active_matching_claims
                     ),
                 )
             )

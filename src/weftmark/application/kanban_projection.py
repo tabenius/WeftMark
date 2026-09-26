@@ -14,6 +14,7 @@ from typing import Any
 
 from weftmark.application.status import (
     ChangeSetStatus,
+    ClaimRef,
     EvidenceRef,
     ScopeCollision,
     TaskChangeSetLink,
@@ -74,6 +75,7 @@ class KanbanCardProjection:
     attention: tuple[KanbanAttention, ...]
     scope_collisions: tuple[ScopeCollision, ...] = ()
     evidence_refs: tuple[EvidenceRef, ...] = ()
+    active_claims: tuple[ClaimRef, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +181,7 @@ def project_change_set(status: ChangeSetStatus) -> KanbanCardProjection:
         attention=_attention_for(status),
         scope_collisions=status.scope_collisions,
         evidence_refs=status.evidence_refs,
+        active_claims=status.active_claims,
     )
 
 
@@ -267,8 +270,19 @@ def _evidence_ref_to_payload(ref: EvidenceRef) -> dict[str, Any]:
     }
 
 
+def _claim_ref_to_payload(ref: ClaimRef) -> dict[str, Any]:
+    return {
+        "id": ref.id,
+        "agent": ref.agent_id,
+        "session": ref.session_id,
+    }
+
+
 def _change_set_card_to_payload(
-    card: KanbanCardProjection, *, include_evidence_refs: bool
+    card: KanbanCardProjection,
+    *,
+    include_evidence_refs: bool,
+    include_claim_refs: bool,
 ) -> dict[str, Any]:
     payload = {
         "kind": "change_set",
@@ -325,11 +339,22 @@ def _change_set_card_to_payload(
         payload["evidence_refs"] = [
             _evidence_ref_to_payload(ref) for ref in card.evidence_refs
         ]
+    # Additive detail-only field, same rationale as evidence_refs: the runtime
+    # identity (agent/session) of the workers currently holding the Change Set,
+    # so a consumer can show "what is working on this now" before any evidence
+    # exists. Omitted from the board face; included by the detail endpoint.
+    if include_claim_refs:
+        payload["claims"]["active"] = [
+            _claim_ref_to_payload(ref) for ref in card.active_claims
+        ]
     return payload
 
 
 def kanban_projection_to_payload(
-    projection: KanbanProjection, *, include_evidence_refs: bool = False
+    projection: KanbanProjection,
+    *,
+    include_evidence_refs: bool = False,
+    include_claim_refs: bool = False,
 ) -> dict[str, Any]:
     """Serialize the versioned projection using JSON-compatible primitives."""
 
@@ -388,7 +413,9 @@ def kanban_projection_to_payload(
         ],
         "cards": [
             _change_set_card_to_payload(
-                card, include_evidence_refs=include_evidence_refs
+                card,
+                include_evidence_refs=include_evidence_refs,
+                include_claim_refs=include_claim_refs,
             )
             for card in projection.cards
         ],

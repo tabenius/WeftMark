@@ -283,10 +283,11 @@ def make_handler(
                 return
 
             change_set_id = unquote(path[len(prefix) :])
-            # The single-Change-Set detail carries the runtime identity
-            # (evidence producers/artifacts) that the board projection omits.
+            # The single-Change-Set detail carries the runtime identity the
+            # board projection omits: evidence producers/artifacts (past runs)
+            # and active-claim agent/session (what holds it right now).
             detail_payload = kanban_projection_to_payload(
-                projection, include_evidence_refs=True
+                projection, include_evidence_refs=True, include_claim_refs=True
             )
             card = next(
                 (

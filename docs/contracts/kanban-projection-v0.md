@@ -196,11 +196,13 @@ Example:
 }
 ```
 
-## Change Set detail: evidence runtime identity
+## Change Set detail: runtime identity
 
 The single-Change-Set detail route (`GET /v0/kanban/changes/{id}`) returns the
-same Change Set card as the workspace projection, plus one additive field the
-board projection omits to keep its card face lean:
+same Change Set card as the workspace projection, plus two additive surfaces the
+board projection omits to keep its card face lean. Both expose *runtime
+identity* — who or what is (or was) working the change set — which the board
+deliberately does not compress onto the card.
 
 - `evidence_refs` — the change set's evidence distilled to what a detail view
   needs, one entry per evidence record:
@@ -229,13 +231,35 @@ global `--producer-id` / `--producer-kind` options
 plain `worker`/`weftmark-cli` producer, so existing callers are unaffected; the
 id is stored verbatim and never interpreted by WeftMark.
 
+- `claims.active` — the change set's currently-active claims, each distilled to
+  the runtime identity of the worker holding it. This answers "what is working
+  on this **right now**", before any evidence exists, where `evidence_refs` only
+  answers "what has run against it". The board's `claims.active_ids` (the claim
+  id list) is unchanged; `claims.active` is added only on the detail route:
+
+```json
+{
+  "id": "claim-1",
+  "agent": "worker-1",
+  "session": "opencode:session/ses_abc123"
+}
+```
+
+`session` (and `agent`) come straight from the semantic claim's own fields.
+As with an evidence `producer.id`, WeftMark keeps the `session` string opaque —
+the `sylvae:run/…` / `opencode:session/…` namespacing is the claiming tool's
+convention and resolving it to a link is the consumer's job. A tool that stamps
+its session id with a namespace when it `task claim`s a change set lets a
+consumer light the runtime link during active work, before the first evidence.
+
 ## Versioning
 
 V0 consumers must ignore unknown object fields and unknown attention-flag strings.
 `plan_cards`, `task_change_set_links`, their count fields, the Change Set
-card `kind` discriminator, and the detail route's `evidence_refs` field are
-additive: legacy `cards` remain Change Set cards and `counts.cards` retains its
-original meaning. Existing fields and known
+card `kind` discriminator, the detail route's `evidence_refs` field, and the
+detail route's `claims.active` list are
+additive: legacy `cards` remain Change Set cards, `counts.cards` retains its
+original meaning, and `claims.active_ids` is unchanged. Existing fields and known
 values must not silently change meaning. A semantic change to lane derivation,
 authority, readiness interpretation, or scope-overlap meaning requires a new
 schema identifier.
@@ -245,7 +269,8 @@ schema identifier.
 V0 does not yet expose:
 
 - worker/agent runtime identity *on the board projection* (the detail route now
-  surfaces it additively via `evidence_refs`, see above);
+  surfaces it additively via `evidence_refs` for past runs and `claims.active`
+  for the workers holding the change set now, see above);
 - terminal endpoints;
 - diff endpoints;
 - mutation operations;
