@@ -19,13 +19,14 @@ from weftmark.application.task_claims import TaskClaimService
 from weftmark.application.task_planning import TaskPlanningService
 from weftmark.application.tasks import TaskService
 from weftmark.application.workspace import WorkspaceService
-from weftmark.domain.evidence import EvidenceProducer, ProducerKind
+from weftmark.domain.evidence import EvidenceKind, EvidenceProducer, ProducerKind
 
 
 class ControlCapability(StrEnum):
     CLAIM = "claim"
     RELEASE = "release"
     HANDOFF = "handoff"
+    REVIEW = "review"
 
 
 class ControlHttpError(ValueError):
@@ -81,6 +82,18 @@ class ControlProvider(Protocol):
         supersedes_id: str | None = None,
     ) -> ControlResult: ...
 
+    def record_review(
+        self,
+        change_set_id: str,
+        *,
+        idempotency_key: str,
+        review_id: str,
+        author_id: str,
+        requested_at: datetime,
+        request_changes: str | None = None,
+        required_kinds: tuple[EvidenceKind, ...] = (EvidenceKind.TEST,),
+    ) -> ControlResult: ...
+
 
 class LocalControlProvider:
     """Compose the same local services used by CLI workflows."""
@@ -110,6 +123,9 @@ class LocalControlProvider:
     def create_handoff(self, *args: object, **kwargs: object) -> ControlResult:
         return self._service.create_handoff(*args, **kwargs)  # type: ignore[arg-type]
 
+    def record_review(self, *args: object, **kwargs: object) -> ControlResult:
+        return self._service.record_review(*args, **kwargs)  # type: ignore[arg-type]
+
 
 def parse_control_route(path: str) -> ControlRoute | None:
     segments = tuple(segment for segment in path.split("/") if segment)
@@ -125,6 +141,8 @@ def parse_control_route(path: str) -> ControlRoute | None:
         return ControlRoute(ControlCapability.RELEASE, "release_claim", target_id)
     if collection == "changes" and action == "handoffs":
         return ControlRoute(ControlCapability.HANDOFF, "create_handoff", target_id)
+    if collection == "changes" and action == "reviews":
+        return ControlRoute(ControlCapability.REVIEW, "record_review", target_id)
     return None
 
 
@@ -201,6 +219,33 @@ def dispatch_control(
             intended_receiver_id=_optional_text(values, "intended_receiver_id"),
             known_failures=tuple(known),
             supersedes_id=_optional_text(values, "supersedes_id"),
+        )
+
+    if route.operation == "record_review":
+        values = _strict_fields(
+            payload,
+            required=("review_id", "author_id"),
+            optional=("request_changes", "required_kinds"),
+        )
+        kinds = values.get("required_kinds", [EvidenceKind.TEST.value])
+        if (
+            not isinstance(kinds, list)
+            or not kinds
+            or any(not isinstance(value, str) for value in kinds)
+        ):
+            raise ControlHttpError("required_kinds must be a non-empty array of strings")
+        try:
+            required_kinds = tuple(EvidenceKind(value) for value in kinds)
+        except ValueError as error:
+            raise ControlHttpError("required_kinds contains an unknown evidence kind") from error
+        return provider.record_review(
+            route.target_id,
+            idempotency_key=idempotency_key,
+            review_id=_text(values, "review_id"),
+            author_id=_text(values, "author_id"),
+            requested_at=requested_at,
+            request_changes=_optional_text(values, "request_changes"),
+            required_kinds=required_kinds,
         )
 
     raise ControlHttpError("unsupported control operation")

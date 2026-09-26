@@ -63,6 +63,17 @@ class StubControl:
         )
 
 
+    def record_review(self, change_set_id: str, **kwargs: object) -> ControlResult:
+        self.calls.append(("review", change_set_id, dict(kwargs)))
+        return ControlResult(
+            "record_review",
+            change_set_id,
+            str(kwargs["idempotency_key"]),
+            False,
+            {"decision": {"id": kwargs["review_id"], "author_id": kwargs["author_id"]}},
+        )
+
+
 def start_server(
     *,
     control: StubControl | None = None,
@@ -288,5 +299,56 @@ def test_handoff_route_uses_separate_write_token_from_read_token() -> None:
             body = json.loads(response.read())
         assert body["control"]["result"]["id"] == "handoff-a"
         assert control.calls[0][0:2] == ("handoff", "chg-a")
+    finally:
+        stop(server, thread)
+
+
+def test_review_route_needs_the_review_capability_and_dispatches_strict_payload() -> None:
+    from weftmark.domain.evidence import EvidenceKind
+
+    control = StubControl()
+    payload = {
+        "review_id": "review-a",
+        "author_id": "ada@example.com",
+        "request_changes": "Please add a test.",
+        "required_kinds": ["test", "ci"],
+    }
+    server, thread, base = start_server(
+        control=control,
+        write_token="write-secret",
+        capabilities=frozenset({ControlCapability.HANDOFF}),
+    )
+    try:
+        with pytest.raises(HTTPError) as exc:
+            post(f"{base}/v0/control/changes/chg-a/reviews", payload, token="write-secret")
+        assert exc.value.code == 403
+        assert error_json(exc.value)["capability"] == "review"
+    finally:
+        stop(server, thread)
+
+    server, thread, base = start_server(
+        control=control,
+        write_token="write-secret",
+        capabilities=frozenset({ControlCapability.REVIEW}),
+    )
+    try:
+        with post(f"{base}/v0/control/changes/chg-a/reviews", payload, token="write-secret") as response:
+            body = json.loads(response.read())
+        assert body["control"]["result"]["decision"]["author_id"] == "ada@example.com"
+        kind, target, kwargs = control.calls[-1]
+        assert (kind, target) == ("review", "chg-a")
+        assert kwargs["request_changes"] == "Please add a test."
+        assert kwargs["required_kinds"] == (EvidenceKind.TEST, EvidenceKind.CI)
+
+        for bad in (
+            {**payload, "outcome": "ready"},
+            {**payload, "required_kinds": ["not-a-kind"]},
+            {**payload, "required_kinds": []},
+            {"review_id": "review-b"},
+        ):
+            with pytest.raises(HTTPError) as exc:
+                post(f"{base}/v0/control/changes/chg-a/reviews", bad, token="write-secret", idempotency_key="k-bad")
+            assert exc.value.code == 400
+        assert len(control.calls) == 1, "invalid reviews never reach the provider"
     finally:
         stop(server, thread)

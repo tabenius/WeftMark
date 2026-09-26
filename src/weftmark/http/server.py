@@ -23,7 +23,11 @@ from urllib.parse import unquote, urlsplit
 from weftmark.adapters.git_local import LocalGit, LocalGitError
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
 from weftmark.application.claims import ClaimConflict, ClaimService, ClaimServiceError
-from weftmark.application.control import ControlConflict, ControlServiceError
+from weftmark.application.control import (
+    ControlConflict,
+    ControlRejected,
+    ControlServiceError,
+)
 from weftmark.application.kanban_projection import (
     KANBAN_PROJECTION_SCHEMA,
     KanbanProjection,
@@ -357,6 +361,9 @@ def make_handler(
                 return
             except LocalWorkflowError:
                 self._send_json(409, {"ok": False, "error": "handoff_rejected"})
+                return
+            except ControlRejected:
+                self._send_json(409, {"ok": False, "error": "review_rejected"})
                 return
             except (ControlHttpError, ControlServiceError):
                 self._send_json(400, {"ok": False, "error": "invalid_control_request"})
