@@ -83,6 +83,26 @@ cd WeftMark
 pip install .
 ```
 
+### Shell completion
+
+`weftmark completion <shell>` prints a completion script for the top-level
+subcommands (derived from the live parser, so it stays in sync). Set it up once:
+
+```bash
+# bash — add to ~/.bashrc:
+eval "$(weftmark completion bash)"
+# …or install system-wide:
+weftmark completion bash | sudo tee /etc/bash_completion.d/weftmark
+
+# fish:
+weftmark completion fish > ~/.config/fish/completions/weftmark.fish
+```
+
+Human-readable output (evidence state, review outcome) is colored only when
+writing to a terminal; it stays plain when piped or redirected, under `NO_COLOR`,
+or under `TERM=dumb`, so `--json` and scraped output are byte-clean (`FORCE_COLOR`
+forces it on).
+
 ## From Frog to WeftMark
 
 Frog remains a useful reference implementation and a source of hard-earned

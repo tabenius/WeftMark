@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from weftmark.cli.color import color_enabled, paint, status_styles
 from weftmark.adapters.acp import AcpProviderSpec, AcpRuntimeProxy
 from weftmark.adapters.git_local import LocalGit, LocalGitError
 from weftmark.adapters.frog import FrogImportError, read_frog_snapshot
@@ -186,6 +187,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("status", help="summarize current local workspace records")
     commands.add_parser("tui", help="open the interactive terminal reviewer")
+
+    completion = commands.add_parser(
+        "completion", help="print a shell completion script (bash or fish)"
+    )
+    completion.add_argument("shell", choices=("bash", "fish"))
 
     bundle = commands.add_parser("bundle", help="export and verify portable records")
     bundle_commands = bundle.add_subparsers(dest="bundle_command", required=True)
@@ -603,9 +609,53 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _top_level_commands(parser: argparse.ArgumentParser) -> list[str]:
+    """The top-level subcommand names, read from the live parser so a
+    completion script stays in sync as commands are added."""
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return sorted(action.choices)
+    return []
+
+
+def _completion_script(shell: str, commands: list[str]) -> str:
+    """A dependency-free completion script for ``weftmark`` covering the
+    top-level subcommands."""
+    cmds = " ".join(commands)
+    if shell == "bash":
+        return (
+            "# weftmark bash completion.\n"
+            '# Setup: eval "$(weftmark completion bash)"  (add to ~/.bashrc), or\n'
+            "#   weftmark completion bash | sudo tee /etc/bash_completion.d/weftmark\n"
+            "_weftmark_complete() {\n"
+            '    local cur="${COMP_WORDS[COMP_CWORD]}"\n'
+            '    if [ "$COMP_CWORD" -eq 1 ]; then\n'
+            f'        COMPREPLY=( $(compgen -W "{cmds}" -- "$cur") )\n'
+            "    fi\n"
+            "}\n"
+            "complete -F _weftmark_complete weftmark\n"
+        )
+    if shell == "fish":
+        lines = [
+            "# weftmark fish completion.",
+            "# Setup: weftmark completion fish > ~/.config/fish/completions/weftmark.fish",
+            "complete -c weftmark -f",
+        ]
+        lines += [
+            f"complete -c weftmark -n __fish_use_subcommand -a {cmd}"
+            for cmd in commands
+        ]
+        return "\n".join(lines) + "\n"
+    raise ValueError(f"unsupported shell: {shell}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # Handled before any repo/ledger setup: completion needs no workspace.
+    if args.command == "completion":
+        print(_completion_script(args.shell, _top_level_commands(parser)), end="")
+        return 0
     try:
         if args.command == "bundle" and args.bundle_command == "verify":
             verification = verification_to_payload(verify_bundle(read_bundle(args.path)))
@@ -1923,7 +1973,8 @@ def _emit_evidence(payload: dict[str, Any], *, json_output: bool) -> None:
     if json_output:
         print(json.dumps({"ok": payload["state"] == "passed", "evidence": payload}, sort_keys=True))
         return
-    print(f"{payload['id']}  {payload['kind']}  {payload['state']}")
+    state = paint(payload["state"], *status_styles(payload["state"]))
+    print(f"{payload['id']}  {payload['kind']}  {state}")
     print(f"  change set: {payload['subject']['id']}")
     print(f"  commit: {payload['bound_commit_sha']}")
     print(f"  duration: {payload['duration_seconds']:.3f}s")
@@ -1939,7 +1990,8 @@ def _emit_evidence_list(payloads: list[dict[str, Any]], *, json_output: bool) ->
         print("no evidence")
         return
     for payload in payloads:
-        print(f"{payload['id']}  {payload['kind']}  {payload['state']}  {payload['subject']['id']}")
+        state = paint(payload["state"], *status_styles(payload["state"]))
+        print(f"{payload['id']}  {payload['kind']}  {state}  {payload['subject']['id']}")
 
 
 def _emit_review(payload: dict[str, Any], *, json_output: bool) -> None:
@@ -1947,7 +1999,8 @@ def _emit_review(payload: dict[str, Any], *, json_output: bool) -> None:
         print(json.dumps({"ok": payload["is_releasable"], "review": payload}, sort_keys=True))
         return
     decision = payload["decision"]
-    print(f"{decision['id']}  {decision['outcome']}  {decision['head_sha']}")
+    outcome = paint(decision["outcome"], *status_styles(decision["outcome"]))
+    print(f"{decision['id']}  {outcome}  {decision['head_sha']}")
     for explanation in payload["explanations"]:
         print(f"  {explanation}")
 
@@ -1961,7 +2014,8 @@ def _emit_review_list(payloads: list[dict[str, Any]], *, json_output: bool) -> N
         return
     for payload in payloads:
         decision = payload["decision"]
-        print(f"{decision['id']}  {decision['outcome']}  {decision['change_set_id']}")
+        outcome = paint(decision["outcome"], *status_styles(decision["outcome"]))
+        print(f"{decision['id']}  {outcome}  {decision['change_set_id']}")
 
 
 def _emit_handoff(payload: dict[str, Any], *, json_output: bool) -> None:
