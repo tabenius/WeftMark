@@ -1976,6 +1976,12 @@ def _emit_evidence(payload: dict[str, Any], *, json_output: bool) -> None:
     state = paint(payload["state"], *status_styles(payload["state"]))
     print(f"{payload['id']}  {payload['kind']}  {state}")
     print(f"  change set: {payload['subject']['id']}")
+    producer = payload.get("producer") or {}
+    if producer.get("id"):
+        # The worker that recorded this proof — e.g. sylvae:run/<id> or
+        # opencode:session/<id>. WeftMark keeps the id opaque; a consumer
+        # resolves the namespace into a runtime link.
+        print(f"  producer: {producer.get('kind', '')}  {producer['id']}")
     print(f"  commit: {payload['bound_commit_sha']}")
     print(f"  duration: {payload['duration_seconds']:.3f}s")
     if payload["detail"]:
@@ -1991,7 +1997,11 @@ def _emit_evidence_list(payloads: list[dict[str, Any]], *, json_output: bool) ->
         return
     for payload in payloads:
         state = paint(payload["state"], *status_styles(payload["state"]))
-        print(f"{payload['id']}  {payload['kind']}  {state}  {payload['subject']['id']}")
+        producer_id = (payload.get("producer") or {}).get("id", "")
+        print(
+            f"{payload['id']}  {payload['kind']}  {state}  "
+            f"{payload['subject']['id']}  {producer_id}"
+        )
 
 
 def _emit_review(payload: dict[str, Any], *, json_output: bool) -> None:
