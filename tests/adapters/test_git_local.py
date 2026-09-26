@@ -199,3 +199,26 @@ def test_command_runner_rejects_mutating_subcommands(repository: Path) -> None:
 def test_timeout_must_be_positive(repository: Path) -> None:
     with pytest.raises(GitObservationError, match="positive"):
         LocalGit(repository, timeout_seconds=0)
+
+
+def test_repository_config_and_hooks_never_run_code(repository: Path) -> None:
+    """An agent that can write the worktree can write .git/config and .git/hooks.
+    `git status` would run core.fsmonitor; WeftMark must not run either."""
+    marker = repository.parent / "fsmonitor-ran"
+    script = repository.parent / "fsmonitor.sh"
+    script.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n", encoding="utf-8")
+    script.chmod(0o755)
+    run(repository, "config", "core.fsmonitor", str(script))
+    # Plain git does run it, so the test would notice if the guard went away.
+    run(repository, "status", "--porcelain")
+    assert marker.exists(), "fixture: plain `git status` should run core.fsmonitor"
+    marker.unlink()
+
+    adapter = LocalGit(repository)
+    write(repository, "new.txt", "untracked\n")
+    status = adapter.status()
+    adapter.head()
+    adapter.diff("HEAD", "HEAD")
+
+    assert "new.txt" in status.untracked_paths
+    assert not marker.exists()

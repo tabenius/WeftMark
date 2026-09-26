@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from weftmark.adapters.git_local import GIT_SAFETY_OPTIONS
 from weftmark.application.ports.git import GitChangeKind, GitObjectId
 from weftmark.application.ports.runtime import (
     RuntimeAdapterError,
@@ -378,7 +379,7 @@ class AcpRuntimeAdapter:
             )
         try:
             top_level = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
+                ["git", *GIT_SAFETY_OPTIONS, "rev-parse", "--show-toplevel"],
                 cwd=resolved,
                 check=True,
                 capture_output=True,
@@ -410,7 +411,7 @@ class AcpRuntimeAdapter:
         worktree_path = self._worktree_path(workspace, change_set_id)
         try:
             subprocess.run(
-                ["git", "worktree", "add", "--detach", worktree_path, base.value],
+                ["git", *GIT_SAFETY_OPTIONS, "worktree", "add", "--detach", worktree_path, base.value],
                 cwd=workspace.repo_path,
                 check=True,
                 capture_output=True,
@@ -437,7 +438,7 @@ class AcpRuntimeAdapter:
             return None
         try:
             ancestry = subprocess.run(
-                ["git", "merge-base", "--is-ancestor", base.value, "HEAD"],
+                ["git", *GIT_SAFETY_OPTIONS, "merge-base", "--is-ancestor", base.value, "HEAD"],
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
@@ -648,7 +649,7 @@ class AcpRuntimeAdapter:
             raise RuntimeContractError("only working_copy mode is supported in v0")
         try:
             result = subprocess.run(
-                ["git", "status", "--porcelain=v1", "-z"],
+                ["git", *GIT_SAFETY_OPTIONS, "status", "--porcelain=v1", "-z"],
                 cwd=change_workspace.worktree_path,
                 check=True,
                 capture_output=True,
@@ -696,7 +697,7 @@ class AcpRuntimeAdapter:
             )
         try:
             subprocess.run(
-                ["git", "worktree", "remove", "--force", change_workspace.worktree_path],
+                ["git", *GIT_SAFETY_OPTIONS, "worktree", "remove", "--force", change_workspace.worktree_path],
                 cwd=change_workspace.workspace_id,
                 check=True,
                 capture_output=True,
@@ -776,7 +777,7 @@ class AcpRuntimeAdapter:
                 )
             if require_base:
                 ancestry = subprocess.run(
-                    ["git", "merge-base", "--is-ancestor", value.base.value, "HEAD"],
+                    ["git", *GIT_SAFETY_OPTIONS, "merge-base", "--is-ancestor", value.base.value, "HEAD"],
                     cwd=expected,
                     capture_output=True,
                     text=True,
@@ -1156,7 +1157,7 @@ def _parse_porcelain(output: bytes) -> tuple[RuntimeFileChange, ...]:
 def _git_common_dir(path: str) -> Path:
     try:
         raw = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            ["git", *GIT_SAFETY_OPTIONS, "rev-parse", "--path-format=absolute", "--git-common-dir"],
             cwd=path,
             check=True,
             capture_output=True,
