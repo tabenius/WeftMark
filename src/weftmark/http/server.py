@@ -50,6 +50,7 @@ from weftmark.http.control import (
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_CONTROL_BODY_BYTES = 64 * 1024
+REQUEST_TIMEOUT_SECONDS = 30
 ProjectionProvider = Callable[[datetime], KanbanProjection]
 
 
@@ -136,6 +137,9 @@ def make_handler(
     class Handler(BaseHTTPRequestHandler):
         server_version = "WeftMarkHTTP/0"
         sys_version = ""
+        # A client that stops sending (headers or a declared body) is dropped
+        # instead of holding a thread forever.
+        timeout = REQUEST_TIMEOUT_SECONDS
 
         def _authorized(self, expected_token: str | None) -> bool:
             if expected_token is None:

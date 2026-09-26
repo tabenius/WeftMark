@@ -477,3 +477,17 @@ def test_symlink_and_traversal_escape_from_worktree_are_refused(tmp_path: Path) 
         assert unbound_err.value.code is RuntimeErrorCode.PERMISSION_DENIED
     finally:
         adapter.cleanup_change_workspace(change)
+
+
+def test_acp_git_calls_carry_the_git_safety_options() -> None:
+    """Every git invocation in the ACP adapter disables repository-configured
+    fsmonitor and hooks (e.g. post-checkout on `git worktree add`)."""
+    import inspect
+
+    from weftmark.adapters import acp
+    from weftmark.adapters.git_local import GIT_SAFETY_OPTIONS
+
+    source = inspect.getsource(acp)
+    assert source.count('["git", ') == source.count('["git", *GIT_SAFETY_OPTIONS, ')
+    assert source.count('["git", *GIT_SAFETY_OPTIONS, ') >= 7
+    assert GIT_SAFETY_OPTIONS == ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")

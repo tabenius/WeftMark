@@ -38,6 +38,17 @@ class GitObservationError(LocalGitError):
     """Raised when a read-only Git operation fails."""
 
 
+# Options for every Git call WeftMark makes. A repository's own config and
+# hooks are data it does not trust: an agent that can write the worktree can
+# write .git/config or .git/hooks, and `git status` runs core.fsmonitor while
+# `git worktree add` runs post-checkout. WeftMark needs neither.
+GIT_SAFETY_OPTIONS: tuple[str, ...] = (
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+)
+
 _READ_ONLY_SUBCOMMANDS = frozenset(
     {"diff", "for-each-ref", "merge-base", "rev-parse", "show", "status"}
 )
@@ -266,6 +277,7 @@ class LocalGit(GitPort):
             return subprocess.run(
                 (
                     "git",
+                    *GIT_SAFETY_OPTIONS,
                     "--no-pager",
                     "--no-optional-locks",
                     "-C",
