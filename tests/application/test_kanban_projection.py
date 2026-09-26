@@ -13,6 +13,7 @@ from weftmark.application.kanban_projection import (
 )
 from weftmark.application.status import (
     ChangeSetStatus,
+    ClaimRef,
     EvidenceRef,
     ScopeCollision,
     TaskChangeSetLink,
@@ -42,6 +43,7 @@ def status(
     latest_handoff_is_current: bool = False,
     scope_collisions: tuple[ScopeCollision, ...] = (),
     evidence_refs: tuple[EvidenceRef, ...] = (),
+    active_claims: tuple[ClaimRef, ...] = (),
 ) -> ChangeSetStatus:
     return ChangeSetStatus(
         id=id,
@@ -70,7 +72,47 @@ def status(
         latest_handoff_is_current=latest_handoff_is_current,
         scope_collisions=scope_collisions,
         evidence_refs=evidence_refs,
+        active_claims=active_claims,
     )
+
+
+def test_active_claim_runtime_identity_is_detail_only_and_additive() -> None:
+    value = status(
+        id="chg",
+        lifecycle_state="active",
+        active_claims=(
+            ClaimRef(
+                id="claim-chg",
+                agent_id="worker-1",
+                session_id="opencode:session/ses_abc123",
+            ),
+        ),
+    )
+    projection = project_workspace(
+        WorkspaceStatus(
+            generated_at=NOW,
+            change_sets=(value,),
+            active_claim_count=1,
+            expired_claim_count=0,
+            released_claim_count=0,
+        )
+    )
+    # The board projection stays lean: claims carry only the id list, no
+    # per-claim agent/session runtime identity.
+    lean = kanban_projection_to_payload(projection)
+    assert lean["cards"][0]["claims"] == {"active_ids": ["claim-chg"]}
+    # The detail projection adds the runtime identity, additively.
+    detailed = kanban_projection_to_payload(projection, include_claim_refs=True)
+    assert detailed["cards"][0]["claims"] == {
+        "active_ids": ["claim-chg"],
+        "active": [
+            {
+                "id": "claim-chg",
+                "agent": "worker-1",
+                "session": "opencode:session/ses_abc123",
+            }
+        ],
+    }
 
 
 def test_evidence_runtime_refs_are_detail_only_and_additive() -> None:
