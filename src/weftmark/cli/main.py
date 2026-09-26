@@ -167,6 +167,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=".", help="path inside the Git repository")
     parser.add_argument("--ledger", help="override the local JSONL ledger path")
     parser.add_argument("--json", action="store_true", help="emit structured JSON")
+    # Attribution for evidence this invocation records. The id is an opaque
+    # string kept verbatim in the ledger; an external worker names itself here
+    # (e.g. a Sylvae run passes "sylvae:run/<id>", an OpenCode session
+    # "opencode:session/<id>"). Defaults preserve the plain CLI producer.
+    parser.add_argument(
+        "--producer-id",
+        default="weftmark-cli",
+        help="attribute recorded evidence to this producer id (opaque)",
+    )
+    parser.add_argument(
+        "--producer-kind",
+        choices=tuple(kind.value for kind in ProducerKind),
+        default=ProducerKind.WORKER.value,
+        help="producer kind for recorded evidence (default: worker)",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("status", help="summarize current local workspace records")
@@ -616,7 +631,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         workflow = LocalWorkflowService(
             workspace,
             ledger,
-            EvidenceProducer(ProducerKind.WORKER, "weftmark-cli"),
+            EvidenceProducer(ProducerKind(args.producer_kind), args.producer_id),
         )
         lifecycle = LifecycleService(workspace, workflow)
         bundles = BundleService(workspace, claims, workflow)

@@ -110,7 +110,16 @@ def test_workspace_and_single_card_routes_share_projection() -> None:
         assert workspace["schema"] == "weftmark.kanban-projection.v0"
         assert workspace["authority"]["projection"] == "read_only"
         assert workspace["cards"][0]["id"] == "chg-1"
-        assert single["card"] == workspace["cards"][0]
+        # The single-Change-Set detail is the board card plus the additive,
+        # detail-only `evidence_refs` (worker/agent runtime identity), which the
+        # board projection omits to stay lean.
+        assert "evidence_refs" not in workspace["cards"][0]
+        assert "evidence_refs" in single["card"]
+        assert {
+            key: value
+            for key, value in single["card"].items()
+            if key != "evidence_refs"
+        } == workspace["cards"][0]
         assert task["card"] == workspace["plan_cards"][0]
         assert provider.calls == 3
     finally:
