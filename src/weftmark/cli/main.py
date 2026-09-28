@@ -18,6 +18,7 @@ from weftmark.adapters.bundle_file import (
     write_bundle,
 )
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
+from weftmark.adapters.nostoi import NostoiVerifierError, verify_ledger as verify_with_nostoi
 from weftmark.adapters.weft_plan import WeftPlanAdapter, WeftPlanError
 from weftmark.application.change_binding import ChangeBindingError
 from weftmark.application.bundle import (
@@ -205,6 +206,15 @@ def build_parser() -> argparse.ArgumentParser:
     bundle_commands.add_parser("list", help="list imported external bundles")
     bundle_show = bundle_commands.add_parser("show", help="show an imported bundle")
     bundle_show.add_argument("digest")
+
+    ledger_commands = commands.add_parser("ledger", help="inspect durable ledger files")
+    ledger_subcommands = ledger_commands.add_subparsers(
+        dest="ledger_command", required=True
+    )
+    ledger_verify = ledger_subcommands.add_parser(
+        "verify", help="verify the local ledger with Nostoi"
+    )
+    ledger_verify.add_argument("path", help="path to ledger.jsonl")
 
     task = commands.add_parser("task", help="manage native local task intent")
     task_commands = task.add_subparsers(dest="task_command", required=True)
@@ -611,6 +621,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             verification = verification_to_payload(verify_bundle(read_bundle(args.path)))
             _emit_bundle_verification(verification, json_output=args.json)
             return 0
+        if args.command == "ledger" and args.ledger_command == "verify":
+            report = verify_with_nostoi(args.path)
+            payload = {"ok": report["ok"], "nostoi": report}
+            if args.json:
+                print(json.dumps(payload, sort_keys=True))
+            else:
+                status = "verified" if report["ok"] else "INVALID"
+                print(
+                    f"{status}: {report.get('format', 'unknown format')} "
+                    f"{report.get('verified', 0)} record(s) in {report.get('path', args.path)}"
+                )
+                if report.get("problem"):
+                    print(f"  first problem: {report['problem']}")
+            return 0 if report["ok"] else EXIT_LEDGER
         if args.command == "tui":
             try:
                 from weftmark.tui.app import run_tui
@@ -1313,7 +1337,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             str(error), plan_drift_to_payload(error.drift), json_output=args.json
         )
         return EXIT_INVALID
-    except (JsonlLedgerError, LedgerServiceError) as error:
+    except (JsonlLedgerError, LedgerServiceError, NostoiVerifierError) as error:
         _emit_error(str(error), json_output=args.json)
         return EXIT_LEDGER
     except (

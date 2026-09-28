@@ -11,7 +11,7 @@ from weftmark.adapters.git_local import LocalGit
 from weftmark.adapters.jsonl_ledger import JsonlLedger
 from weftmark.application.evidence_runner import CommandEvidenceRequest, EvidenceRunnerError
 from weftmark.application.ledger import LedgerService
-from weftmark.application.local_workflow import LocalWorkflowService
+from weftmark.application.local_workflow import LocalWorkflowError, LocalWorkflowService
 from weftmark.application.workspace import WorkspaceService
 from weftmark.domain.evidence import EvidenceKind, EvidenceProducer, ProducerKind
 from weftmark.domain.review import ReviewOutcome
@@ -107,6 +107,45 @@ def test_command_evidence_refuses_dirty_tree_before_execution(tmp_path: Path) ->
             "chg-1", request, observed_at=NOW + timedelta(minutes=1)
         )
     assert not marker.exists()
+
+
+def test_command_intent_survives_runner_failure_and_prevents_blind_retry(
+    tmp_path: Path,
+) -> None:
+    _, ledger, flow = setup(tmp_path)
+    request = CommandEvidenceRequest(
+        id="ev-interrupted",
+        kind=EvidenceKind.TEST,
+        argv=(sys.executable, "-c", "pass"),
+        cwd=str(tmp_path / "repo"),
+    )
+
+    def crash(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("simulated process crash")
+
+    flow._runner.run = crash  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="simulated process crash"):
+        flow.run_evidence("chg-1", request, observed_at=NOW + timedelta(minutes=1))
+
+    intent = ledger.latest(kind="evidence.requested", entity_id=request.id)
+    assert intent is not None
+    assert intent.payload["argv_count"] == 3
+    assert "argv" not in intent.payload
+    assert ledger.latest(kind="evidence", entity_id=request.id) is None
+    with pytest.raises(LocalWorkflowError, match="requires reconciliation"):
+        flow.run_evidence("chg-1", request, observed_at=NOW + timedelta(minutes=2))
+
+
+def test_command_request_bounds_timeout_and_argument_volume() -> None:
+    with pytest.raises(EvidenceRunnerError, match="timeout_seconds"):
+        CommandEvidenceRequest(
+            id="ev-timeout", kind=EvidenceKind.TEST, argv=("true",), cwd=".",
+            timeout_seconds=901,
+        )
+    with pytest.raises(EvidenceRunnerError, match="argv exceeds"):
+        CommandEvidenceRequest(
+            id="ev-argv", kind=EvidenceKind.TEST, argv=("x" * 16_385,), cwd="."
+        )
 
 
 def test_review_composes_persists_and_lists_current_evidence(tmp_path: Path) -> None:

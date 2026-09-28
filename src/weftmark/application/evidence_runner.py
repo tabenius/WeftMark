@@ -56,17 +56,30 @@ class CommandEvidenceRequest:
     def __post_init__(self) -> None:
         if not self.id or not self.id.strip():
             raise EvidenceRunnerError("evidence id must not be empty")
+        if len(self.id.encode("utf-8")) > 128:
+            raise EvidenceRunnerError("evidence id exceeds the 128-byte limit")
         if not self.argv or any(not argument or "\x00" in argument for argument in self.argv):
             raise EvidenceRunnerError("argv must contain non-empty, NUL-free arguments")
+        if len(self.argv) > 128 or sum(len(value.encode("utf-8")) for value in self.argv) > 16_384:
+            raise EvidenceRunnerError("argv exceeds the evidence request size limit")
         if not self.cwd or not self.cwd.strip():
             raise EvidenceRunnerError("cwd must not be empty")
-        if self.timeout_seconds <= 0:
-            raise EvidenceRunnerError("timeout_seconds must be positive")
+        if len(self.cwd.encode("utf-8")) > 4096:
+            raise EvidenceRunnerError("cwd exceeds the 4096-byte limit")
+        if not 0 < self.timeout_seconds <= 900:
+            raise EvidenceRunnerError(
+                "timeout_seconds must be positive and at most 900 seconds"
+            )
         if any(index < 0 or index >= len(self.argv) for index in self.redact_argv_indexes):
             raise EvidenceRunnerError("redacted argv index is out of range")
         keys = tuple(key for key, _ in self.environment)
         if len(set(keys)) != len(keys):
             raise EvidenceRunnerError("environment contains duplicate keys")
+        if len(keys) > 128 or sum(
+            len(key.encode("utf-8")) + len(value.encode("utf-8"))
+            for key, value in self.environment
+        ) > 32_768:
+            raise EvidenceRunnerError("environment exceeds the evidence request size limit")
         if any(
             not key or "=" in key or "\x00" in key or "\x00" in value
             for key, value in self.environment
