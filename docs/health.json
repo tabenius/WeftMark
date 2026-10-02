@@ -1,0 +1,24 @@
+{
+  "schema": "ragbaz.health-contract.v1",
+  "component": "weftmark",
+  "methods": [
+    {
+      "id": "read-server-liveness",
+      "transport": "http",
+      "method": "GET",
+      "path": "/healthz",
+      "expected_status": 200,
+      "expected_json": {"ok": true, "service": "weftmark-kanban-read"},
+      "authentication": "none at loopback backend; gateway authentication when proxied",
+      "timeout_seconds": 2,
+      "meaning": "Read server answers; does not verify ledger integrity, claims, evidence or review readiness."
+    },
+    {
+      "id": "ledger-integrity",
+      "transport": "argv",
+      "argv": ["weftmark", "--json", "ledger", "verify", "LEDGER"],
+      "requires": ["nostoi", "configured readable ledger"],
+      "meaning": "Explicit chain integrity check, not a liveness ping or verified human signature."
+    }
+  ]
+}

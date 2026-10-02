@@ -168,9 +168,11 @@ def test_repository_source_plan_is_importable() -> None:
 
     snapshot = WeftPlanAdapter(repository).load()
 
-    assert len(snapshot.files) == 12
+    assert {file.path for file in snapshot.files} == {
+        str(path.relative_to(repository)) for path in (repository / "tasks").glob("*.weft.yml")
+    }
     assert len(snapshot.tasks) >= 73
-    assert {"source-plan-native-import-core", "source-plan-native-import"} <= {
+    assert {"source-plan-native-import-core", "source-plan-native-import", "runtime-observability-surfaces"} <= {
         task.slug for task in snapshot.tasks
     }
 

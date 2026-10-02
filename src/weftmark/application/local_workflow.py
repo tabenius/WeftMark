@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Mapping
 
 from weftmark.application.evidence_runner import (
@@ -82,14 +85,39 @@ class LocalWorkflowService:
     ) -> CommandEvidenceResult:
         if self._ledger.latest(kind="evidence", entity_id=request.id) is not None:
             raise LocalWorkflowError(f"Evidence already exists: {request.id}")
+        if self._ledger.latest(kind="evidence.requested", entity_id=request.id) is not None:
+            raise LocalWorkflowError(
+                f"Evidence request has no outcome and requires reconciliation: {request.id}"
+            )
         binding = self._workspace.refresh_change_set(
             change_set_id, observed_at=observed_at
         )
+        intent = self._ledger.record(
+            kind="evidence.requested",
+            entity_id=request.id,
+            payload={
+                "change_set_id": change_set_id,
+                "argv_sha256": hashlib.sha256(
+                    json.dumps(request.argv, separators=(",", ":")).encode("utf-8")
+                ).hexdigest(),
+                "argv_count": len(request.argv),
+                "cwd_sha256": hashlib.sha256(
+                    str(Path(request.cwd).resolve()).encode("utf-8")
+                ).hexdigest(),
+                "timeout_seconds": request.timeout_seconds,
+            },
+            recorded_at=observed_at,
+        )
         result = self._runner.run(binding, request)
+        payload = evidence_result_to_payload(result)
+        payload["intent"] = {
+            "sequence": intent.sequence,
+            "digest": intent.digest,
+        }
         self._ledger.record(
             kind="evidence",
             entity_id=request.id,
-            payload=evidence_result_to_payload(result),
+            payload=payload,
             recorded_at=result.evidence.updated_at,
         )
         return result
