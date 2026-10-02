@@ -49,4 +49,37 @@ def verify_ledger(
     if not isinstance(report, dict) or not isinstance(report.get("ok"), bool):
         raise NostoiVerifierError("Nostoi returned an incomplete verification report")
     report["exit_code"] = result.returncode
+    # A contradictory success payload must not override a failing verifier.
+    report["ok"] = report["ok"] and result.returncode == 0
     return report
+
+
+def attestation_command(
+    path: str, *, principal: str, key: str | None = None,
+    allowed_signers: str | None = None, fingerprint: str | None = None,
+    json_output: bool = False,
+) -> int:
+    """An explicit human CLI step; inherit the terminal for agent/key prompts.
+
+    Never called by a service, TUI refresh, or evidence runner. Verification
+    requires a fingerprint pin rather than treating a sidecar as verified.
+    """
+    binary = os.environ.get("WEFTMARK_NOSTOI") or shutil.which("nostoi")
+    if not binary:
+        raise NostoiVerifierError("Nostoi CLI not found; install it or set WEFTMARK_NOSTOI")
+    if key is not None:
+        argv = [binary, "attest", str(Path(path).expanduser().resolve()),
+                "--format", "weftmark-ledger-v1", "--key", str(Path(key).expanduser()),
+                "--principal", principal]
+    else:
+        if not allowed_signers or not fingerprint:
+            raise NostoiVerifierError("attestation verification requires allowed signers and a fingerprint pin")
+        argv = [binary, "verify-attestation", str(Path(path).expanduser().resolve()),
+                "--allowed-signers", str(Path(allowed_signers).expanduser()),
+                "--principal", principal, "--fingerprint", fingerprint]
+    if json_output:
+        argv.append("--json")
+    try:
+        return subprocess.run(argv, check=False).returncode
+    except OSError as error:
+        raise NostoiVerifierError("Nostoi attestation command unavailable") from error

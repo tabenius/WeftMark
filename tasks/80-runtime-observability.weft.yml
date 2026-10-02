@@ -1,0 +1,53 @@
+format: weft-task-v0
+phase: runtime-observability
+summary: Optional runtime observations and deliberate human attestation alongside native evidence.
+
+tasks:
+  - slug: runtime-observability-surfaces
+    title: Runtime observability and attestation surfaces
+    status: in_progress
+    priority: P1
+    depends:
+      - terminal-review-ui
+      - local-command-evidence
+    purpose: Expose current fleet observations without making optional governance a native evidence prerequisite.
+    scope:
+      files:
+        - src/weftmark/adapters/runtime_status.py
+        - src/weftmark/adapters/nostoi.py
+        - src/weftmark/cli/main.py
+        - src/weftmark/http/server.py
+        - src/weftmark/tui/screens.py
+        - tests/adapters/test_runtime_status.py
+        - tests/adapters/test_weft_plan.py
+        - tests/adapters/test_nostoi.py
+        - docs/contracts/runtime-status-v1.md
+        - docs/health.json
+        - tasks/80-runtime-observability.weft.yml
+      contracts:
+        - contract:runtime-status-v1
+        - contract:nostoi-attestation-v1
+        - contract:health-contract-v1
+        - surface:tui-review-v0
+        - boundary:optional-governance
+    deliverables:
+      - Optional bounded Minotaur status adapter shared by CLI, HTTP and terminal review.
+      - Explicit human Nostoi signing and pinned verification CLI wrappers.
+    accept:
+      - Missing and stale runtime observations remain visible without blocking native workflows.
+      - Runtime information exposes component state, health, URLs and control instructions.
+      - Human signatures remain separate from passing evidence and independent review.
+    negative:
+      - Refresh cannot mutate a service, sign a chain or grant review authority.
+      - A verifier failure cannot be overridden by an ok JSON payload.
+      - Optional Ephor absence is not a failed baseline service.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_runtime_status.py tests/adapters/test_nostoi.py tests/cli tests/http tests/tui
+      - kind: review
+        required: true
+        criterion: Review runtime freshness, native-versus-governed HITL and human signing boundaries across the Minotaur, Sylvae and Rebekah adapters.
+    notes:
+      - Cross-repository contract owners are Minotaur for host status, Nostoi for attestation and Rebekah for web and Dash projection.
+      - Source work is not clean-head evidence until committed and recorded explicitly; independent review and deployment remain separate gates.

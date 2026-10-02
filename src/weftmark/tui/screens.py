@@ -11,6 +11,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 from weftmark.application.status import ChangeSetStatus
 from weftmark.tui.data import TuiError
 from weftmark.tui.formatting import detail_text, evidence_summary, sort_statuses
+from weftmark.adapters.runtime_status import runtime_text
 
 
 class ChangeSetListScreen(Screen):
@@ -19,6 +20,7 @@ class ChangeSetListScreen(Screen):
         Binding("k", "cursor_up", "Up", show=False),
         Binding("l", "select", "Open", show=True),
         Binding("r", "refresh", "Refresh", show=True),
+        Binding("s", "system", "System / signing", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -76,6 +78,9 @@ class ChangeSetListScreen(Screen):
     def action_quit(self) -> None:
         self.app.exit()
 
+    def action_system(self) -> None:
+        self.app.push_screen(RuntimeScreen())
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         status = self._by_id.get(str(event.row_key.value))
         if status is None:
@@ -88,6 +93,7 @@ class ChangeSetDetailScreen(Screen):
     BINDINGS = [
         Binding("h", "back", "Back", show=True),
         Binding("escape", "back", "Back", show=False),
+        Binding("s", "system", "System / signing", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -99,6 +105,41 @@ class ChangeSetDetailScreen(Screen):
         yield Header()
         yield VerticalScroll(Static(detail_text(self._status), id="detail"))
         yield Footer()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_system(self) -> None:
+        self.app.push_screen(RuntimeScreen())
+
+    def action_quit(self) -> None:
+        self.app.exit()
+
+
+class RuntimeScreen(Screen):
+    """Read-only snapshot and human signing instructions, no service mutation."""
+    BINDINGS = [Binding("r", "refresh", "Refresh"), Binding("h,escape", "back", "Back"),
+                Binding("q", "quit", "Quit")]
+
+    @staticmethod
+    def text() -> str:
+        return runtime_text() + (
+            "\n\nEvidence: weftmark evidence run CHANGE_SET --kind test --command COMMAND\n"
+            "Sylvae: use --producer-id sylvae:run/<id> and sylvae run --run-id <id>.\n"
+            "HITL: native review is available without Ephor; governed holds need Ephor + Dash.\n"
+            "Sign deliberately from a terminal: weftmark ledger attest LEDGER --principal YOU\n"
+            "Check: weftmark ledger verify-attestation LEDGER --principal YOU "
+            "--allowed-signers FILE --fingerprint SHA256:PIN\n"
+            "Sidecars are not verified merely because they exist. A signature is not test or review evidence."
+        )
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield VerticalScroll(Static(self.text(), id="runtime", markup=False))
+        yield Footer()
+
+    def action_refresh(self) -> None:
+        self.query_one("#runtime", Static).update(self.text())
 
     def action_back(self) -> None:
         self.app.pop_screen()

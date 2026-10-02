@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from weftmark.adapters.nostoi import NostoiVerifierError, verify_ledger
+from weftmark.adapters.nostoi import attestation_command
 
 
 def test_verifies_explicit_weftmark_format_with_nostoi(tmp_path: Path) -> None:
@@ -54,3 +55,24 @@ def test_times_out_without_disclosing_process_output(tmp_path: Path) -> None:
 
     with pytest.raises(NostoiVerifierError, match="TimeoutExpired"):
         verify_ledger(tmp_path / "ledger.jsonl", executable="nostoi", run=run)
+
+
+def test_failing_verifier_cannot_claim_success(tmp_path):
+    def run(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 1, '{"ok":true}', "")
+    assert verify_ledger(tmp_path / "ledger", executable="nostoi", run=run)["ok"] is False
+
+
+def test_attestation_verification_preserves_failure_and_requires_pin(monkeypatch, tmp_path):
+    monkeypatch.setenv("WEFTMARK_NOSTOI", "nostoi")
+    calls = []
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 1)
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(NostoiVerifierError, match="fingerprint"):
+        attestation_command(str(tmp_path / "ledger"), principal="alice", allowed_signers="signers")
+    assert not calls
+    assert attestation_command(str(tmp_path / "ledger"), principal="alice", allowed_signers="signers", fingerprint="SHA256:pin") == 1
+    assert calls[0][0][-2:] == ["--fingerprint", "SHA256:pin"]
+    assert "capture_output" not in calls[0][1]  # human terminal retained

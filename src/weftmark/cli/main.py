@@ -19,6 +19,8 @@ from weftmark.adapters.bundle_file import (
 )
 from weftmark.adapters.jsonl_ledger import JsonlLedger, JsonlLedgerError
 from weftmark.adapters.nostoi import NostoiVerifierError, verify_ledger as verify_with_nostoi
+from weftmark.adapters.nostoi import attestation_command
+from weftmark.adapters.runtime_status import load_runtime_status
 from weftmark.adapters.weft_plan import WeftPlanAdapter, WeftPlanError
 from weftmark.application.change_binding import ChangeBindingError
 from weftmark.application.bundle import (
@@ -215,6 +217,17 @@ def build_parser() -> argparse.ArgumentParser:
         "verify", help="verify the local ledger with Nostoi"
     )
     ledger_verify.add_argument("path", help="path to ledger.jsonl")
+    ledger_attest = ledger_subcommands.add_parser("attest", help="Human-only Nostoi attestation of a ledger head")
+    ledger_attest.add_argument("path")
+    ledger_attest.add_argument("--principal", required=True)
+    ledger_attest.add_argument("--key", default="~/.ssh/id_ed25519")
+    ledger_check = ledger_subcommands.add_parser("verify-attestation", help="Verify a signature with a pinned key")
+    ledger_check.add_argument("path")
+    ledger_check.add_argument("--principal", required=True)
+    ledger_check.add_argument("--allowed-signers", required=True)
+    ledger_check.add_argument("--fingerprint", required=True)
+    system = commands.add_parser("system", help="Optional runtime inventory, URLs and human workflows")
+    system.add_argument("--snapshot", help="Minotaur runtime snapshot (or RAGBAZ_RUNTIME_STATUS)")
 
     task = commands.add_parser("task", help="manage native local task intent")
     task_commands = task.add_subparsers(dest="task_command", required=True)
@@ -617,6 +630,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "system":
+            payload = load_runtime_status(args.snapshot)
+            print(json.dumps(payload, sort_keys=True) if args.json else "\n".join(payload["summary"]))
+            return 0
+        if args.command == "ledger" and args.ledger_command in ("attest", "verify-attestation"):
+            return attestation_command(
+                args.path, principal=args.principal, key=getattr(args, "key", None),
+                allowed_signers=getattr(args, "allowed_signers", None),
+                fingerprint=getattr(args, "fingerprint", None), json_output=args.json,
+            )
         if args.command == "bundle" and args.bundle_command == "verify":
             verification = verification_to_payload(verify_bundle(read_bundle(args.path)))
             _emit_bundle_verification(verification, json_output=args.json)
@@ -634,6 +657,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 if report.get("problem"):
                     print(f"  first problem: {report['problem']}")
+                attestation = report.get("attestation")
+                if isinstance(attestation, dict):
+                    if attestation.get("present"):
+                        print(f"  attestation: {attestation.get('principal', 'unknown')} "
+                              f"with key {attestation.get('fingerprint', 'unknown')} "
+                              f"at seq {attestation.get('seq', '?')}; signature unchecked")
+                        print("  names the reported head" if attestation.get("covers_head") else
+                              "  names a different position; verify-attestation checks prefix coverage")
+                    else:
+                        print("  no attestation; sign deliberately with weftmark ledger attest PATH --principal YOU")
             return 0 if report["ok"] else EXIT_LEDGER
         if args.command == "tui":
             try:

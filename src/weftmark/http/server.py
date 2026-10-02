@@ -238,6 +238,12 @@ def make_handler(
 
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
             path = urlsplit(self.path).path
+            if path == "/v0/system":
+                if self._refuse_if_unauthorized():
+                    return
+                from weftmark.adapters.runtime_status import load_runtime_status
+                self._send_json(200, load_runtime_status())
+                return
             if path == "/healthz":
                 self._send_json(
                     200,
