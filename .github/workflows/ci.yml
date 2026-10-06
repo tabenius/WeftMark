@@ -4,11 +4,16 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   validate-and-build:
+    timeout-minutes: 20
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
@@ -67,6 +72,7 @@ jobs:
           if-no-files-found: error
 
   publish-rev0:
+    timeout-minutes: 20
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate-and-build
     runs-on: self-hosted
