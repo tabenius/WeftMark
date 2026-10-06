@@ -22,12 +22,21 @@ jobs:
         run: python3 -m venv .venv && echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Ensure Pandoc is available
+        # This runner is self-hosted, and jobs execute with no-new-privileges set, so
+        # `sudo apt-get install` cannot work here — it fails with "sudo: The 'no new
+        # privileges' flag is set" and takes the whole job with it, which is how the
+        # docs build went red for a reason that had nothing to do with the code.
+        #
+        # A runner's toolchain is the runner operator's job. So pandoc is a documented
+        # prerequisite of this host, and this step checks it and says so plainly instead
+        # of attempting an install that cannot succeed. It is on the host as of
+        # 2026-10-05 (pandoc 3.10.2, apt from kali-rolling; see /root/SBOM-log.md).
         run: |
           if ! command -v pandoc >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y pandoc
-          else
-            echo "pandoc already installed: $(pandoc --version | head -1)"
+            echo "::error::pandoc is missing on this self-hosted runner. Install it on the runner host (apt install pandoc, or a pinned binary on PATH) rather than from the job: jobs run with no-new-privileges, so sudo cannot elevate here."
+            exit 1
           fi
+          echo "pandoc $(pandoc --version | head -1 | awk '{print $2}')" 
 
       - name: Install Python build dependencies
         run: python -m pip install --upgrade pip && pip install "uv==0.12.3" -r requirements-docs.txt -e '.[test]'
@@ -101,7 +110,8 @@ jobs:
         if: steps.snapshot.outputs.needed == 'true'
         run: |
           if ! command -v pandoc >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y pandoc
+            echo "::error::pandoc is missing on this self-hosted runner; see the note in validate-and-build."
+            exit 1
           fi
 
       - name: Install Python build dependencies
