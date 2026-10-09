@@ -83,6 +83,22 @@ cd WeftMark
 pip install .
 ```
 
+### Locked development environment
+
+The committed `uv.lock` records runtime dependencies and all optional extras.
+For the same test and documentation environment as CI (uv 0.12.19):
+
+```bash
+uv sync --locked --extra test --group docs
+uv run --locked --extra test --group docs python -m pytest
+uv lock --check
+```
+
+Update intentionally with `uv lock --upgrade`, review the lockfile diff, and
+commit it together with any manifest changes. Keep the `docs` dependency group
+compatible with `requirements-docs.txt`, which remains available to pip users.
+Ordinary `pip install .` does not consume this lockfile.
+
 ### Shell completion
 
 `weftmark completion <shell>` prints a completion script for the top-level
