@@ -19,7 +19,10 @@ is still your job; that part is exactly what you have just done.
 | `box0-genesis.pub.asc` | the signing key's public half |
 | `ragbaz-root.pub.asc` | the organisation root key's public half |
 
-You need `gpg` and a Python 3 interpreter. Nothing else, and no network access.
+You need `gpg`, Python 3, WeftMark's `scripts/verify-workspace.py`, and a trusted
+local copy of Nostoi's `contrib/python/nostoi.py`. Obtain the verifier before
+going offline; it is not embedded in this historical bundle. Verification then
+needs no network access. Run the following commands from this directory.
 
 ## Verify it in four steps
 
@@ -31,7 +34,8 @@ statement does not describe what you were given.
 ```bash
 export GNUPGHOME=$(mktemp -d); chmod 700 "$GNUPGHOME"
 gpg --batch --quiet --import ragbaz-root.pub.asc box0-genesis.pub.asc
-gpg --verify workspace.jsonl.attestation.sig workspace.jsonl.attestation.json
+gpg --batch --no-auto-key-retrieve --status-fd=1 \
+  --verify workspace.jsonl.attestation.sig workspace.jsonl.attestation.json
 ```
 
 Expect `Good signature from "RAGBAZ box genesis …"`.
@@ -44,20 +48,25 @@ fingerprint you obtained out of band. Check it against the one in step 2.
 ### 2. The fingerprint is the one you were given
 
 ```bash
-grep fingerprint workspace.jsonl.attestation.json
+export EXPECTED_FINGERPRINT=78171B4532F8EFFBDFA2958F4315AE31DCC658B1
+python3 ../scripts/verify-workspace.py . \
+  --expected-fingerprint "$EXPECTED_FINGERPRINT" \
+  --nostoi-python "${NOSTOI_PYTHON:-../../nostoi/contrib/python/nostoi.py}"
 ```
 
-Must be `78171B4532F8EFFBDFA2958F4315AE31DCC658B1`. If it is anything else, stop:
-you are verifying someone else's statement, or the file was substituted.
+Obtain the expected fingerprint independently; the value above is the original
+box-genesis identity. The verifier compares it with GPG's actual `VALIDSIG`
+signer (or primary-key fingerprint), not merely with the JSON's claimed identity.
+It also rejects a readable manifest that differs from the signed record body.
 
 ### 3. The organisation vouches for that key
 
 ```bash
-gpg --list-sigs --keyid-format long 78171B4532F8EFFBDFA2958F4315AE31DCC658B1
+gpg --check-sigs --keyid-format long "$EXPECTED_FINGERPRINT"
 ```
 
 Look for a non-self signature from `F85CEFBA8B8E1040` — the org root. It must read
-`sig`, **not `sig L`**: `sig L` is a local-only certification that would not travel
+`sig!`, a cryptographically checked certification, **not `sig L`**: `sig L` is a local-only certification that would not travel
 with the key, and its absence means this key was not vouched on your behalf.
 
 ### 4. The signature is bound to the chain, and the chain is unbroken
@@ -76,10 +85,13 @@ rec = json.loads(open("workspace.jsonl").readline())
 print("chain ok      :", n.verify("workspace.jsonl")["ok"])
 print("seq bound     :", rec["seq"] == att["seq"])
 print("digest bound  :", n.digest(rec) == att["digest"])
+manifest = json.load(open("manifest.json"))
+print("manifest bound:", n.canonical(manifest) == n.canonical(rec["body"]))
 EOF
 ```
 
-All three must be `True`. This is the step that matters most: it proves the
+All four must be `True`. The verifier in step 2 enforces these checks and exits
+nonzero on failure. This step proves the
 signature covers *this* manifest, and that the manifest has not been edited since.
 A valid signature over a document that does not match the chain proves nothing.
 

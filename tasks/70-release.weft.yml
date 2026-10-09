@@ -3,6 +3,34 @@ phase: release
 summary: Convert a useful internal control plane into an honestly described open-source alpha.
 
 tasks:
+  - slug: reconcile-attestation-pr-review
+    title: Resolve attestation verification and collection review findings
+    status: in_progress
+    priority: P1
+    depends: []
+    purpose: Make signer identity, readable-manifest binding and Git inspection fail closed.
+    scope:
+      files:
+        - scripts/attest-workspace.py
+        - scripts/verify-workspace.py
+        - attestations/VERIFY.md
+        - tests/test_workspace_attestation.py
+        - tasks/70-release.weft.yml
+      contracts:
+        - boundary:attestation-verification
+    deliverables:
+      - Verification using actual GPG signer status and readable-manifest binding.
+      - Explicit local Nostoi prerequisite and graceful missing-Podman handling.
+    accept:
+      - Historical bundle verifies with the independently pinned signer.
+    negative:
+      - A substituted signer or modified readable manifest is rejected.
+      - Failed Git inspection cannot produce clean true.
+    evidence:
+      - kind: test
+        required: true
+        command: uv run --locked --extra test pytest tests/test_workspace_attestation.py
+
   - slug: workspace-attestation-home
     title: Own the workspace collector and historical attestation bundle
     status: in_progress

@@ -2,8 +2,12 @@
 
 import hashlib
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +46,69 @@ def test_collector_uses_selected_workspace(monkeypatch, tmp_path):
     repo = tmp_path / "selected-repo"
     repo.mkdir()
     subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test", "-c",
+                    "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "fixture"],
+                   check=True, capture_output=True)
     monkeypatch.setattr(module, "ROOT", tmp_path)
     repos = module.collect_repos()
     assert [item["name"] for item in repos] == ["selected-repo"]
     assert repos[0]["path"] == "selected-repo"
+
+
+def collector():
+    spec = importlib.util.spec_from_file_location("workspace_attestation", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_uninspectable_git_repository_cannot_be_attested_clean(monkeypatch, tmp_path):
+    module = collector()
+    repo = tmp_path / "broken"
+    repo.mkdir()
+    (repo / ".git").write_text("gitdir: /nonexistent/workspace-attestation-test\n")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    with pytest.raises(subprocess.CalledProcessError):
+        module.collect_repos()
+
+
+def test_missing_podman_does_not_abort_collection(monkeypatch, tmp_path):
+    module = collector()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    def missing(*args):
+        raise FileNotFoundError("podman")
+    monkeypatch.setattr(module, "sh", missing)
+    assert module.collect_instance() == {}
+
+
+def verifier_fixture(monkeypatch, tmp_path, signer):
+    spec = importlib.util.spec_from_file_location("verify_workspace", ROOT / "scripts/verify-workspace.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for name in ("manifest.json", "workspace.jsonl", "workspace.jsonl.attestation.json"):
+        (tmp_path / name).write_bytes((ROOT / "attestations" / name).read_bytes())
+    status = f"[GNUPG:] VALIDSIG {signer} 2026-10-02 1790979519 0 4 0 22 8 00 {signer}\n"
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs:
+                        SimpleNamespace(stdout=status))
+    att = json.loads((tmp_path / "workspace.jsonl.attestation.json").read_text())
+    nostoi = SimpleNamespace(verify=lambda path: {"ok": True},
+                            digest=lambda record: att["digest"],
+                            canonical=lambda value: json.dumps(value, sort_keys=True))
+    return module, nostoi, att["fingerprint"]
+
+
+def test_substituted_signer_cannot_hide_behind_claimed_fingerprint(monkeypatch, tmp_path):
+    module, nostoi, expected = verifier_fixture(monkeypatch, tmp_path, "A" * 40)
+    with pytest.raises(ValueError, match="actual GPG signer"):
+        module.verify_bundle(tmp_path, expected, nostoi)
+
+
+def test_modified_readable_manifest_is_rejected(monkeypatch, tmp_path):
+    expected = "78171B4532F8EFFBDFA2958F4315AE31DCC658B1"
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path, expected)
+    module.verify_bundle(tmp_path, expected, nostoi)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    manifest["box"]["host"] = "substituted"
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="readable manifest"):
+        module.verify_bundle(tmp_path, expected, nostoi)

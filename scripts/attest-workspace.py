@@ -14,8 +14,8 @@ Chain of custody, and how a client checks each link:
   digest  --is the-->  record digest inside workspace.jsonl
   chain  --verifies with-->  nostoi, back to genesis
 
-Verification deliberately needs nothing but the files, gpg, and one pinned
-fingerprint. It never contacts a keyserver.
+Verification needs the bundle, gpg, Python, a locally available Nostoi reference
+implementation, and one out-of-band pinned fingerprint. It needs no keyserver.
 
 The record and its digest follow nostoi's own rules exactly, using its reference
 Python implementation, so a future `nostoi attest --driver gpg` is a swap rather
@@ -62,8 +62,10 @@ def gpg_fpr(keyid: str) -> str:
     raise SystemExit(f"no fingerprint for {keyid}")
 
 
-def git(*args: str, cwd: pathlib.Path | None = None) -> str:
+def git(*args: str, cwd: pathlib.Path | None = None, required: bool = True) -> str:
     p = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if required and p.returncode:
+        raise subprocess.CalledProcessError(p.returncode, p.args, p.stdout, p.stderr)
     return p.stdout.strip() if p.returncode == 0 else ""
 
 
@@ -88,7 +90,7 @@ def collect_repos() -> list[dict]:
         if not (d / ".git").exists() or not d.is_dir():
             continue
         head = git("rev-parse", "HEAD", cwd=d)
-        origin = git("remote", "get-url", "origin", cwd=d)
+        origin = git("remote", "get-url", "origin", cwd=d, required=False)
         branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=d)
         dirty = len([l for l in git("status", "--porcelain", cwd=d).splitlines() if l])
         key = registered.get(d.name)
@@ -134,7 +136,7 @@ def collect_instance() -> dict:
                 "image_id": (c.get("ImageID") or "").split(":")[-1] or None,
                 "status": c.get("Status"),
             }
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
         pass
     rb = ROOT / "rebekah"
     lock = rb / "flake.lock"
