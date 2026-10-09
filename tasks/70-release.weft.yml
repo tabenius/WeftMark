@@ -3,6 +3,32 @@ phase: release
 summary: Convert a useful internal control plane into an honestly described open-source alpha.
 
 tasks:
+  - slug: workspace-attestation-home
+    title: Own the workspace collector and historical attestation bundle
+    status: in_progress
+    priority: P1
+    depends: []
+    purpose: Give the existing collector and signed delivery a durable home in WeftMark.
+    scope:
+      files:
+        - scripts/attest-workspace.py
+        - attestations/**
+        - tests/test_workspace_attestation.py
+        - tasks/70-release.weft.yml
+      contracts: []
+    deliverables:
+      - Explicit workspace and output selection after relocating the collector.
+      - Historical signed bundle preserved byte for byte with ownership documented in Frog.
+    accept:
+      - Historical chain and detached signature still verify.
+      - Collector scans the selected workspace rather than the scripts directory.
+    negative:
+      - Existing historical bundles cannot be overwritten implicitly.
+    evidence:
+      - kind: test
+        required: true
+        command: uv run --locked --extra test pytest tests/test_workspace_attestation.py
+
   - slug: python-dependency-lock
     title: Lock runtime, test and documentation Python environments
     status: in_progress

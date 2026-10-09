@@ -1,0 +1,138 @@
+# Attestation: this workspace as a collection
+
+**What this is:** a signed, tamper-evident statement of exactly what was in this
+workspace at a moment in time — 15 git repositories at specific commits, plus what
+the box was running and which tools produced it.
+
+**What it is not:** a claim that the code is good, or a warranty. It says *this is
+what was there*, signed by a key whose owner vouches for it. Reviewing the content
+is still your job; that part is exactly what you have just done.
+
+## Files
+
+| file | what it is |
+|---|---|
+| `manifest.json` | the statement, human-readable. Its canonical form is what is hashed. |
+| `workspace.jsonl` | a `nostoi-v1` hash chain. Record 1 **is** the manifest. |
+| `workspace.jsonl.attestation.json` | what was signed: chain, format, seq, digest, and the pinned key fingerprint |
+| `workspace.jsonl.attestation.sig` | ASCII-armored detached OpenPGP signature over the attestation document |
+| `box0-genesis.pub.asc` | the signing key's public half |
+| `ragbaz-root.pub.asc` | the organisation root key's public half |
+
+You need `gpg` and a Python 3 interpreter. Nothing else, and no network access.
+
+## Verify it in four steps
+
+Each step is independent. Do them in order; a failure at any step means the
+statement does not describe what you were given.
+
+### 1. The signature is good, and it is the key you expect
+
+```bash
+export GNUPGHOME=$(mktemp -d); chmod 700 "$GNUPGHOME"
+gpg --batch --quiet --import ragbaz-root.pub.asc box0-genesis.pub.asc
+gpg --verify workspace.jsonl.attestation.sig workspace.jsonl.attestation.json
+```
+
+Expect `Good signature from "RAGBAZ box genesis …"`.
+
+**Expect the trust marker `[unknown]`, and do not be alarmed by it.** You have only
+the public keys and no trust database, so GPG cannot vouch for the identity. That
+is the point: you are not relying on GPG's web of trust, you are relying on a
+fingerprint you obtained out of band. Check it against the one in step 2.
+
+### 2. The fingerprint is the one you were given
+
+```bash
+grep fingerprint workspace.jsonl.attestation.json
+```
+
+Must be `78171B4532F8EFFBDFA2958F4315AE31DCC658B1`. If it is anything else, stop:
+you are verifying someone else's statement, or the file was substituted.
+
+### 3. The organisation vouches for that key
+
+```bash
+gpg --list-sigs --keyid-format long 78171B4532F8EFFBDFA2958F4315AE31DCC658B1
+```
+
+Look for a non-self signature from `F85CEFBA8B8E1040` — the org root. It must read
+`sig`, **not `sig L`**: `sig L` is a local-only certification that would not travel
+with the key, and its absence means this key was not vouched on your behalf.
+
+### 4. The signature is bound to the chain, and the chain is unbroken
+
+```bash
+export NOSTOI_PYTHON="${NOSTOI_PYTHON:-../../nostoi/contrib/python/nostoi.py}"
+python3 - <<'EOF'
+import importlib.util, json, os
+# the verifier is the reference implementation; fetch it from the project's
+# repository, or use the `nostoi` CLI: `nostoi verify workspace.jsonl`
+spec = importlib.util.spec_from_file_location("n", os.environ["NOSTOI_PYTHON"])
+n = importlib.util.module_from_spec(spec); spec.loader.exec_module(n)
+
+att = json.load(open("workspace.jsonl.attestation.json"))
+rec = json.loads(open("workspace.jsonl").readline())
+print("chain ok      :", n.verify("workspace.jsonl")["ok"])
+print("seq bound     :", rec["seq"] == att["seq"])
+print("digest bound  :", n.digest(rec) == att["digest"])
+EOF
+```
+
+All three must be `True`. This is the step that matters most: it proves the
+signature covers *this* manifest, and that the manifest has not been edited since.
+A valid signature over a document that does not match the chain proves nothing.
+
+## What the signature does and does not prove
+
+**Proves:** the manifest was signed by the holder of that private key; the manifest
+has not been altered since; the key is vouched for by the org root; the record is
+part of an unbroken chain back to genesis.
+
+**Does not prove:**
+
+- **Freshness.** `anchored_at` is `null`: this statement is **not anchored**. A
+  signature proves authorship, not time. Someone who compromised the key could
+  backdate a statement, and nothing here would reveal it. Anchoring is the
+  mechanism for that and it is not configured here.
+- **Quality.** Nothing here says the code is correct, safe or fit for purpose.
+- **Completeness of your copy.** It says what the attesting box held; it cannot say
+  that you were handed all of it. Compare against what you received.
+
+## Reading the manifest
+
+- `repos[]` — one entry per repository: `origin`, `branch`, `head` (full commit),
+  `dirty_files`, and `clean`. `clean: false` records the presence of uncommitted
+  work; the manifest does not hash or embed that work's contents.
+- `repo_key` — frog's identifier. `repo_key_portable: true` means it is derived
+  from the origin URL and means the same thing everywhere. **If it is false the
+  value is a hash of an absolute path on the attesting box and is meaningless to
+  you.** This is a known wart in the project's identity scheme, not a defect in
+  this manifest; it is marked rather than hidden.
+- `instance` — what the box was running at the time, including the running
+  container image and the SHA-256 of the runtime's `flake.lock`.
+- `tools` — versions of the tooling that produced the statement.
+
+## Re-running or re-scoping
+
+The collector is owned by WeftMark at `scripts/attest-workspace.py`. This
+directory contains the historical 2026-10-02 bundle; moving it did not change
+the signed document, chain, signature, or exported public keys. Its signed
+`chain` locator remains `attestations/workspace.jsonl`, relative to the WeftMark
+repository when inspecting this bundle. It is a historical snapshot, not a
+statement of the current checkout.
+
+From the WeftMark repository, produce a new dated bundle with:
+
+```bash
+python scripts/attest-workspace.py --workspace .. --output /path/to/delivery/attestations
+```
+
+The collector refuses an existing bundle unless `--replace` is explicit. It
+attests **every** git repository present. If you are delivering a subset, change
+the repository list before running it — a statement covering repositories outside
+the engagement is a liability rather than thoroughness.
+
+Each run starts a fresh chain, so `workspace.jsonl` holds the current statement
+only. For an ongoing engagement, append rather than replace: the record `kind` is
+`workspace.collection` and each record is a dated snapshot.

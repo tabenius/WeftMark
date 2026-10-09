@@ -1,0 +1,196 @@
+{
+  "v": 1,
+  "kind": "ragbaz.workspace-collection/1",
+  "generated_at": "2026-10-02T21:18:38Z",
+  "box": {
+    "box_id": "kali",
+    "host": "kali"
+  },
+  "engine": {
+    "canonicalisation": "json.dumps(sort_keys=True, separators=(',',':')), no floats, per nostoi",
+    "digest": "sha256",
+    "chain_format": "nostoi-v1"
+  },
+  "repos": [
+    {
+      "name": "BAZ.AI-Governance",
+      "path": "BAZ.AI-Governance",
+      "origin": "https://github.com/tabenius/BAZ.AI-Governance.git",
+      "branch": "main",
+      "head": "f5b63b75837d1fa639e8fb35c24dc6e05091d77e",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": "git:2104705a0ce448bd",
+      "repo_key_portable": true
+    },
+    {
+      "name": "DocBin",
+      "path": "DocBin",
+      "origin": "https://github.com/tabenius/DocBin.git",
+      "branch": "main",
+      "head": "18fc5f2e5f757478a36477a11a42d79a56fc3d6e",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": null,
+      "repo_key_portable": false
+    },
+    {
+      "name": "Mouseion",
+      "path": "Mouseion",
+      "origin": "https://github.com/tabenius/Mouseion.git",
+      "branch": "claude/namespaced-ids",
+      "head": "20b74a36bec98d3d757ef32b025e359aaa318817",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": null,
+      "repo_key_portable": false
+    },
+    {
+      "name": "design-system",
+      "path": "design-system",
+      "origin": null,
+      "branch": "main",
+      "head": "7e4381087ce52fc40dc7b43d53358d480eea8822",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": null,
+      "repo_key_portable": false
+    },
+    {
+      "name": "frog",
+      "path": "frog",
+      "origin": "https://github.com/tabenius/frog.git",
+      "branch": "store-vfs-abstraction",
+      "head": "e6ae787b40ed854693cc0a7b5c28c79cbf15f81e",
+      "dirty_files": 13,
+      "clean": false,
+      "repo_key": "path:482be4c68688a481",
+      "repo_key_portable": false
+    },
+    {
+      "name": "library",
+      "path": "library",
+      "origin": null,
+      "branch": "main",
+      "head": "ca2f1cebb301aa49b4f49ce841084ade559e9023",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": null,
+      "repo_key_portable": false
+    },
+    {
+      "name": "nostoi",
+      "path": "nostoi",
+      "origin": "https://github.com/tabenius/nostoi.git",
+      "branch": "main",
+      "head": "0a78c1aca564afcc7a98562273792d609d2f46e0",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": "path:a53791c2b9180184",
+      "repo_key_portable": false
+    },
+    {
+      "name": "ragbaz-dash",
+      "path": "ragbaz-dash",
+      "origin": "https://github.com/RAGBAZ/ragbaz-dash.git",
+      "branch": "main",
+      "head": "5465ddef3cc8348c7e6cc9c832d825e796a9c8b3",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": "git:e4275d464bca206b",
+      "repo_key_portable": true
+    },
+    {
+      "name": "ragbaz-mailstack",
+      "path": "ragbaz-mailstack",
+      "origin": "https://github.com/tabenius/ragbaz-mailstack.git",
+      "branch": "master",
+      "head": "067acab80c5c2160f5797c5222659f36247a3e96",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": "git:aab8e31667a26143",
+      "repo_key_portable": true
+    },
+    {
+      "name": "ragbaz-minotaur",
+      "path": "ragbaz-minotaur",
+      "origin": "https://github.com/tabenius/minotaur.git",
+      "branch": "main",
+      "head": "f0e82d754b623434727ccee7a26b65dfe62d3380",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": null,
+      "repo_key_portable": false
+    },
+    {
+      "name": "rebekah",
+      "path": "rebekah",
+      "origin": "https://github.com/tabenius/rebekah.git",
+      "branch": "main",
+      "head": "8f46deae5c0186b40e7d5120304b857db7a98331",
+      "dirty_files": 10,
+      "clean": false,
+      "repo_key": "git:69492471fa301a70",
+      "repo_key_portable": true
+    },
+    {
+      "name": "remote-android",
+      "path": "remote-android",
+      "origin": null,
+      "branch": null,
+      "head": null,
+      "dirty_files": 10,
+      "clean": false,
+      "repo_key": "path:690e8a789bd1aee2",
+      "repo_key_portable": false
+    },
+    {
+      "name": "school-scarcity-wireless-hacking",
+      "path": "school-scarcity-wireless-hacking",
+      "origin": "https://github.com/tabenius/scarcity-inspired-wireless-hacking.git",
+      "branch": "design-reader-settings",
+      "head": "39de539f96895475a705768afb1b55c637910e14",
+      "dirty_files": 18,
+      "clean": false,
+      "repo_key": null,
+      "repo_key_portable": false
+    },
+    {
+      "name": "sylvae",
+      "path": "sylvae",
+      "origin": "https://github.com/tabenius/sylvae.git",
+      "branch": "codex/nostoi-audit-first",
+      "head": "ee9af278f9ae8069a2481887289879b40aec11dd",
+      "dirty_files": 1,
+      "clean": false,
+      "repo_key": "git:d07feb04d8db651a",
+      "repo_key_portable": true
+    },
+    {
+      "name": "weftmark",
+      "path": "weftmark",
+      "origin": "https://github.com/tabenius/weftmark.git",
+      "branch": "codex/nostoi-audit-first",
+      "head": "bab7fb49cda1283b7b4e6fab7c66fbb8d9e72d8d",
+      "dirty_files": 0,
+      "clean": true,
+      "repo_key": "path:45c55b2246fb3f6e",
+      "repo_key_portable": false
+    }
+  ],
+  "instance": {
+    "rebekah_flake_lock_sha256": "8e73a437ef6062b344d110ae6233616bb6ebccaf481859670c889aa319ae317c"
+  },
+  "tools": {
+    "git": "git version 2.53.0",
+    "nix": "nix (Nix) 2.20.6",
+    "python": "3.14.7",
+    "syft": "Application:   syft",
+    "trivy": "Version: dev",
+    "podman": "podman version 5.8.6"
+  },
+  "notes": [
+    "path: repo_key values are box-local and are not portable; git: values are.",
+    "Signing keys are recorded in identities/keys.toml on the attesting box."
+  ]
+}
