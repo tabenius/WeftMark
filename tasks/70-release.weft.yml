@@ -5,7 +5,7 @@ summary: Convert a useful internal control plane into an honestly described open
 tasks:
   - slug: reconcile-attestation-pr-review
     title: Resolve attestation verification and collection review findings
-    status: in_progress
+    status: review
     priority: P1
     depends: []
     purpose: Make signer identity, readable-manifest binding and Git inspection fail closed.
@@ -33,7 +33,7 @@ tasks:
 
   - slug: workspace-attestation-home
     title: Own the workspace collector and historical attestation bundle
-    status: in_progress
+    status: review
     priority: P1
     depends: []
     purpose: Give the existing collector and signed delivery a durable home in WeftMark.
@@ -59,7 +59,7 @@ tasks:
 
   - slug: python-dependency-lock
     title: Lock runtime, test and documentation Python environments
-    status: in_progress
+    status: review
     priority: P1
     depends: []
     purpose: Make fresh checkouts and CI use a reviewed dependency resolution.
