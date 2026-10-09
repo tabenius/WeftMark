@@ -40,8 +40,9 @@ jobs:
 
       - name: Install Python build dependencies
         run: |
-          python -m pip install "uv==0.12.19"
-          uv sync --locked --extra test --group docs --python "$(command -v python)"
+          python -m pip install --target "$RUNNER_TEMP/weftmark-uv" "uv==0.12.19"
+          echo "$RUNNER_TEMP/weftmark-uv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/weftmark-uv/bin/uv" sync --locked --extra test --group docs --python "$(command -v python)"
 
       - name: Run runtime test suite
         run: python -m pytest
@@ -119,8 +120,9 @@ jobs:
       - name: Install Python build dependencies
         if: steps.snapshot.outputs.needed == 'true'
         run: |
-          python -m pip install "uv==0.12.19"
-          uv sync --locked --group docs --python "$(command -v python)"
+          python -m pip install --target "$RUNNER_TEMP/weftmark-uv" "uv==0.12.19"
+          echo "$RUNNER_TEMP/weftmark-uv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/weftmark-uv/bin/uv" sync --locked --group docs --python "$(command -v python)"
 
       - name: Build rev0 and raster assets
         if: steps.snapshot.outputs.needed == 'true'
