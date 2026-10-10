@@ -131,12 +131,16 @@ def collect_instance() -> dict:
     try:
         podman = json.loads(sh("podman", "ps", "--format", "json")) if sh("podman", "ps", "--format", "{{.Names}}") else []
         for c in podman:
-            inst[c["Names"]] = {
-                "image": c.get("Image"),
-                "image_id": (c.get("ImageID") or "").split(":")[-1] or None,
-                "status": c.get("Status"),
-            }
-    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
+            names = c["Names"]
+            for name in names if isinstance(names, list) else [names]:
+                inst[name] = {
+                    "image": c.get("Image"),
+                    "image_id": (c.get("ImageID") or "").split(":")[-1] or None,
+                    "status": c.get("Status"),
+                }
+    except FileNotFoundError:
+        # Absence is optional. A present but broken runtime must not silently
+        # become an assertion that no instances were running.
         pass
     rb = ROOT / "rebekah"
     lock = rb / "flake.lock"

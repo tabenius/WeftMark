@@ -81,6 +81,34 @@ def test_missing_podman_does_not_abort_collection(monkeypatch, tmp_path):
     assert module.collect_instance() == {}
 
 
+def test_failed_podman_inspection_is_not_an_empty_inventory(monkeypatch, tmp_path):
+    module = collector()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    def failed(*args):
+        raise subprocess.CalledProcessError(125, args, stderr="permission denied")
+    monkeypatch.setattr(module, "sh", failed)
+    with pytest.raises(subprocess.CalledProcessError):
+        module.collect_instance()
+
+
+def test_malformed_podman_inventory_is_not_an_empty_inventory(monkeypatch, tmp_path):
+    module = collector()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "sh", lambda *args: "not JSON")
+    with pytest.raises(json.JSONDecodeError):
+        module.collect_instance()
+
+
+def test_podman_name_lists_are_recorded(monkeypatch, tmp_path):
+    module = collector()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    payload = [{"Names": ["baz0"], "Image": "image", "ImageID": "sha256:abc", "Status": "Up"}]
+    monkeypatch.setattr(module, "sh", lambda *args: json.dumps(payload))
+    assert module.collect_instance() == {
+        "baz0": {"image": "image", "image_id": "abc", "status": "Up"},
+    }
+
+
 def verifier_fixture(monkeypatch, tmp_path, signer):
     spec = importlib.util.spec_from_file_location("verify_workspace", ROOT / "scripts/verify-workspace.py")
     module = importlib.util.module_from_spec(spec)
