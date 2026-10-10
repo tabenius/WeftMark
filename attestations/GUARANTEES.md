@@ -18,7 +18,7 @@ nothing about the others.
 | 2 | **Content integrity** | the document has not changed since signing | detached signature over the bytes | **yes** |
 | 3 | **Chain binding** | the signature covers *this* record, and the record is in an unbroken chain to genesis | digest recomputed and compared | **yes** |
 | 4 | **Identity pinning** | the key is the one whose fingerprint you obtained out of band | comparing a pinned fingerprint | **yes** |
-| 5 | **Delegation** | the key was vouched for by the organisation root | an exportable certification on the key | **yes** |
+| 5 | **Delegation** | the key was vouched for by the organisation root *you pinned out of band* | a `sig!` certification issued by the pinned root fingerprint | **yes** |
 | 6 | **Freshness** | the signature existed at or before a stated time | anchoring / transparency log / timestamp authority | **NO** |
 | 7 | **Revocation status** | the key was not revoked at signing time | a revocation checkpoint | **NO** |
 | 8 | **Delivery completeness** | you were handed everything the statement covers | out-of-band comparison | **NO** |

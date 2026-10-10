@@ -109,15 +109,56 @@ def test_podman_name_lists_are_recorded(monkeypatch, tmp_path):
     }
 
 
-def verifier_fixture(monkeypatch, tmp_path, signer):
-    spec = importlib.util.spec_from_file_location("verify_workspace", ROOT / "scripts/verify-workspace.py")
+SIGNER_FINGERPRINT = "78171B4532F8EFFBDFA2958F4315AE31DCC658B1"
+ROOT_FINGERPRINT = "866ECB8348C0FE48E479736AF85CEFBA8B8E1040"
+
+
+def stub_gpg(signer, root=ROOT_FINGERPRINT, root_present=True, root_certifies=True,
+             checked=True):
+    """A GPG that answers only what the verifier asks, in GPG's own shapes."""
+
+    def run(args, **kwargs):
+        argv = args[0] if isinstance(args[0], (list, tuple)) else args
+        argv = [str(a) for a in argv]
+        if "--import" in argv:
+            return SimpleNamespace(stdout="")
+        if "--check-sigs" in argv:
+            lines = [
+                "pub:-:255:22:%s:1790971148:::-:::scESC:::::ed25519:::0:"
+                % signer[-16:],
+                "fpr:::::::::%s:" % signer,
+                "sig:!::22:%s:1790971148::::self uid:13x::%s:::10:"
+                % (signer[-16:], signer),
+            ]
+            if root_certifies:
+                lines.append(
+                    "sig:%s::22:%s:1790971171::::RAGBAZ root <ragbaz@proton.me>:10x::%s:::10:"
+                    % ("!" if checked else "L", root[-16:], root))
+            return SimpleNamespace(stdout="\n".join(lines) + "\n")
+        if "--fingerprint" in argv:
+            if not root_present:
+                return SimpleNamespace(stdout="")
+            return SimpleNamespace(stdout=(
+                "pub:-:255:22:%s:1790971137:::-:::scESC:::::ed25519:::0:\n"
+                "fpr:::::::::%s:\n" % (root[-16:], root)))
+        status = ("[GNUPG:] VALIDSIG %s 2026-10-02 1790979519 0 4 0 22 8 00 %s\n"
+                  % (signer, signer))
+        return SimpleNamespace(stdout=status)
+
+    return run
+
+
+def verifier_fixture(monkeypatch, tmp_path, signer=SIGNER_FINGERPRINT, **gpg_options):
+    spec = importlib.util.spec_from_file_location("verify_workspace",
+                                                 ROOT / "scripts" / "verify-workspace.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    for name in ("manifest.json", "workspace.jsonl", "workspace.jsonl.attestation.json"):
+    names = ["manifest.json", "workspace.jsonl", "workspace.jsonl.attestation.json",
+             "ragbaz-root.pub.asc", "box0-genesis.pub.asc"]
+    for name in names:
         (tmp_path / name).write_bytes((ROOT / "attestations" / name).read_bytes())
-    status = f"[GNUPG:] VALIDSIG {signer} 2026-10-02 1790979519 0 4 0 22 8 00 {signer}\n"
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs:
-                        SimpleNamespace(stdout=status))
+    monkeypatch.setattr(module.subprocess, "run",
+                        stub_gpg(signer, **gpg_options))
     att = json.loads((tmp_path / "workspace.jsonl.attestation.json").read_text())
     nostoi = SimpleNamespace(verify=lambda path: {"ok": True},
                             digest=lambda record: att["digest"],
@@ -125,18 +166,74 @@ def verifier_fixture(monkeypatch, tmp_path, signer):
     return module, nostoi, att["fingerprint"]
 
 
+def verify(module, tmp_path, nostoi, root=ROOT_FINGERPRINT):
+    module.verify_bundle(tmp_path, SIGNER_FINGERPRINT, nostoi, root)
+
+
 def test_substituted_signer_cannot_hide_behind_claimed_fingerprint(monkeypatch, tmp_path):
     module, nostoi, expected = verifier_fixture(monkeypatch, tmp_path, "A" * 40)
     with pytest.raises(ValueError, match="actual GPG signer"):
-        module.verify_bundle(tmp_path, expected, nostoi)
+        verify(module, tmp_path, nostoi)
+
+
+def test_substituted_root_pubkey_cannot_vouch_for_the_signer(monkeypatch, tmp_path):
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path, root_present=False)
+    with pytest.raises(ValueError, match="supplied organisation root"):
+        verify(module, tmp_path, nostoi)
+
+
+def test_local_only_root_certification_is_not_delegation(monkeypatch, tmp_path):
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path, checked=False)
+    with pytest.raises(ValueError, match="did not certify"):
+        verify(module, tmp_path, nostoi)
+
+
+def test_absent_root_certification_is_not_delegation(monkeypatch, tmp_path):
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path, root_certifies=False)
+    with pytest.raises(ValueError, match="did not certify"):
+        verify(module, tmp_path, nostoi)
+
+
+def test_missing_public_key_file_is_rejected(monkeypatch, tmp_path):
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path)
+    (tmp_path / "ragbaz-root.pub.asc").unlink()
+    with pytest.raises(ValueError, match="public key file"):
+        verify(module, tmp_path, nostoi)
+
+
+def test_signed_sequence_is_selected_not_the_first_record(monkeypatch, tmp_path):
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path)
+    att = json.loads((tmp_path / "workspace.jsonl.attestation.json").read_text())
+    att["seq"] = 99
+    (tmp_path / "workspace.jsonl.attestation.json").write_text(json.dumps(att))
+    with pytest.raises(ValueError, match="signed sequence"):
+        verify(module, tmp_path, nostoi)
 
 
 def test_modified_readable_manifest_is_rejected(monkeypatch, tmp_path):
-    expected = "78171B4532F8EFFBDFA2958F4315AE31DCC658B1"
-    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path, expected)
-    module.verify_bundle(tmp_path, expected, nostoi)
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path)
+    verify(module, tmp_path, nostoi)
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     manifest["box"]["host"] = "substituted"
     (tmp_path / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="readable manifest"):
-        module.verify_bundle(tmp_path, expected, nostoi)
+        verify(module, tmp_path, nostoi)
+
+
+def test_later_appended_record_is_verified_against_the_signed_sequence(monkeypatch, tmp_path):
+    """A valid attestation over record 2 must not be checked against record 1."""
+    module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path)
+    import hashlib
+    body = json.loads((tmp_path / "manifest.json").read_text())
+    first = {"seq": 1, "body": body, "prev": None, "digest": "0" * 64}
+    second = {"seq": 2, "body": body, "prev": first["digest"], "digest": "1" * 64}
+    (tmp_path / "workspace.jsonl").write_text(
+        json.dumps(first) + "\n" + json.dumps(second) + "\n")
+    att = json.loads((tmp_path / "workspace.jsonl.attestation.json").read_text())
+    att["seq"] = 2
+    att["digest"] = second["digest"]
+    (tmp_path / "workspace.jsonl.attestation.json").write_text(json.dumps(att))
+    nostoi.digest = lambda record: {1: first["digest"], 2: second["digest"]}[record["seq"]]
+    # The manifest matches the signed record body, so only sequence selection
+    # distinguishes passing from failing here.
+    verify(module, tmp_path, nostoi)

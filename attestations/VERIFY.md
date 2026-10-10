@@ -19,10 +19,12 @@ is still your job; that part is exactly what you have just done.
 | `box0-genesis.pub.asc` | the signing key's public half |
 | `ragbaz-root.pub.asc` | the organisation root key's public half |
 
-You need `gpg`, Python 3, WeftMark's `scripts/verify-workspace.py`, and a trusted
-local copy of Nostoi's `contrib/python/nostoi.py`. Obtain the verifier before
-going offline; it is not embedded in this historical bundle. Verification then
-needs no network access. Run the following commands from this directory.
+You need `gpg`, Python 3, WeftMark's `scripts/verify-workspace.py`, a trusted
+local copy of Nostoi's `contrib/python/nostoi.py`, and two fingerprints obtained
+out of band: the box signer's and the organisation root's. Obtain the verifier
+before going offline; it is not embedded in this historical bundle.
+Verification then needs no network access. Run the following commands from this
+directory.
 
 ## Verify it in four steps
 
@@ -45,29 +47,40 @@ the public keys and no trust database, so GPG cannot vouch for the identity. Tha
 is the point: you are not relying on GPG's web of trust, you are relying on a
 fingerprint you obtained out of band. Check it against the one in step 2.
 
-### 2. The fingerprint is the one you were given
+### 2. The fingerprints are the ones you were given
 
 ```bash
 export EXPECTED_FINGERPRINT=78171B4532F8EFFBDFA2958F4315AE31DCC658B1
+export EXPECTED_ROOT_FINGERPRINT=866ECB8348C0FE48E479736AF85CEFBA8B8E1040
 python3 ../scripts/verify-workspace.py . \
   --expected-fingerprint "$EXPECTED_FINGERPRINT" \
+  --expected-root-fingerprint "$EXPECTED_ROOT_FINGERPRINT" \
   --nostoi-python "${NOSTOI_PYTHON:-../../nostoi/contrib/python/nostoi.py}"
 ```
 
-Obtain the expected fingerprint independently; the value above is the original
-box-genesis identity. The verifier compares it with GPG's actual `VALIDSIG`
-signer (or primary-key fingerprint), not merely with the JSON's claimed identity.
-It also rejects a readable manifest that differs from the signed record body.
+Obtain both fingerprints independently; the values above are the original
+box-genesis and organisation-root identities. **The root is the point of this
+step.** A `sig!` proves that the supplied root file certified the box key, but
+on its own it says nothing about *whose* root file that is. Only the
+out-of-band root fingerprint turns `ragbaz-root.pub.asc` into a named root.
 
-### 3. The organisation vouches for that key
+The verifier compares the expected fingerprints with GPG's actual `VALIDSIG`
+signer (or primary-key fingerprint) and the keys present in its own isolated
+keyring, not merely with the JSON's claimed identity. It rejects a readable
+manifest that differs from the signed record body, and rejects a supplied root
+key that is not the pinned root.
+
+### 3. The root you pinned actually vouched for that key
 
 ```bash
-gpg --check-sigs --keyid-format long "$EXPECTED_FINGERPRINT"
+gpg --check-sigs --keyid-format long "$EXPECTED_FINGERPRINT" | grep -F "$EXPECTED_ROOT_FINGERPRINT"
 ```
 
-Look for a non-self signature from `F85CEFBA8B8E1040` — the org root. It must read
-`sig!`, a cryptographically checked certification, **not `sig L`**: `sig L` is a local-only certification that would not travel
-with the key, and its absence means this key was not vouched on your behalf.
+Look for a non-self signature from the pinned root. It must read `sig!`, a
+cryptographically checked certification, **not `sig L`**: `sig L` is a
+local-only certification that would not travel with the key, and its absence
+means this key was not vouched on your behalf. The verifier in step 2 enforces
+exactly this; this command is the same fact shown directly.
 
 ### 4. The signature is bound to the chain, and the chain is unbroken
 
@@ -81,7 +94,10 @@ spec = importlib.util.spec_from_file_location("n", os.environ["NOSTOI_PYTHON"])
 n = importlib.util.module_from_spec(spec); spec.loader.exec_module(n)
 
 att = json.load(open("workspace.jsonl.attestation.json"))
-rec = json.loads(open("workspace.jsonl").readline())
+records = [json.loads(l) for l in open("workspace.jsonl") if l.strip()]
+# The attestation names a sequence. Compare that record, not the first one;
+# a later appended snapshot is signed too and record 1 is not its statement.
+rec = next(r for r in records if r["seq"] == att["seq"])
 print("chain ok      :", n.verify("workspace.jsonl")["ok"])
 print("seq bound     :", rec["seq"] == att["seq"])
 print("digest bound  :", n.digest(rec) == att["digest"])
@@ -92,14 +108,14 @@ EOF
 
 All four must be `True`. The verifier in step 2 enforces these checks and exits
 nonzero on failure. This step proves the
-signature covers *this* manifest, and that the manifest has not been edited since.
+signature covers *this* record, and that the record has not been edited since.
 A valid signature over a document that does not match the chain proves nothing.
 
 ## What the signature does and does not prove
 
 **Proves:** the manifest was signed by the holder of that private key; the manifest
-has not been altered since; the key is vouched for by the org root; the record is
-part of an unbroken chain back to genesis.
+has not been altered since; that key is vouched for by the organisation root you
+pinned out of band; the record is part of an unbroken chain back to genesis.
 
 **Does not prove:**
 
