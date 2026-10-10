@@ -1,0 +1,12 @@
+{
+  "v": "nostoi-attestation-v1",
+  "chain": "attestations/workspace.jsonl",
+  "format": "nostoi-v1",
+  "seq": 1,
+  "digest": "c8b51a021bcc39595bd5c75b6af2746dd6088dd0e9622f509ef2cfa5e0b231d9",
+  "anchored_at": null,
+  "principal": "ragbaz-box0-genesis",
+  "key_kind": "openpgp",
+  "fingerprint": "78171B4532F8EFFBDFA2958F4315AE31DCC658B1",
+  "anchor_key": null
+}

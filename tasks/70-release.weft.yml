@@ -3,6 +3,91 @@ phase: release
 summary: Convert a useful internal control plane into an honestly described open-source alpha.
 
 tasks:
+  - slug: reconcile-attestation-pr-review
+    title: Resolve attestation verification and collection review findings
+    status: review
+    priority: P1
+    depends: []
+    purpose: Make signer identity, readable-manifest binding and Git inspection fail closed.
+    scope:
+      files:
+        - scripts/attest-workspace.py
+        - scripts/verify-workspace.py
+        - attestations/VERIFY.md
+        - tests/test_workspace_attestation.py
+        - tasks/70-release.weft.yml
+      contracts:
+        - boundary:attestation-verification
+    deliverables:
+      - Verification using actual GPG signer status and readable-manifest binding.
+      - Explicit local Nostoi prerequisite and graceful missing-Podman handling.
+    accept:
+      - Historical bundle verifies with the independently pinned signer.
+    negative:
+      - A substituted signer or modified readable manifest is rejected.
+      - Failed Git inspection cannot produce clean true.
+    evidence:
+      - kind: test
+        required: true
+        command: uv run --locked --extra test pytest tests/test_workspace_attestation.py
+
+  - slug: workspace-attestation-home
+    title: Own the workspace collector and historical attestation bundle
+    status: review
+    priority: P1
+    depends: []
+    purpose: Give the existing collector and signed delivery a durable home in WeftMark.
+    scope:
+      files:
+        - scripts/attest-workspace.py
+        - attestations/**
+        - tests/test_workspace_attestation.py
+        - tasks/70-release.weft.yml
+      contracts: []
+    deliverables:
+      - Explicit workspace and output selection after relocating the collector.
+      - Historical signed bundle preserved byte for byte with ownership documented in Frog.
+    accept:
+      - Historical chain and detached signature still verify.
+      - Collector scans the selected workspace rather than the scripts directory.
+    negative:
+      - Existing historical bundles cannot be overwritten implicitly.
+    evidence:
+      - kind: test
+        required: true
+        command: uv run --locked --extra test pytest tests/test_workspace_attestation.py
+
+  - slug: python-dependency-lock
+    title: Lock runtime, test and documentation Python environments
+    status: review
+    priority: P1
+    depends: []
+    purpose: Make fresh checkouts and CI use a reviewed dependency resolution.
+    scope:
+      files:
+        - uv.lock
+        - pyproject.toml
+        - README.md
+        - .github/workflows/ci.yml
+        - tasks/70-release.weft.yml
+      contracts:
+        - contract:package-v0
+    deliverables:
+      - Committed universal uv lock including optional extras and documentation tools.
+      - CI and contributor commands consuming the lock without silently updating it.
+    accept:
+      - uv lock --check and locked installation succeed.
+      - Runtime tests pass in the locked environment.
+    negative:
+      - CI refuses a stale lock instead of re-resolving dependencies.
+    evidence:
+      - kind: test
+        required: true
+        command: uv lock --check
+      - kind: test
+        required: true
+        command: uv run --locked --extra test --group docs python -m pytest
+
   - slug: security-threat-model
     title: Threat-model local and remote coordination surfaces
     status: done

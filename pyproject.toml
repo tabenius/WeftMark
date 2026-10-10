@@ -34,6 +34,10 @@ test = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[dependency-groups]
+# Keep compatible with requirements-docs.txt for pip-based consumers.
+docs = ["WeasyPrint>=68,<69", "CairoSVG>=2.8,<3", "Pillow>=12,<13", "PyYAML>=6,<7"]
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
