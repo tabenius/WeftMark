@@ -42,9 +42,12 @@ def issuers_of_checked_certifications(stdout):
         fields = line.split(":")
         if fields[0] != "sig" or len(fields) < 13:
             continue
-        # Field 1 is "!" only when GPG cryptographically checked the
-        # certification. "L" is a local-only mark that would not travel.
-        if fields[1] != "!" or not fields[12]:
+        # Validity "!" means cryptographically checked, even for local-only
+        # signatures. The signature-class field carries the export marker:
+        # 10x..13x are exportable UID certifications; 10l..13l are local-only.
+        # Binding signatures and revocations are not delegation certificates.
+        if (fields[1] != "!" or fields[10] not in {"10x", "11x", "12x", "13x"}
+                or not fields[12]):
             continue
         issuers.add(fields[12].upper())
     return issuers

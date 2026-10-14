@@ -132,8 +132,8 @@ def stub_gpg(signer, root=ROOT_FINGERPRINT, root_present=True, root_certifies=Tr
             ]
             if root_certifies:
                 lines.append(
-                    "sig:%s::22:%s:1790971171::::RAGBAZ root <ragbaz@proton.me>:10x::%s:::10:"
-                    % ("!" if checked else "L", root[-16:], root))
+                    "sig:!::22:%s:1790971171::::RAGBAZ root <ragbaz@proton.me>:%s::%s:::10:"
+                    % (root[-16:], "10x" if checked else "10l", root))
             return SimpleNamespace(stdout="\n".join(lines) + "\n")
         if "--fingerprint" in argv:
             if not root_present:
@@ -186,6 +186,30 @@ def test_local_only_root_certification_is_not_delegation(monkeypatch, tmp_path):
     module, nostoi, _ = verifier_fixture(monkeypatch, tmp_path, checked=False)
     with pytest.raises(ValueError, match="did not certify"):
         verify(module, tmp_path, nostoi)
+
+
+@pytest.mark.parametrize("signature_class", ["10x", "11x", "12x", "13x"])
+def test_exportable_checked_uid_certifications_are_delegation(signature_class):
+    spec = importlib.util.spec_from_file_location("verify_workspace",
+                                                 ROOT / "scripts" / "verify-workspace.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    line = f"sig:!::22:{ROOT_FINGERPRINT[-16:]}:1790971171::::root:{signature_class}::{ROOT_FINGERPRINT}:::10:"
+    assert module.issuers_of_checked_certifications(line) == {ROOT_FINGERPRINT}
+
+
+@pytest.mark.parametrize("validity,signature_class", [
+    ("!", "10l"), ("!", "11l"), ("!", "12l"), ("!", "13l"),
+    ("!", "18x"), ("!", "20x"), ("!", "30x"), ("!", "10"),
+    ("?", "10x"), ("-", "10x"),
+])
+def test_non_delegation_signatures_are_refused(validity, signature_class):
+    spec = importlib.util.spec_from_file_location("verify_workspace",
+                                                 ROOT / "scripts" / "verify-workspace.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    line = f"sig:{validity}::22:{ROOT_FINGERPRINT[-16:]}:1790971171::::root:{signature_class}::{ROOT_FINGERPRINT}:::10:"
+    assert module.issuers_of_checked_certifications(line) == set()
 
 
 def test_absent_root_certification_is_not_delegation(monkeypatch, tmp_path):
