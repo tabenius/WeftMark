@@ -1,0 +1,50 @@
+format: weft-task-v0
+phase: d1-verification
+summary: Verify the portable ledger on isolated remote D1 and assess Cloudflare witnessing.
+tasks:
+  - slug: weftmark-d1-verification
+    title: Verify the portable ledger on remote Cloudflare D1
+    status: review
+    priority: P1
+    depends:
+      - weftmark-sqlite-ledger
+    purpose: Replace local D1-shaped assumptions with real remote evidence without migrating existing ledgers.
+    scope:
+      files:
+        - tasks/37-d1-verification.weft.yml
+        - scripts/verify_d1_ledger.py
+        - cloudflare/d1-probe/worker.mjs
+        - cloudflare/d1-probe/README.md
+        - tests/adapters/test_d1_probe.py
+        - docs/D1-VERIFICATION.md
+        - docs/CF-WITNESS.md
+      contracts:
+        - contract:ledger-d1-probe-v1
+        - boundary:cloudflare-witness-assessment
+        - evidence:d1-deployment-observations
+    deliverables:
+      - Explicit short-lived authenticated synthetic-data D1 conformance deployment.
+      - Reproducible portable LedgerPort tests over actual Worker D1 atomic batches.
+      - Cloudflare genesis, anchoring and checkpoint witness threat-model recommendation.
+    accept:
+      - Real D1 applies the existing DDL and supports canonical records, receipts, CAS, replay and atomic rollback.
+      - Concurrent requests do not double-append or bypass workspace isolation.
+      - Probe credentials stay outside Git and evidence payloads; remote resources are individually identified.
+      - Witness analysis separates signed receipts, retention, administrator independence and freshness.
+    negative:
+      - No existing ledger is migrated and no production or independently witnessed service is claimed.
+      - No retention lock, key ceremony or new witness trust root is activated without separate approval.
+      - Test SQL bridge is authenticated, statement-allowlisted, resource-isolated and time-limited, not a public ledger API.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_d1_probe.py
+      - kind: deployment
+        required: true
+        criterion: Exact-head probe reports successful assertions against real remote D1 with deployment identity and code digests.
+      - kind: review
+        required: true
+        criterion: Independent review of probe exposure and witness trust assumptions before release.
+    notes:
+      - Explicit dependency exception permits verification of the predecessor while it awaits independent review; this does not approve its release.
+      - Frog legacy storage is explicit because model leases do not yet enforce the mandatory exact file locks.
