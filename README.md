@@ -99,6 +99,16 @@ commit it together with any manifest changes. Keep the `docs` dependency group
 compatible with `requirements-docs.txt`, which remains available to pip users.
 Ordinary `pip install .` does not consume this lockfile.
 
+### Optional transactional SQLite ledger
+
+`uv sync --locked --extra sqlite` installs the SQLite `LedgerPort` adapter and
+its pinned Nostoi codec/verifier dependency (Rust is needed to build the native
+bindings). It preserves supported existing ledger digests and adds atomic CAS,
+idempotent receipts, workspace isolation and verified backups. The CLI still
+defaults to JSONL; migration is explicit. See
+[`docs/SQLITE-LEDGER.md`](docs/SQLITE-LEDGER.md) for use, SQL/API schemas, the
+portable D1/libSQL batch seam, Litestream boundaries and remaining review gates.
+
 ### Shell completion
 
 `weftmark completion <shell>` prints a completion script for the top-level

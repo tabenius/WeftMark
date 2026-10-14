@@ -16,6 +16,28 @@ class LedgerHeadChanged(RuntimeError):
     """Raised when an optimistic append observes a different ledger head."""
 
 
+class LedgerIdempotencyConflict(RuntimeError):
+    """An operation identifier was already used for a different request."""
+
+
+@dataclass(frozen=True, slots=True)
+class LedgerHead:
+    workspace_id: str
+    ledger_id: str
+    sequence: int
+    digest: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.workspace_id, str) or not isinstance(self.ledger_id, str) or not self.workspace_id or not self.ledger_id:
+            raise LedgerContractError("workspace and ledger identity are required")
+        if type(self.sequence) is not int or not 0 <= self.sequence <= 2**53 - 1:
+            raise LedgerContractError("head sequence must be a safe nonnegative integer")
+        if not isinstance(self.digest, str) or len(self.digest) != 64 or any(c not in "0123456789abcdef" for c in self.digest):
+            raise LedgerContractError("head digest must be lowercase SHA-256")
+        if self.sequence == 0 and self.digest != LEDGER_GENESIS_DIGEST:
+            raise LedgerContractError("empty head must use the genesis digest")
+
+
 LEDGER_GENESIS_DIGEST = "0" * 64
 
 
@@ -88,3 +110,17 @@ class LedgerPort(Protocol):
 
     def entries(self) -> tuple[LedgerEntry, ...]:
         """Read and validate the complete ordered ledger."""
+
+
+@runtime_checkable
+class IdempotentLedgerPort(LedgerPort, Protocol):
+    """Optional extension; existing JSONL and memory ports remain compatible."""
+
+    def head(self) -> LedgerHead:
+        """Return the head of a validated snapshot."""
+
+    def append_idempotent(
+        self, draft: LedgerDraft, *, operation_id: str,
+        expected_digest: str | None = None, principal_id: str = "local",
+    ) -> LedgerEntry:
+        """Atomically append or replay the original result for the same request."""

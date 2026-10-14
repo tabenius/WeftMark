@@ -19,6 +19,9 @@ weftmark-mcp = "weftmark.mcp.server:main"
 weftmark-tui = "weftmark.tui.app:main"
 
 [project.optional-dependencies]
+sqlite = [
+  "nostoi @ git+https://github.com/tabenius/nostoi.git@b043bf953eeda3ea720adfa91f1b2177c0ab1143#subdirectory=bindings/python",
+]
 mcp = [
   "mcp>=2,<3",
 ]
@@ -26,6 +29,8 @@ tui = [
   "textual>=8,<9",
 ]
 test = [
+  "nostoi @ git+https://github.com/tabenius/nostoi.git@b043bf953eeda3ea720adfa91f1b2177c0ab1143#subdirectory=bindings/python",
+  "jsonschema>=4.26,<5",
   "pytest>=8,<9",
   "mcp>=2,<3",
   "textual>=8,<9",
@@ -33,6 +38,9 @@ test = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"weftmark.adapters" = ["sql/*.sql"]
 
 [dependency-groups]
 # Keep compatible with requirements-docs.txt for pip-based consumers.

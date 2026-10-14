@@ -4,8 +4,8 @@ requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
 ]
 
@@ -597,6 +597,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
 ]
+
+[[package]]
+name = "nostoi"
+version = "0.1.0"
+source = { git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=b043bf953eeda3ea720adfa91f1b2177c0ab1143#b043bf953eeda3ea720adfa91f1b2177c0ab1143" }
 
 [[package]]
 name = "opentelemetry-api"
@@ -1334,8 +1339,13 @@ dependencies = [
 mcp = [
     { name = "mcp" },
 ]
+sqlite = [
+    { name = "nostoi" },
+]
 test = [
+    { name = "jsonschema" },
     { name = "mcp" },
+    { name = "nostoi" },
     { name = "pytest" },
     { name = "textual" },
 ]
@@ -1353,14 +1363,17 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonschema", marker = "extra == 'test'", specifier = ">=4.26,<5" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2,<3" },
     { name = "mcp", marker = "extra == 'test'", specifier = ">=2,<3" },
+    { name = "nostoi", marker = "extra == 'sqlite'", git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=b043bf953eeda3ea720adfa91f1b2177c0ab1143" },
+    { name = "nostoi", marker = "extra == 'test'", git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=b043bf953eeda3ea720adfa91f1b2177c0ab1143" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8,<9" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "textual", marker = "extra == 'test'", specifier = ">=8,<9" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8,<9" },
 ]
-provides-extras = ["mcp", "tui", "test"]
+provides-extras = ["sqlite", "mcp", "tui", "test"]
 
 [package.metadata.requires-dev]
 docs = [

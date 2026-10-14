@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://weftmark.ragbaz.org/schemas/ledger-v1.schema.json",
+  "title": "WeftMark opaque ledger API v1",
+  "oneOf": [{"$ref": "#/$defs/AppendRequest"}, {"$ref": "#/$defs/Result"}],
+  "$defs": {
+    "PortableValue": {
+      "oneOf": [
+        {"type": "null"}, {"type": "boolean"}, {"type": "string"},
+        {"type": "integer", "minimum": -9223372036854775808, "maximum": 18446744073709551615},
+        {"type": "array", "items": {"$ref": "#/$defs/PortableValue"}},
+        {"type": "object", "additionalProperties": {"$ref": "#/$defs/PortableValue"}}
+      ]
+    },
+    "Record": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sequence", "previous_digest", "digest", "kind", "entity_id", "payload", "recorded_at"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "previous_digest": {"$ref": "#/$defs/Digest"}, "digest": {"$ref": "#/$defs/Digest"},
+        "kind": {"type": "string", "minLength": 1}, "entity_id": {"type": "string", "minLength": 1},
+        "payload": {"type": "object", "additionalProperties": {"$ref": "#/$defs/PortableValue"}},
+        "recorded_at": {"type": "string", "format": "date-time"}
+      },
+      "description": "Decoded weftmark-ledger-v1 record. On the wire keep this as canonical record_json text to avoid JavaScript numeric loss. Hash excludes digest; chain/genesis validation is mandatory."
+    },
+    "SqlPlan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "atomic", "statements"],
+      "properties": {
+        "schema": {"const": "weftmark.ledger-sql-plan.v1"}, "atomic": {"const": true}, "write": {"type": "boolean"},
+        "statements": {"type": "array", "minItems": 1, "items": {
+          "type": "object", "additionalProperties": false, "required": ["sql", "params"],
+          "properties": {
+            "sql": {"type": "string", "minLength": 1},
+            "params": {"type": "array", "items": {"oneOf": [
+              {"type": "null"}, {"type": "string"},
+              {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991}
+            ]}}
+          }
+        }}
+      },
+      "description": "Internal trusted-host batch seam, NOT an HTTP SQL execution endpoint. Every batch is ordered and transactional; write is an optional routing hint."
+    },
+    "Identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$"},
+    "Digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "Sequence": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "Head": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workspace_id", "ledger_id", "sequence", "digest"],
+      "properties": {
+        "workspace_id": {"$ref": "#/$defs/Identifier"},
+        "ledger_id": {"$ref": "#/$defs/Identifier"},
+        "sequence": {"$ref": "#/$defs/Sequence"},
+        "digest": {"$ref": "#/$defs/Digest"}
+      },
+      "allOf": [{"if": {"properties": {"sequence": {"const": 0}}}, "then": {"properties": {"digest": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}}}}]
+    },
+    "Draft": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "entity_id", "payload_json", "recorded_at"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1, "maxLength": 120},
+        "entity_id": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "payload_json": {
+          "type": "string", "maxLength": 262144,
+          "description": "Nostoi canonical JSON object, encoded as a string to preserve 64-bit payload integers across JavaScript transports. No floats, nonfinite values, duplicate keys or secret-bearing payloads. Semantic validation is mandatory."
+        },
+        "recorded_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$"}
+      }
+    },
+    "AppendRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "operation_id", "expected_digest", "draft"],
+      "properties": {
+        "schema": {"const": "weftmark.ledger-append.v1"},
+        "operation_id": {"type": "string", "minLength": 1, "maxLength": 256, "description": "Maximum 256 UTF-8 bytes; retries must preserve the exact semantic request. Stored only as a hash."},
+        "expected_digest": {"$ref": "#/$defs/Digest"},
+        "draft": {"$ref": "#/$defs/Draft"}
+      },
+      "description": "Maximum canonical request size 256 KiB. Authenticated principal and workspace authority come from the server context, never request fields."
+    },
+    "HeadResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "ok", "kind", "workspace_id", "ledger_id", "data"],
+      "properties": {
+        "schema": {"const": "weftmark.ledger-result.v1"}, "ok": {"const": true}, "kind": {"const": "head"},
+        "workspace_id": {"$ref": "#/$defs/Identifier"}, "ledger_id": {"$ref": "#/$defs/Identifier"},
+        "data": {"type": "object", "additionalProperties": false, "required": ["head"], "properties": {"head": {"$ref": "#/$defs/Head"}}}
+      }
+    },
+    "AppendResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "ok", "kind", "workspace_id", "ledger_id", "data"],
+      "properties": {
+        "schema": {"const": "weftmark.ledger-result.v1"}, "ok": {"const": true}, "kind": {"const": "append"},
+        "workspace_id": {"$ref": "#/$defs/Identifier"}, "ledger_id": {"$ref": "#/$defs/Identifier"},
+        "data": {
+          "type": "object", "additionalProperties": false, "required": ["record_json", "accepted_head"],
+          "properties": {"record_json": {"type": "string"}, "accepted_head": {"$ref": "#/$defs/Head"}},
+          "description": "accepted_head identifies the accepted entry, not necessarily the latest head when replaying an older operation."
+        }
+      }
+    },
+    "EntriesResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "ok", "kind", "workspace_id", "ledger_id", "data"],
+      "properties": {
+        "schema": {"const": "weftmark.ledger-result.v1"}, "ok": {"const": true}, "kind": {"const": "entries"},
+        "workspace_id": {"$ref": "#/$defs/Identifier"}, "ledger_id": {"$ref": "#/$defs/Identifier"},
+        "data": {
+          "type": "object", "additionalProperties": false, "required": ["head", "records", "next_cursor"],
+          "properties": {
+            "head": {"$ref": "#/$defs/Head"},
+            "records": {"type": "array", "maxItems": 200, "items": {"type": "string"}},
+            "next_cursor": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[1-9][0-9]{0,15}$"}]}
+          },
+          "description": "Head and records belong to the same validated snapshot. Follow next_cursor, not page length; escaped record data is capped at 1 MiB per page. Each record is canonical weftmark-ledger-v1 JSON."
+        }
+      }
+    },
+    "ErrorResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "ok", "kind", "error"],
+      "properties": {
+        "schema": {"const": "weftmark.ledger-result.v1"}, "ok": {"const": false}, "kind": {"const": "error"},
+        "error": {
+          "type": "object", "additionalProperties": false, "required": ["code", "message"],
+          "properties": {
+            "code": {"enum": ["unauthenticated", "forbidden", "invalid_request", "head_changed", "idempotency_conflict", "storage_unavailable"]},
+            "message": {"type": "string", "maxLength": 1024}
+          }
+        }
+      }
+    },
+    "Result": {"oneOf": [{"$ref": "#/$defs/HeadResult"}, {"$ref": "#/$defs/AppendResult"}, {"$ref": "#/$defs/EntriesResult"}, {"$ref": "#/$defs/ErrorResult"}]}
+  }
+}
