@@ -135,43 +135,40 @@ class BitbucketForgeAdapter(ForgePort):
         if result.availability is not ForgeAvailability.AVAILABLE:
             return ForgeResult(result.availability, detail=result.detail)
         try:
-            payload = _mapping(result.value)
-            raw_state = str(payload["state"]).upper()
-            state = {
-                "OPEN": ForgeChangeState.OPEN,
-                "MERGED": ForgeChangeState.MERGED,
-                "DECLINED": ForgeChangeState.CLOSED,
-                "SUPERSEDED": ForgeChangeState.CLOSED,
-            }.get(raw_state)
-            if state is None:
-                raise ValueError("unknown pull request state")
-            source = _mapping(payload["source"])
-            destination = _mapping(payload["destination"])
-            merged_at = (
-                _required_time(payload["updated_on"])
-                if state is ForgeChangeState.MERGED
-                else None
-            )
-            return ForgeResult.available(
-                ForgeChangeRequest(
-                    external_id=str(payload["id"]),
-                    title=str(payload["title"]),
-                    state=state,
-                    source_branch=str(_mapping(source["branch"])["name"]),
-                    target_branch=str(_mapping(destination["branch"])["name"]),
-                    head=GitObjectId(str(_mapping(source["commit"])["hash"])),
-                    base=GitObjectId(str(_mapping(destination["commit"])["hash"])),
-                    web_url=_link(payload, "html"),
-                    author=_actor(payload["author"]),
-                    draft=bool(payload.get("draft", False)),
-                    updated_at=_required_time(payload["updated_on"]),
-                    merged_at=merged_at,
-                )
-            )
+            return ForgeResult.available(_change_request(_mapping(result.value)))
         except (KeyError, TypeError, ValueError):
             return ForgeResult.unavailable(
                 "Bitbucket returned malformed change-request data"
             )
+
+    def change_requests(
+        self, state: ForgeChangeState | None = None
+    ) -> ForgeResult[tuple[ForgeChangeRequest, ...]]:
+        values: list[ForgeChangeRequest] = []
+        for raw_state in _state_queries(state):
+            result = self._paged_values(
+                f"/repositories/{self._repository_path}/pullrequests",
+                query={"state": raw_state},
+            )
+            if result.availability is not ForgeAvailability.AVAILABLE:
+                return ForgeResult(result.availability, detail=result.detail)
+            try:
+                values.extend(_change_request(value) for value in result.value)
+            except (KeyError, TypeError, ValueError):
+                return ForgeResult.unavailable(
+                    "Bitbucket returned malformed change-request data"
+                )
+        if not values:
+            return ForgeResult.missing("no change requests reported for state")
+        return ForgeResult.available(
+            tuple(
+                sorted(
+                    values,
+                    key=lambda value: (value.updated_at, value.external_id),
+                    reverse=True,
+                )
+            )
+        )
 
     def checks(self, head: GitObjectId) -> ForgeResult[tuple[ForgeCheck, ...]]:
         result = self._paged_values(
@@ -374,6 +371,49 @@ def _pull_number(value: str) -> int:
             "Bitbucket change-request id must be a positive integer"
         )
     return number
+
+
+def _state_queries(state: ForgeChangeState | None) -> tuple[str, ...]:
+    if state is ForgeChangeState.OPEN:
+        return ("OPEN",)
+    if state is ForgeChangeState.MERGED:
+        return ("MERGED",)
+    if state is ForgeChangeState.CLOSED:
+        return ("DECLINED", "SUPERSEDED")
+    return ("OPEN", "MERGED", "DECLINED", "SUPERSEDED")
+
+
+def _change_request(payload: Mapping[str, Any]) -> ForgeChangeRequest:
+    raw_state = str(payload["state"]).upper()
+    state = {
+        "OPEN": ForgeChangeState.OPEN,
+        "MERGED": ForgeChangeState.MERGED,
+        "DECLINED": ForgeChangeState.CLOSED,
+        "SUPERSEDED": ForgeChangeState.CLOSED,
+    }.get(raw_state)
+    if state is None:
+        raise ValueError("unknown pull request state")
+    source = _mapping(payload["source"])
+    destination = _mapping(payload["destination"])
+    merged_at = (
+        _required_time(payload["updated_on"])
+        if state is ForgeChangeState.MERGED
+        else None
+    )
+    return ForgeChangeRequest(
+        external_id=str(payload["id"]),
+        title=str(payload["title"]),
+        state=state,
+        source_branch=str(_mapping(source["branch"])["name"]),
+        target_branch=str(_mapping(destination["branch"])["name"]),
+        head=GitObjectId(str(_mapping(source["commit"])["hash"])),
+        base=GitObjectId(str(_mapping(destination["commit"])["hash"])),
+        web_url=_link(payload, "html"),
+        author=_actor(payload["author"]),
+        draft=bool(payload.get("draft", False)),
+        updated_at=_required_time(payload["updated_on"]),
+        merged_at=merged_at,
+    )
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:

@@ -130,31 +130,29 @@ class GithubForgeAdapter(ForgePort):
         if result.availability is not ForgeAvailability.AVAILABLE:
             return ForgeResult(result.availability, detail=result.detail)
         try:
-            payload = _mapping(result.value)
-            merged_at = _time(payload.get("merged_at"))
-            state = (
-                ForgeChangeState.MERGED
-                if merged_at is not None
-                else ForgeChangeState(str(payload["state"]))
-            )
-            return ForgeResult.available(
-                ForgeChangeRequest(
-                    external_id=str(payload["number"]),
-                    title=str(payload["title"]),
-                    state=state,
-                    source_branch=str(_mapping(payload["head"])["ref"]),
-                    target_branch=str(_mapping(payload["base"])["ref"]),
-                    head=GitObjectId(str(_mapping(payload["head"])["sha"])),
-                    base=GitObjectId(str(_mapping(payload["base"])["sha"])),
-                    web_url=str(payload["html_url"]),
-                    author=_actor(payload["user"]),
-                    draft=bool(payload.get("draft", False)),
-                    updated_at=_required_time(payload["updated_at"]),
-                    merged_at=merged_at,
-                )
-            )
-        except (KeyError, TypeError, ValueError) as error:
+            return ForgeResult.available(_change_request(_mapping(result.value)))
+        except (KeyError, TypeError, ValueError):
             return ForgeResult.unavailable("GitHub returned malformed change-request data")
+
+    def change_requests(
+        self, state: ForgeChangeState | None = None
+    ) -> ForgeResult[tuple[ForgeChangeRequest, ...]]:
+        result = self._paged_list(
+            f"/repos/{self._repository}/pulls", query={"state": _state_query(state)}
+        )
+        if result.availability is not ForgeAvailability.AVAILABLE:
+            return ForgeResult(result.availability, detail=result.detail)
+        try:
+            values = tuple(_change_request(payload) for payload in result.value)
+        except (KeyError, TypeError, ValueError):
+            return ForgeResult.unavailable("GitHub returned malformed change-request data")
+        if state is not None:
+            values = tuple(value for value in values if value.state is state)
+        if not values:
+            return ForgeResult.missing("no change requests reported for state")
+        return ForgeResult.available(
+            tuple(sorted(values, key=lambda value: (value.updated_at, value.external_id), reverse=True))
+        )
 
     def checks(self, head: GitObjectId) -> ForgeResult[tuple[ForgeCheck, ...]]:
         result = self._paged_object_list(
@@ -263,10 +261,14 @@ class GithubForgeAdapter(ForgePort):
         except (UnicodeDecodeError, json.JSONDecodeError):
             return ForgeResult.unavailable("GitHub returned invalid JSON")
 
-    def _paged_list(self, path: str) -> ForgeResult[tuple[Mapping[str, Any], ...]]:
+    def _paged_list(
+        self, path: str, *, query: Mapping[str, str] | None = None
+    ) -> ForgeResult[tuple[Mapping[str, Any], ...]]:
         values: list[Mapping[str, Any]] = []
+        base_query = dict(query or {})
         for page in range(1, 101):
-            result = self._get_json(path, query={"per_page": "100", "page": str(page)})
+            params = {**base_query, "per_page": "100", "page": str(page)}
+            result = self._get_json(path, query=params)
             if result.availability is not ForgeAvailability.AVAILABLE:
                 return ForgeResult(result.availability, detail=result.detail)
             if not isinstance(result.value, list):
@@ -325,6 +327,41 @@ def _pull_number(value: str) -> int:
     if number < 1:
         raise GithubAdapterError("GitHub change-request id must be a positive integer")
     return number
+
+
+def _state_query(state: ForgeChangeState | None) -> str:
+    if state is None:
+        return "all"
+    if state is ForgeChangeState.OPEN:
+        return "open"
+    # GitHub reports merged change requests as closed; the mapper recovers the
+    # merged distinction from merged_at, so both closed and merged read "closed".
+    return "closed"
+
+
+def _change_request(payload: Mapping[str, Any]) -> ForgeChangeRequest:
+    merged_at = _time(payload.get("merged_at"))
+    state = (
+        ForgeChangeState.MERGED
+        if merged_at is not None
+        else ForgeChangeState(str(payload["state"]))
+    )
+    head = _mapping(payload["head"])
+    base = _mapping(payload["base"])
+    return ForgeChangeRequest(
+        external_id=str(payload["number"]),
+        title=str(payload["title"]),
+        state=state,
+        source_branch=str(head["ref"]),
+        target_branch=str(base["ref"]),
+        head=GitObjectId(str(head["sha"])),
+        base=GitObjectId(str(base["sha"])),
+        web_url=str(payload["html_url"]),
+        author=_actor(payload["user"]),
+        draft=bool(payload.get("draft", False)),
+        updated_at=_required_time(payload["updated_at"]),
+        merged_at=merged_at,
+    )
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:

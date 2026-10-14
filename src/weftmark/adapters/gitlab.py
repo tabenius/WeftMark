@@ -135,39 +135,38 @@ class GitlabForgeAdapter(ForgePort):
         if result.availability is not ForgeAvailability.AVAILABLE:
             return ForgeResult(result.availability, detail=result.detail)
         try:
-            payload = _mapping(result.value)
-            merged_at = _time(payload.get("merged_at"))
-            raw_state = str(payload["state"]).lower()
-            state = (
-                ForgeChangeState.MERGED
-                if raw_state == "merged" or merged_at is not None
-                else ForgeChangeState.OPEN
-                if raw_state in {"opened", "reopened"}
-                else ForgeChangeState.CLOSED
-            )
-            diff_refs = _mapping(payload["diff_refs"])
-            return ForgeResult.available(
-                ForgeChangeRequest(
-                    external_id=str(payload["iid"]),
-                    title=str(payload["title"]),
-                    state=state,
-                    source_branch=str(payload["source_branch"]),
-                    target_branch=str(payload["target_branch"]),
-                    head=GitObjectId(str(diff_refs["head_sha"])),
-                    base=GitObjectId(str(diff_refs["base_sha"])),
-                    web_url=str(payload["web_url"]),
-                    author=_actor(payload["author"]),
-                    draft=bool(
-                        payload.get("draft", payload.get("work_in_progress", False))
-                    ),
-                    updated_at=_required_time(payload["updated_at"]),
-                    merged_at=merged_at,
-                )
-            )
+            return ForgeResult.available(_change_request(_mapping(result.value)))
         except (KeyError, TypeError, ValueError):
             return ForgeResult.unavailable(
                 "GitLab returned malformed change-request data"
             )
+
+    def change_requests(
+        self, state: ForgeChangeState | None = None
+    ) -> ForgeResult[tuple[ForgeChangeRequest, ...]]:
+        result = self._paged_list(
+            f"/projects/{self._project_id}/merge_requests",
+            query={"state": _state_query(state), "scope": "all"},
+        )
+        if result.availability is not ForgeAvailability.AVAILABLE:
+            return ForgeResult(result.availability, detail=result.detail)
+        try:
+            values = tuple(_change_request(payload) for payload in result.value)
+        except (KeyError, TypeError, ValueError):
+            return ForgeResult.unavailable(
+                "GitLab returned malformed change-request data"
+            )
+        if not values:
+            return ForgeResult.missing("no change requests reported for state")
+        return ForgeResult.available(
+            tuple(
+                sorted(
+                    values,
+                    key=lambda value: (value.updated_at, value.external_id),
+                    reverse=True,
+                )
+            )
+        )
 
     def checks(self, head: GitObjectId) -> ForgeResult[tuple[ForgeCheck, ...]]:
         result = self._paged_list(
@@ -343,6 +342,43 @@ def _merge_request_iid(value: str) -> int:
     if iid < 1:
         raise GitlabAdapterError("GitLab change-request id must be a positive integer")
     return iid
+
+
+def _state_query(state: ForgeChangeState | None) -> str:
+    if state is None:
+        return "all"
+    if state is ForgeChangeState.OPEN:
+        return "opened"
+    if state is ForgeChangeState.MERGED:
+        return "merged"
+    return "closed"
+
+
+def _change_request(payload: Mapping[str, Any]) -> ForgeChangeRequest:
+    merged_at = _time(payload.get("merged_at"))
+    raw_state = str(payload["state"]).lower()
+    state = (
+        ForgeChangeState.MERGED
+        if raw_state == "merged" or merged_at is not None
+        else ForgeChangeState.OPEN
+        if raw_state in {"opened", "reopened"}
+        else ForgeChangeState.CLOSED
+    )
+    diff_refs = _mapping(payload["diff_refs"])
+    return ForgeChangeRequest(
+        external_id=str(payload["iid"]),
+        title=str(payload["title"]),
+        state=state,
+        source_branch=str(payload["source_branch"]),
+        target_branch=str(payload["target_branch"]),
+        head=GitObjectId(str(diff_refs["head_sha"])),
+        base=GitObjectId(str(diff_refs["base_sha"])),
+        web_url=str(payload["web_url"]),
+        author=_actor(payload["author"]),
+        draft=bool(payload.get("draft", payload.get("work_in_progress", False))),
+        updated_at=_required_time(payload["updated_at"]),
+        merged_at=merged_at,
+    )
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
