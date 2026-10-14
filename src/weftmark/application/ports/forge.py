@@ -331,6 +331,19 @@ class ForgePort(Protocol):
     def change_request(self, external_id: str) -> ForgeResult[ForgeChangeRequest]:
         """Read a pull/merge/change request by provider-visible identifier."""
 
+    def change_requests(
+        self, state: ForgeChangeState | None = None
+    ) -> ForgeResult[tuple[ForgeChangeRequest, ...]]:
+        """Enumerate change requests, optionally filtered by lifecycle state.
+
+        `state` is a filter, not a guarantee: `OPEN` means the provider's
+        open/active set, `CLOSED` its set closed without merging, `MERGED` its
+        merged set, and `None` every state the provider reports. `missing`
+        means the provider was reachable and reported none for the filter;
+        `unsupported` means the configured provider/instance cannot enumerate
+        change requests at all.
+        """
+
     def checks(self, head: GitObjectId) -> ForgeResult[tuple[ForgeCheck, ...]]:
         """Read commit checks; missing means the provider reported no checks."""
 

@@ -6,7 +6,11 @@ from typing import Mapping
 
 from weftmark.adapters.forgejo import ForgejoForgeAdapter, ForgejoHttpResponse
 from weftmark.adapters.gitea import GiteaForgeAdapter
-from weftmark.application.ports.forge import ForgeAvailability, ForgeConclusion
+from weftmark.application.ports.forge import (
+    ForgeAvailability,
+    ForgeChangeState,
+    ForgeConclusion,
+)
 from weftmark.application.ports.git import GitObjectId
 
 
@@ -128,3 +132,34 @@ def test_forgejo_actions_endpoint_absence_is_unsupported_for_older_instances() -
     )
     value, _ = adapter({url: response({"message": "not found"}, status=404)})
     assert value.workflow_runs(GitObjectId(SHA_B)).availability is ForgeAvailability.UNSUPPORTED
+
+
+def test_forgejo_change_requests_enumeration_uses_provider_dialect() -> None:
+    url = f"{API}/repos/team/repo/pulls?state=open&page=1&limit=100"
+    value, _ = adapter(
+        {
+            url: response(
+                [
+                    {
+                        "number": 42,
+                        "title": "Forgejo support",
+                        "state": "open",
+                        "merged": False,
+                        "merged_at": None,
+                        "draft": False,
+                        "html_url": f"{WEB}/team/repo/pulls/42",
+                        "updated_at": NOW,
+                        "user": {"id": 7, "login": "alice"},
+                        "head": {"ref": "forgejo", "sha": SHA_B},
+                        "base": {"ref": "main", "sha": SHA_A},
+                    }
+                ]
+            )
+        }
+    )
+
+    result = value.change_requests(ForgeChangeState.OPEN)
+
+    assert result.availability is ForgeAvailability.AVAILABLE
+    assert [item.external_id for item in result.value] == ["42"]
+    assert result.value[0].author.id == "forgejo-user:7"

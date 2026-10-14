@@ -149,42 +149,45 @@ class AzureDevopsForgeAdapter(ForgePort):
             return ForgeResult(result.availability, detail=result.detail)
         try:
             raw_payload, _headers = result.value
-            payload = _mapping(raw_payload)
-            raw_state = str(payload["status"]).lower()
-            state = {
-                "active": ForgeChangeState.OPEN,
-                "abandoned": ForgeChangeState.CLOSED,
-                "completed": ForgeChangeState.MERGED,
-            }.get(raw_state)
-            if state is None:
-                raise ValueError("unknown pull request status")
-            closed_at = _time(payload.get("closedDate"))
-            merged_at = closed_at if state is ForgeChangeState.MERGED else None
-            updated_at = closed_at or _required_time(payload["creationDate"])
             return ForgeResult.available(
-                ForgeChangeRequest(
-                    external_id=str(payload["pullRequestId"]),
-                    title=str(payload["title"]),
-                    state=state,
-                    source_branch=_branch(payload["sourceRefName"]),
-                    target_branch=_branch(payload["targetRefName"]),
-                    head=GitObjectId(
-                        str(_mapping(payload["lastMergeSourceCommit"])["commitId"])
-                    ),
-                    base=GitObjectId(
-                        str(_mapping(payload["lastMergeTargetCommit"])["commitId"])
-                    ),
-                    web_url=self._pull_web_url(number),
-                    author=_actor(payload["createdBy"]),
-                    draft=bool(payload.get("isDraft", False)),
-                    updated_at=updated_at,
-                    merged_at=merged_at,
-                )
+                _change_request(_mapping(raw_payload), self._pull_web_url(number))
             )
         except (KeyError, TypeError, ValueError):
             return ForgeResult.unavailable(
                 "Azure DevOps returned malformed pull-request data"
             )
+
+    def change_requests(
+        self, state: ForgeChangeState | None = None
+    ) -> ForgeResult[tuple[ForgeChangeRequest, ...]]:
+        result = self._paged_values(
+            f"{self._git_path}/pullRequests",
+            query={"searchCriteria.status": _state_query(state)},
+        )
+        if result.availability is not ForgeAvailability.AVAILABLE:
+            return ForgeResult(result.availability, detail=result.detail)
+        try:
+            values = tuple(
+                _change_request(
+                    payload, self._pull_web_url(int(payload["pullRequestId"]))
+                )
+                for payload in result.value
+            )
+        except (KeyError, TypeError, ValueError):
+            return ForgeResult.unavailable(
+                "Azure DevOps returned malformed pull-request data"
+            )
+        if not values:
+            return ForgeResult.missing("no pull requests reported for state")
+        return ForgeResult.available(
+            tuple(
+                sorted(
+                    values,
+                    key=lambda value: (value.updated_at, value.external_id),
+                    reverse=True,
+                )
+            )
+        )
 
     def checks(self, head: GitObjectId) -> ForgeResult[tuple[ForgeCheck, ...]]:
         result = self._offset_paged_values(
@@ -473,6 +476,48 @@ def _pull_number(value: str) -> int:
             "Azure DevOps change-request id must be a positive integer"
         )
     return number
+
+
+def _state_query(state: ForgeChangeState | None) -> str:
+    if state is ForgeChangeState.OPEN:
+        return "active"
+    if state is ForgeChangeState.MERGED:
+        return "completed"
+    if state is ForgeChangeState.CLOSED:
+        return "abandoned"
+    return "all"
+
+
+def _change_request(payload: Mapping[str, Any], web_url: str) -> ForgeChangeRequest:
+    raw_state = str(payload["status"]).lower()
+    state = {
+        "active": ForgeChangeState.OPEN,
+        "abandoned": ForgeChangeState.CLOSED,
+        "completed": ForgeChangeState.MERGED,
+    }.get(raw_state)
+    if state is None:
+        raise ValueError("unknown pull request status")
+    closed_at = _time(payload.get("closedDate"))
+    merged_at = closed_at if state is ForgeChangeState.MERGED else None
+    updated_at = closed_at or _required_time(payload["creationDate"])
+    return ForgeChangeRequest(
+        external_id=str(payload["pullRequestId"]),
+        title=str(payload["title"]),
+        state=state,
+        source_branch=_branch(payload["sourceRefName"]),
+        target_branch=_branch(payload["targetRefName"]),
+        head=GitObjectId(
+            str(_mapping(payload["lastMergeSourceCommit"])["commitId"])
+        ),
+        base=GitObjectId(
+            str(_mapping(payload["lastMergeTargetCommit"])["commitId"])
+        ),
+        web_url=web_url,
+        author=_actor(payload["createdBy"]),
+        draft=bool(payload.get("isDraft", False)),
+        updated_at=updated_at,
+        merged_at=merged_at,
+    )
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:

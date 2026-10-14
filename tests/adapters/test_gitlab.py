@@ -299,3 +299,56 @@ def test_404_transport_and_api_failure_are_safe_observation_states() -> None:
     result = api.change_request("44")
     assert result.availability is ForgeAvailability.UNAVAILABLE
     assert "503" in result.detail
+
+
+def merge_request(iid: int, *, state: str, merged_at: str | None) -> dict:
+    return {
+        "iid": iid,
+        "title": f"MR {iid}",
+        "state": state,
+        "draft": False,
+        "source_branch": f"feature/{iid}",
+        "target_branch": "main",
+        "web_url": f"{WEB}/group/subgroup/repo/-/merge_requests/{iid}",
+        "updated_at": LATER,
+        "merged_at": merged_at,
+        "author": {"id": 7, "username": "alice"},
+        "diff_refs": {"base_sha": SHA_A, "head_sha": SHA_B},
+    }
+
+
+def test_change_requests_use_state_and_scope_all() -> None:
+    opened_url = (
+        f"{API}/projects/{PROJECT_ID}/merge_requests"
+        "?state=opened&scope=all&per_page=100&page=1"
+    )
+    merged_url = (
+        f"{API}/projects/{PROJECT_ID}/merge_requests"
+        "?state=merged&scope=all&per_page=100&page=1"
+    )
+    value, transport = adapter(
+        {
+            opened_url: response([merge_request(42, state="opened", merged_at=None)]),
+            merged_url: response([merge_request(43, state="merged", merged_at=LATER)]),
+        }
+    )
+
+    opened = value.change_requests(ForgeChangeState.OPEN)
+    merged = value.change_requests(ForgeChangeState.MERGED)
+
+    assert [item.external_id for item in opened.value] == ["42"]
+    assert [item.external_id for item in merged.value] == ["43"]
+    assert opened.value[0].state is ForgeChangeState.OPEN
+    assert all("scope=all" in call[0] for call in transport.calls)
+
+
+def test_change_requests_empty_is_missing_and_failure_is_unavailable() -> None:
+    all_url = (
+        f"{API}/projects/{PROJECT_ID}/merge_requests"
+        "?state=all&scope=all&per_page=100&page=1"
+    )
+    empty, _ = adapter({all_url: response([])})
+    assert empty.change_requests().availability is ForgeAvailability.MISSING
+
+    failing, _ = adapter({all_url: response({"message": "down"}, status=503)})
+    assert failing.change_requests().availability is ForgeAvailability.UNAVAILABLE

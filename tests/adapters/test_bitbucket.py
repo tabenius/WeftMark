@@ -398,3 +398,72 @@ def test_missing_transport_malformed_data_and_configuration_fail_safely() -> Non
         BitbucketForgeAdapter(REPOSITORY, api_base="https://user:pass@example.test/2.0")
     with pytest.raises(BitbucketAdapterError):
         BitbucketForgeAdapter(REPOSITORY).change_request("0")
+
+
+def list_pull(number: int, *, state: str) -> dict:
+    return {
+        "id": number,
+        "title": f"PR {number}",
+        "state": state,
+        "draft": False,
+        "updated_on": NOW,
+        "author": actor("{alice}", "alice"),
+        "source": {"branch": {"name": f"feature/{number}"}, "commit": {"hash": SHA_B}},
+        "destination": {"branch": {"name": "main"}, "commit": {"hash": SHA_A}},
+        "links": html_link(f"team/repo/pull-requests/{number}"),
+    }
+
+
+def test_change_requests_closed_spans_declined_and_superseded() -> None:
+    open_url = f"{API}/repositories/{REPOSITORY}/pullrequests?state=OPEN&pagelen=100"
+    declined_url = f"{API}/repositories/{REPOSITORY}/pullrequests?state=DECLINED&pagelen=100"
+    superseded_url = f"{API}/repositories/{REPOSITORY}/pullrequests?state=SUPERSEDED&pagelen=100"
+    value, transport = adapter(
+        {
+            open_url: response(page([list_pull(42, state="OPEN")])),
+            declined_url: response(page([list_pull(43, state="DECLINED")])),
+            superseded_url: response(page([list_pull(44, state="SUPERSEDED")])),
+        }
+    )
+
+    opened = value.change_requests(ForgeChangeState.OPEN)
+    closed = value.change_requests(ForgeChangeState.CLOSED)
+
+    assert [item.external_id for item in opened.value] == ["42"]
+    assert sorted(item.external_id for item in closed.value) == ["43", "44"]
+    assert all(item.state is ForgeChangeState.CLOSED for item in closed.value)
+    assert [call[0] for call in transport.calls] == [open_url, declined_url, superseded_url]
+
+
+def test_change_requests_none_queries_every_state() -> None:
+    urls = {
+        state: f"{API}/repositories/{REPOSITORY}/pullrequests?state={state}&pagelen=100"
+        for state in ("OPEN", "MERGED", "DECLINED", "SUPERSEDED")
+    }
+    value, _ = adapter(
+        {
+            urls["OPEN"]: response(page([list_pull(42, state="OPEN")])),
+            urls["MERGED"]: response(page([])),
+            urls["DECLINED"]: response(page([list_pull(43, state="DECLINED")])),
+            urls["SUPERSEDED"]: response(page([])),
+        }
+    )
+
+    result = value.change_requests()
+
+    assert sorted(item.external_id for item in result.value) == ["42", "43"]
+
+
+def test_change_requests_empty_is_missing_and_failure_is_unavailable() -> None:
+    empty_url = f"{API}/repositories/{REPOSITORY}/pullrequests?state=OPEN&pagelen=100"
+    empty, _ = adapter({empty_url: response(page([]))})
+    assert empty.change_requests(ForgeChangeState.OPEN).availability is ForgeAvailability.MISSING
+
+    failing, _ = adapter(
+        {
+            empty_url: response(
+                page([list_pull(42, state="OPEN")]), status=503
+            )
+        }
+    )
+    assert failing.change_requests(ForgeChangeState.OPEN).availability is ForgeAvailability.UNAVAILABLE

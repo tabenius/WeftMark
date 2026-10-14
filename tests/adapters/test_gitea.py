@@ -203,3 +203,52 @@ def test_transport_and_api_failures_remain_unavailable() -> None:
     result = api.change_request("42")
     assert result.availability is ForgeAvailability.UNAVAILABLE
     assert "503" in result.detail
+
+
+def pull(number: int, *, state: str, merged: bool, merged_at: str | None) -> dict:
+    return {
+        "number": number,
+        "title": f"PR {number}",
+        "state": state,
+        "merged": merged,
+        "merged_at": merged_at,
+        "draft": False,
+        "html_url": f"{WEB}/team/repo/pulls/{number}",
+        "updated_at": LATER if merged else NOW,
+        "user": {"id": 7, "login": "alice"},
+        "head": {"ref": f"feature/{number}", "sha": SHA_B},
+        "base": {"ref": "main", "sha": SHA_A},
+    }
+
+
+def test_change_requests_enumeration_filters_merged_out_of_closed() -> None:
+    open_url = f"{API}/repos/team/repo/pulls?state=open&page=1&limit=100"
+    closed_url = f"{API}/repos/team/repo/pulls?state=closed&page=1&limit=100"
+    value, _ = adapter(
+        {
+            open_url: response([pull(42, state="open", merged=False, merged_at=None)]),
+            closed_url: response(
+                [
+                    pull(43, state="closed", merged=True, merged_at=LATER),
+                    pull(44, state="closed", merged=False, merged_at=None),
+                ]
+            ),
+        }
+    )
+
+    opened = value.change_requests(ForgeChangeState.OPEN)
+    merged = value.change_requests(ForgeChangeState.MERGED)
+    closed = value.change_requests(ForgeChangeState.CLOSED)
+
+    assert [item.external_id for item in opened.value] == ["42"]
+    assert [item.external_id for item in merged.value] == ["43"]
+    assert [item.external_id for item in closed.value] == ["44"]
+
+
+def test_change_requests_empty_is_missing_and_failure_is_unavailable() -> None:
+    all_url = f"{API}/repos/team/repo/pulls?state=all&page=1&limit=100"
+    empty, _ = adapter({all_url: response([])})
+    assert empty.change_requests().availability is ForgeAvailability.MISSING
+
+    failing, _ = adapter({all_url: response({"message": "down"}, status=503)})
+    assert failing.change_requests().availability is ForgeAvailability.UNAVAILABLE

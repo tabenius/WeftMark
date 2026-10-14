@@ -504,3 +504,59 @@ def test_missing_transport_malformed_data_and_configuration_fail_safely() -> Non
         )
     with pytest.raises(AzureDevopsAdapterError):
         AzureDevopsForgeAdapter(IDENTITY).change_request("0")
+
+
+def list_pull(number: int, *, status: str) -> dict:
+    payload = {
+        "pullRequestId": number,
+        "title": f"PR {number}",
+        "status": status,
+        "isDraft": False,
+        "sourceRefName": f"refs/heads/feature/{number}",
+        "targetRefName": "refs/heads/main",
+        "lastMergeSourceCommit": {"commitId": SHA_B},
+        "lastMergeTargetCommit": {"commitId": SHA_A},
+        "createdBy": actor("alice-id", "alice@example.test"),
+        "creationDate": NOW,
+        "closedDate": None,
+    }
+    if status == "completed":
+        payload["closedDate"] = LATER
+    return payload
+
+
+def test_change_requests_map_state_query_and_web_url() -> None:
+    active_url = f"{GIT}/pullRequests?searchCriteria.status=active&api-version=7.1"
+    completed_url = f"{GIT}/pullRequests?searchCriteria.status=completed&api-version=7.1"
+    abandoned_url = f"{GIT}/pullRequests?searchCriteria.status=abandoned&api-version=7.1"
+    value, transport = adapter(
+        {
+            active_url: response({"value": [list_pull(42, status="active")]}),
+            completed_url: response({"value": [list_pull(43, status="completed")]}),
+            abandoned_url: response({"value": [list_pull(44, status="abandoned")]}),
+        }
+    )
+
+    active = value.change_requests(ForgeChangeState.OPEN)
+    merged = value.change_requests(ForgeChangeState.MERGED)
+    closed = value.change_requests(ForgeChangeState.CLOSED)
+
+    assert [item.external_id for item in active.value] == ["42"]
+    assert [item.external_id for item in merged.value] == ["43"]
+    assert merged.value[0].state is ForgeChangeState.MERGED
+    assert [item.external_id for item in closed.value] == ["44"]
+    assert active.value[0].web_url == f"{WEB}/org/project/_git/repo/pullrequest/42"
+    assert [call[0] for call in transport.calls] == [
+        active_url,
+        completed_url,
+        abandoned_url,
+    ]
+
+
+def test_change_requests_empty_is_missing_and_failure_is_unavailable() -> None:
+    all_url = f"{GIT}/pullRequests?searchCriteria.status=all&api-version=7.1"
+    empty, _ = adapter({all_url: response({"value": []})})
+    assert empty.change_requests().availability is ForgeAvailability.MISSING
+
+    failing, _ = adapter({all_url: response({"message": "down"}, status=503)})
+    assert failing.change_requests().availability is ForgeAvailability.UNAVAILABLE

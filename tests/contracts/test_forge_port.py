@@ -153,6 +153,9 @@ def test_forge_port_is_runtime_checkable_and_read_side_only() -> None:
         def change_request(self, external_id):
             raise NotImplementedError
 
+        def change_requests(self, state=None):
+            raise NotImplementedError
+
         def checks(self, head):
             raise NotImplementedError
 

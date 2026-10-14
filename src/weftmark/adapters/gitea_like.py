@@ -141,42 +141,43 @@ class GiteaLikeForgeAdapter(ForgePort):
         if result.availability is not ForgeAvailability.AVAILABLE:
             return ForgeResult(result.availability, detail=result.detail)
         try:
-            payload = _mapping(result.value)
-            merged = bool(payload.get("merged", False))
-            merged_at = _time(payload.get("merged_at"))
-            state = (
-                ForgeChangeState.MERGED
-                if merged
-                else ForgeChangeState.OPEN
-                if str(payload["state"]).lower() == "open"
-                else ForgeChangeState.CLOSED
-            )
-            if state is ForgeChangeState.MERGED and merged_at is None:
-                return ForgeResult.unavailable(
-                    f"{self.provider} returned merged change without merged_at"
-                )
-            head = _mapping(payload["head"])
-            base = _mapping(payload["base"])
             return ForgeResult.available(
-                ForgeChangeRequest(
-                    external_id=str(payload.get("number", payload.get("index", index))),
-                    title=str(payload["title"]),
-                    state=state,
-                    source_branch=str(head["ref"]),
-                    target_branch=str(base["ref"]),
-                    head=GitObjectId(str(head["sha"])),
-                    base=GitObjectId(str(base["sha"])),
-                    web_url=str(payload["html_url"]),
-                    author=_actor(payload["user"], self.provider),
-                    draft=bool(payload.get("draft", False)),
-                    updated_at=_required_time(payload["updated_at"]),
-                    merged_at=merged_at,
-                )
+                _change_request(_mapping(result.value), self.provider)
             )
         except (KeyError, TypeError, ValueError):
             return ForgeResult.unavailable(
                 f"{self.provider} returned malformed change-request data"
             )
+
+    def change_requests(
+        self, state: ForgeChangeState | None = None
+    ) -> ForgeResult[tuple[ForgeChangeRequest, ...]]:
+        result = self._paged_list(
+            self._repo_path("pulls"), query={"state": _state_query(state)}
+        )
+        if result.availability is not ForgeAvailability.AVAILABLE:
+            return ForgeResult(result.availability, detail=result.detail)
+        try:
+            values = tuple(
+                _change_request(payload, self.provider) for payload in result.value
+            )
+        except (KeyError, TypeError, ValueError):
+            return ForgeResult.unavailable(
+                f"{self.provider} returned malformed change-request data"
+            )
+        if state is not None:
+            values = tuple(value for value in values if value.state is state)
+        if not values:
+            return ForgeResult.missing("no change requests reported for state")
+        return ForgeResult.available(
+            tuple(
+                sorted(
+                    values,
+                    key=lambda value: (value.updated_at, value.external_id),
+                    reverse=True,
+                )
+            )
+        )
 
     def checks(self, head: GitObjectId) -> ForgeResult[tuple[ForgeCheck, ...]]:
         result = self._paged_list(
@@ -409,6 +410,46 @@ def _pull_index(value: str) -> int:
     if index < 1:
         raise GiteaLikeAdapterError("change-request id must be a positive integer")
     return index
+
+
+def _state_query(state: ForgeChangeState | None) -> str:
+    if state is None:
+        return "all"
+    if state is ForgeChangeState.OPEN:
+        return "open"
+    # Gitea-family forges report merged change requests as closed with
+    # merged=true, so both closed and merged read "closed".
+    return "closed"
+
+
+def _change_request(payload: Mapping[str, Any], provider: str) -> ForgeChangeRequest:
+    merged = bool(payload.get("merged", False))
+    merged_at = _time(payload.get("merged_at"))
+    state = (
+        ForgeChangeState.MERGED
+        if merged
+        else ForgeChangeState.OPEN
+        if str(payload["state"]).lower() == "open"
+        else ForgeChangeState.CLOSED
+    )
+    if state is ForgeChangeState.MERGED and merged_at is None:
+        raise ValueError(f"{provider} merged change lacks merged_at")
+    head = _mapping(payload["head"])
+    base = _mapping(payload["base"])
+    return ForgeChangeRequest(
+        external_id=str(payload.get("number", payload.get("index", ""))),
+        title=str(payload["title"]),
+        state=state,
+        source_branch=str(head["ref"]),
+        target_branch=str(base["ref"]),
+        head=GitObjectId(str(head["sha"])),
+        base=GitObjectId(str(base["sha"])),
+        web_url=str(payload["html_url"]),
+        author=_actor(payload["user"], provider),
+        draft=bool(payload.get("draft", False)),
+        updated_at=_required_time(payload["updated_at"]),
+        merged_at=merged_at,
+    )
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
