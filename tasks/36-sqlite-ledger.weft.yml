@@ -1,0 +1,67 @@
+format: weft-task-v0
+phase: sqlite-ledger
+summary: Add transactional workspace ledger storage without changing historical chain semantics.
+
+tasks:
+  - slug: weftmark-sqlite-ledger
+    title: Transactional portable SQLite ledger backed by Nostoi
+    status: review
+    priority: P1
+    depends:
+      - local-ledger-foundation
+    purpose: Provide CAS, idempotent append and workspace isolation behind LedgerPort with an atomic SQL batch seam for SQLite-family hosts.
+    scope:
+      files:
+        - src/weftmark/application/ports/ledger.py
+        - src/weftmark/adapters/ledger_codec.py
+        - src/weftmark/adapters/sql_ledger.py
+        - src/weftmark/adapters/sqlite_ledger.py
+        - src/weftmark/adapters/ledger_api.py
+        - src/weftmark/adapters/sql/001_ledger.sql
+        - tests/adapters/test_sqlite_ledger.py
+        - tests/adapters/test_ledger_api.py
+        - tests/contracts/test_sql_ledger.py
+        - docs/contracts/ledger-v1.schema.json
+        - docs/contracts/ledger-v1.openapi.yaml
+        - docs/SQLITE-LEDGER.md
+        - tasks/36-sqlite-ledger.weft.yml
+        - pyproject.toml
+        - uv.lock
+        - README.md
+      contracts:
+        - port:ledger-v0
+        - port:idempotent-ledger-v1
+        - contract:ledger-sql-v1
+        - contract:ledger-api-v1
+        - adapter:sqlite-ledger-v1
+        - boundary:nostoi-canonicalization
+    deliverables:
+      - Transactional SQLite LedgerPort with explicit database and stream initialization.
+      - Immutable entries and receipts, optimistic head checks and replay-safe appends.
+      - Versioned portable DDL, atomic batch executor contract and HTTP request/result schemas.
+      - Pinned optional Nostoi dependency for canonicalization and complete-chain verification.
+      - Conformance, concurrent-writer, rollback, workspace-isolation and corruption tests.
+    accept:
+      - Existing supported WeftMark JSONL entries retain their sequence and digests on import/export.
+      - Appends commit entry, receipt and head together or not at all.
+      - The portable batch requires no SQL UDF, PRAGMA, RETURNING or explicit transaction statements.
+      - SQLite uses WAL and full synchronous commits, with documented Litestream backup/restore boundaries.
+      - API authorization is injected by a trusted host and checked before resolving a workspace ledger.
+    negative:
+      - Schema mismatches, failed CAS, idempotency-key reuse and corrupt chains fail closed.
+      - No implicit migration of existing databases, no automatic switch from JSONL and no direct Frog database writes.
+      - No claims of live D1/libSQL deployment, identity-provider implementation or externally anchored rollback protection.
+      - The portable numeric profile refuses floats or oversized integers before Nostoi can coerce them.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/adapters/test_sqlite_ledger.py tests/adapters/test_ledger_api.py tests/contracts/test_sql_ledger.py
+      - kind: security
+        required: true
+        criterion: CAS races, failed batches, authenticated-principal binding and tampered-history refusals have negative tests.
+      - kind: review
+        required: true
+        criterion: Public schemas, threat limits and Nostoi/D1 portability boundaries require independent review before release.
+    notes:
+      - Implementation is not release completion; independent review and remote-host conformance remain gates.
+      - Frog uses the explicit legacy override for mandatory path-lock coordination because model leases do not yet enforce exact file locks.

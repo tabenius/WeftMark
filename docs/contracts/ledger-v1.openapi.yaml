@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: WeftMark ledger API
+  version: 1.0.0
+  description: >
+    Contract and transport-neutral handlers, not a deployed network service.
+    Hosts authenticate principals and enforce workspace read/append permissions
+    before resolving storage. Clients never submit SQL or database paths.
+security:
+  - bearerAuth: []
+paths:
+  /v1/workspaces/{workspace_id}/ledgers/{ledger_id}/head:
+    parameters:
+      - $ref: '#/components/parameters/Workspace'
+      - $ref: '#/components/parameters/Ledger'
+    get:
+      operationId: ledgerHead
+      summary: Read a validated head with workspace read permission
+      responses:
+        '200':
+          description: Integrity-validated head; this is not a signature or external time anchor
+          content:
+            application/json:
+              schema:
+                $ref: 'ledger-v1.schema.json#/$defs/HeadResult'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/workspaces/{workspace_id}/ledgers/{ledger_id}/entries:
+    parameters:
+      - $ref: '#/components/parameters/Workspace'
+      - $ref: '#/components/parameters/Ledger'
+    get:
+      operationId: ledgerEntries
+      summary: Read a bounded page from a validated snapshot
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: string
+            pattern: '^(0|[1-9][0-9]{0,15})$'
+            default: '0'
+          description: Exclusive sequence cursor, maximum 9007199254740991
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+      responses:
+        '200':
+          description: Follow next_cursor until null; page length is not an end marker
+          content:
+            application/json:
+              schema:
+                $ref: 'ledger-v1.schema.json#/$defs/EntriesResult'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: ledgerAppend
+      summary: Atomically append or replay with workspace append permission
+      description: >
+        Authentication and delegation are supplied by the host. No actor field
+        in a payload grants authority. A key is scoped to a workspace and ledger;
+        another principal reusing it gets a conflict. Failed CAS leaves no receipt.
+        Retry a lost response with the same key and complete request. For a new
+        operation after CAS conflict, read the current head and use a new key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'ledger-v1.schema.json#/$defs/AppendRequest'
+      responses:
+        '200':
+          description: Entry, immutable receipt and head committed together, or original entry replayed
+          content:
+            application/json:
+              schema:
+                $ref: 'ledger-v1.schema.json#/$defs/AppendResult'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Host-validated credential; authentication is not implemented by LedgerApi
+  parameters:
+    Workspace:
+      name: workspace_id
+      in: path
+      required: true
+      schema:
+        $ref: 'ledger-v1.schema.json#/$defs/Identifier'
+    Ledger:
+      name: ledger_id
+      in: path
+      required: true
+      schema:
+        $ref: 'ledger-v1.schema.json#/$defs/Identifier'
+  responses:
+    Error:
+      description: Invalid request (400), unauthenticated (401), forbidden (403), CAS/idempotency conflict (409), or unavailable/corrupt storage (503). No automatic repair or backend fallback.
+      content:
+        application/json:
+          schema:
+            $ref: 'ledger-v1.schema.json#/$defs/ErrorResult'
