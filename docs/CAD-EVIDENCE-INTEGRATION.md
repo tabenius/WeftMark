@@ -42,3 +42,11 @@ validation and ledger boundary independently of the optional KiCad installation.
   idempotent receipt key.
 - Add explicit read-only review projections, then wire evidence readiness
   subject to human-authenticated review and source freshness checks.
+
+## Trusted local controller (new)
+
+`src/weftmark/application/cad_verified_intake.py` provides `import_verified_cad_evidence` for trusted, local orchestration. It accepts a candidate and paths to the *saved* KiCad source, exact original JSON report and Nostoi chain. It independently computes source/report SHA-256, invokes `nostoi verify` and `nostoi show <seq> --json` without a shell, requires the displayed record to be verified and its sequence/digest to match the receipt, and calls the application import boundary with the verified record. The source digest is rechecked immediately before ledger intake.
+
+The low-level `import_cad_evidence` remains a trusted internal adapter; only the controller should be exposed to operator-owned commands. Neither function is an HTTP endpoint or a reviewer-approval interface. A valid local chain can still have been truncated or replaced; a trusted externally anchored head is needed before making stronger continuity claims.
+
+The imported record remains a distinct `cad.evidence.imported` observation and cannot independently satisfy a normal WeftMark evidence requirement or release readiness.
