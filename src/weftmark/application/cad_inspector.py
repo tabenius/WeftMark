@@ -40,3 +40,13 @@ def inspect_cad_evidence(ledger: LedgerService, *, change_set_id: str, current_h
             "ready_for_release": False,
         })
     return tuple(result)
+
+
+def cad_inspector_document(ledger: LedgerService, *, change_set_id: str, current_head_sha: str | None = None) -> dict[str, Any]:
+    """Versioned, inert snapshot for the local-file reviewer surface."""
+    return {
+        "schema": "ragbaz.weftmark.cad-inspector.v1",
+        "records": [dict(record) for record in inspect_cad_evidence(
+            ledger, change_set_id=change_set_id, current_head_sha=current_head_sha
+        )],
+    }
