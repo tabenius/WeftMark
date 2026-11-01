@@ -75,15 +75,7 @@ jobs:
       - name: Build executable and deb
         run: uv run --no-sync bash scripts/build_linux_packages.sh
       - name: Verify installed deb and binary
-        run: |
-          mkdir -p /tmp/weftmark-deb-check
-          for kind in cli tui; do
-            mkdir -p "/tmp/weftmark-$kind-check"
-            dpkg-deb -x "dist/weftmark-$kind"_*.deb "/tmp/weftmark-$kind-check"
-            "/tmp/weftmark-$kind-check/usr/bin/weftmark-$kind" --help >/dev/null
-            "./dist/weftmark-$kind-"*-linux-amd64 --help >/dev/null
-          done
-          /tmp/weftmark-cli-check/usr/bin/weftmark --help >/dev/null
+        run: uv run --no-sync bash scripts/verify_linux_packages.sh
       - uses: actions/upload-artifact@v4
         with:
           name: weftmark-linux-amd64
