@@ -22,6 +22,7 @@ def import_verified_cad_evidence(
     ledger, workspace, candidate, *,
     report_path: Path, source_path: Path, nostoi_ledger: Path,
     observed_at: datetime, nostoi_bin: str = "nostoi",
+    trusted_head: tuple[int, str] | None = None,
     runner=subprocess.run,
 ):
     """Verify exact stored source, report and verified event before ledger import.
@@ -66,6 +67,18 @@ def import_verified_cad_evidence(
         raise CadEvidenceImportError("invalid verified Nostoi record") from exc
     if record.get("seq") != int(match.group(1)) or record.get("digest") != match.group(2):
         raise CadEvidenceImportError("Nostoi receipt does not match verified record")
+    if trusted_head is not None:
+        seq, digest = trusted_head
+        if not isinstance(seq, int) or seq < 1 or not isinstance(digest, str) or not _SHA.fullmatch(digest):
+            raise CadEvidenceImportError("invalid trusted Nostoi checkpoint")
+        head = runner([nostoi_bin, "head", str(chain), "--json"],
+                      check=True, capture_output=True, text=True, timeout=30)
+        try:
+            current_head = json.loads(head.stdout)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise CadEvidenceImportError("invalid Nostoi head response") from exc
+        if current_head.get("seq") != seq or current_head.get("digest") != digest:
+            raise CadEvidenceImportError("Nostoi chain head does not match trusted checkpoint")
     if hashlib.sha256(source.read_bytes()).hexdigest() != expected:
         raise CadEvidenceImportError("CAD source changed during intake")
     return import_cad_evidence(
