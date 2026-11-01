@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing semantic version tag, for example v0.0.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Validate immutable release ref
+        id: version
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="${INPUT_TAG:-$REF_NAME}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must match vX.Y.Z"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.version.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install document build system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pandoc libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev
+      - name: Restore locked build environment
+        run: |
+          python -m pip install "uv==0.12.19"
+          uv sync --locked --extra test --group docs --python python3.12
+          uv pip install --python .venv/bin/python "pyinstaller==6.16.0"
+      - name: Verify tag matches package version
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          version="$(uv run --no-sync python -c 'import weftmark; print(weftmark.__version__)')"
+          test "v$version" = "$TAG" || { echo "::error::Tag does not match package version"; exit 1; }
+      - name: Run tests
+        run: uv run --no-sync python -m pytest
+      - name: Build distributions, executable, deb and documentation
+        run: |
+          uv build
+          uv run --no-sync bash scripts/build_linux_packages.sh
+          uv run --no-sync python scripts/build_figures.py
+          uv run --no-sync python scripts/build_logo.py --size 512
+          uv run --no-sync python scripts/build_pdf.py
+          test -s build/weftmark.html
+          test -s build/weftmark_A5.pdf
+          cp build/weftmark.html dist/weftmark.html
+          cp build/weftmark_A5.pdf dist/weftmark_A5.pdf
+      - name: Validate installed Debian payload
+        shell: bash
+        run: |
+          mkdir -p /tmp/weftmark-package-test
+          dpkg-deb -x dist/weftmark_*.deb /tmp/weftmark-package-test
+          /tmp/weftmark-package-test/usr/bin/weftmark --help >/dev/null
+          ./dist/weftmark-*-linux-amd64 --help >/dev/null
+          cd dist
+          sha256sum *.whl *.tar.gz *.deb *-linux-amd64 *.html *.pdf > SHA256SUMS
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          gh release create "$TAG" \
+            --verify-tag \
+            --title "WeftMark $TAG" \
+            --generate-notes \
+            dist/*.whl dist/*.tar.gz dist/*.deb dist/*-linux-amd64 \
+            dist/weftmark.html dist/weftmark_A5.pdf dist/SHA256SUMS
