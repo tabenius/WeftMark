@@ -31,7 +31,7 @@ tui = [
 test = [
   "nostoi @ git+https://github.com/tabenius/nostoi.git@b043bf953eeda3ea720adfa91f1b2177c0ab1143#subdirectory=bindings/python",
   "jsonschema>=4.26,<5",
-  "pytest>=8,<9",
+  "pytest>=8,<10",
   "mcp>=2,<3",
   "textual>=8,<9",
 ]
