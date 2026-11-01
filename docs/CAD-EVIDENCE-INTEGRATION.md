@@ -64,3 +64,9 @@ The web reviewer loads only a local `ragbaz.weftmark.cad-inspector.v1` JSON snap
 The controller's optional `artifact_root` argument restricts the verified KiCad JSON report to an existing, resolved directory. It refuses a report that escapes via an absolute path or symlink, and refuses a CAD source or Nostoi chain placed inside the same report-artifact root. Configure the artifact root as a locally protected, read-only directory after the CAD producer writes and seals the report.
 
 This protects against accidental path escape and some confused-deputy imports. It does **not** authenticate a remote artifact service, protect against hostile concurrent filesystem mutation, or independently establish which KiCad source file corresponds to a Git commit. Without `artifact_root`, the trusted operator chooses the report path, preserving the initial local development workflow. For production, require this boundary at the service entry point and arrange identity-scoped artifact access plus immutable blob references.
+
+## Optional reviewed Git blob binding
+
+Pass both `git_snapshot_root` (trusted local repository directory) and `git_source_path` (a relative KiCad design path inside it) to `import_verified_cad_evidence`. The controller resolves that path against the supplied saved source, obtains the Change Set's recorded full Git head SHA, runs `git show <head>:<path>` without a shell, and refuses when the blob's SHA-256 differs from the saved KiCad source. The exact Git blob check is separate from the Nostoi chain check.
+
+This is an additional local provenance gate, not yet a proof that the repository's HEAD or Change Set observation has been refreshed against a live forge. A trusted orchestrator must refresh the Change Set before intake and control the repository checkout. The existing local test path remains available when these optional arguments are omitted; a production entry point should require them.
