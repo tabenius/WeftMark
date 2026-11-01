@@ -78,3 +78,22 @@ def test_trusted_nostoi_head_checkpoint_must_match(tmp_path):
         report_path=report,source_path=source,nostoi_ledger=chain,
         observed_at=datetime.now(timezone.utc),runner=runner,
         trusted_head=(1,"f"*64))=="cad-abc"
+
+def test_artifact_root_blocks_report_escape(tmp_path):
+    artifact_root=tmp_path/"artifacts"
+    artifact_root.mkdir()
+    source=tmp_path/"design.kicad_sch"
+    source.write_bytes(b"(kicad_sch)")
+    report=tmp_path/"erc.json"
+    report.write_bytes(RAW)
+    chain=tmp_path/"events.jsonl"
+    chain.write_bytes(b"fixture")
+    item=candidate()
+    item["source_sha256"]=hashlib.sha256(source.read_bytes()).hexdigest()
+    calls=[]
+    with pytest.raises(CadEvidenceImportError,match="escapes trusted artifact root"):
+        import_verified_cad_evidence(Ledger(),Workspace(),item,
+            report_path=report,source_path=source,nostoi_ledger=chain,
+            artifact_root=artifact_root,observed_at=datetime.now(timezone.utc),
+            runner=lambda *a,**k:calls.append(a))
+    assert not calls
