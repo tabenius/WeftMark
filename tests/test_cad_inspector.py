@@ -41,3 +41,12 @@ def test_cad_inspector_rejects_invalid_change_set():
     import pytest
     with pytest.raises(ValueError):
         inspect_cad_evidence(Ledger(), change_set_id="")
+
+
+def test_offline_inspector_document_schema_and_staleness():
+    from weftmark.application.cad_inspector import cad_inspector_document
+    snapshot = cad_inspector_document(Ledger(), change_set_id="cs-42", current_head_sha="e"*40)
+    assert snapshot["schema"] == "ragbaz.weftmark.cad-inspector.v1"
+    assert len(snapshot["records"]) == 1
+    assert snapshot["records"][0]["source_binding_status"] == "stale"
+    assert snapshot["records"][0]["ready_for_release"] is False
