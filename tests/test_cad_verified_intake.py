@@ -97,3 +97,25 @@ def test_artifact_root_blocks_report_escape(tmp_path):
             artifact_root=artifact_root,observed_at=datetime.now(timezone.utc),
             runner=lambda *a,**k:calls.append(a))
     assert not calls
+
+def test_git_snapshot_source_binding_refuses_mismatched_blob(tmp_path):
+    source=tmp_path/"design.kicad_sch"
+    source.write_bytes(b"(kicad_sch)")
+    report=tmp_path/"erc.json"
+    report.write_bytes(RAW)
+    chain=tmp_path/"events.jsonl"
+    chain.write_bytes(b"fixture")
+    item=candidate()
+    item["source_sha256"]=hashlib.sha256(source.read_bytes()).hexdigest()
+    calls=[]
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        if argv[0]=="git":
+            return SimpleNamespace(stdout=b"(kicad_sch changed)")
+        return SimpleNamespace(stdout="")
+    with pytest.raises(CadEvidenceImportError,match="does not match reviewed Git revision"):
+        import_verified_cad_evidence(Ledger(),Workspace(),item,
+            report_path=report,source_path=source,nostoi_ledger=chain,
+            git_snapshot_root=tmp_path,git_source_path="design.kicad_sch",
+            observed_at=datetime.now(timezone.utc),runner=runner)
+    assert len(calls)==1 and calls[0][:3]==["git","-C",str(tmp_path)]
