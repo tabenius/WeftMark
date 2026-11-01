@@ -18,6 +18,8 @@ const elements = {
   sourceStatus: document.querySelector("#source-status"),
   refresh: document.querySelector("#refresh-button"),
   fileButton: document.querySelector("#file-button"),
+  cadFileButton: document.querySelector("#cad-file-button"),
+  cadFile: document.querySelector("#cad-file-input"),
   file: document.querySelector("#file-input"),
   countCards: document.querySelector("#count-cards"),
   countClaims: document.querySelector("#count-claims"),
@@ -33,6 +35,8 @@ const elements = {
 const defaultSource = new URLSearchParams(location.search).get("source") || "/v0/kanban";
 let source = { kind: "url", value: defaultSource };
 let projection = null;
+let cadEvidence = [];
+const CAD_SCHEMA = "ragbaz.weftmark.cad-inspector.v1";
 
 function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
@@ -201,6 +205,46 @@ function renderCollisions(card) {
   return container;
 }
 
+function renderCadEvidence(card) {
+  const entries = cadEvidence.filter((value) => value.change_set_id === card.id);
+  if (!entries.length) return el("p", { text: "No locally loaded CAD evidence. CAD checks do not grant approval." });
+  const group = el("div");
+  for (const item of entries) {
+    const stale = item.bound_commit_sha !== card.git?.head_sha;
+    group.append(detailSection(item.id, definitionRows([
+      ["Rule-check result", item.test_outcome],
+      ["Source binding", stale ? "Stale / different Git head" : "Same Git head (source revision not independently certified)"],
+      ["Report SHA-256", item.report_sha256, true],
+      ["Source SHA-256", item.source_sha256, true],
+      ["Nostoi receipt SHA-256", item.nostoi_receipt_sha256, true],
+      ["Artifact", item.artifact_reference, true],
+      ["Release approval", "None — imported evidence is informational"],
+    ])));
+  }
+  return group;
+}
+
+function validateCadInspectorDocument(document) {
+  if (!document || document.schema !== CAD_SCHEMA || !Array.isArray(document.records)) {
+    throw new Error("Unsupported CAD inspector document.");
+  }
+  if (document.records.length > 1000) throw new Error("Too many CAD records.");
+  const hex = /^[a-f0-9]{64}$/;
+  return document.records.map((record) => {
+    if (!record || typeof record.id !== "string" || typeof record.change_set_id !== "string"
+        || !["passed", "failed"].includes(record.test_outcome)
+        || !hex.test(record.report_sha256) || !hex.test(record.source_sha256)
+        || !hex.test(record.nostoi_receipt_sha256)
+        || typeof record.bound_commit_sha !== "string"
+        || typeof record.artifact_reference !== "string"
+        || !record.artifact_reference.startsWith("artifact:")
+        || record.approval !== "none" || record.ready_for_release !== false) {
+      throw new Error("CAD inspector record is invalid or claims approval.");
+    }
+    return record;
+  });
+}
+
 function openDetail(card) {
   const state = card.kind === "task" ? card.task_state : card.readiness;
   elements.detailLane.textContent = `${card.lane} · ${humanize(state)}`;
@@ -240,6 +284,7 @@ function openDetail(card) {
     ["Handoff", handoff.id, true], ["Head", shortSha(handoff.head_sha), true],
     ["Current", handoff.is_current ? "yes" : "no"],
   ]) : el("p", { text: "No handoff recorded." })));
+  elements.detailContent.append(detailSection("CAD / Nostoi provenance (read-only)", renderCadEvidence(card)));
   elements.detailContent.append(detailSection("Git observation", definitionRows([
     ["Branch", card.git?.branch, true], ["Head", card.git?.head_sha, true],
     ["Observed", formatTime(card.git?.observed_at)],
@@ -306,3 +351,20 @@ elements.dialog.addEventListener("click", (event) => {
 });
 
 loadCurrentSource();
+
+elements.cadFileButton.addEventListener("click", () => elements.cadFile.click());
+elements.cadFile.addEventListener("change", async () => {
+  const [file] = elements.cadFile.files;
+  if (!file) return;
+  try {
+    if (file.size > 2_000_000) throw new Error("CAD inspector file exceeds 2 MB.");
+    const records = validateCadInspectorDocument(JSON.parse(await file.text()));
+    cadEvidence = records;
+    setMessage(`Loaded ${records.length} local CAD evidence entries. These are untrusted display records, not approval or independent proof of Nostoi integrity.`);
+  } catch (error) {
+    cadEvidence = [];
+    setMessage(`Could not load CAD inspector file: ${error.message}`);
+  } finally {
+    elements.cadFile.value = "";
+  }
+});
