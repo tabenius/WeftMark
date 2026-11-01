@@ -58,3 +58,32 @@ jobs:
             build/weftmark.html
             build/weftmark_A5.pdf
           if-no-files-found: error
+
+  linux-packages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install package tooling
+        run: |
+          python -m pip install "uv==0.12.19"
+          uv sync --locked --python python3.12
+          uv pip install --python .venv/bin/python "pyinstaller==6.16.0"
+      - name: Build executable and deb
+        run: uv run --no-sync bash scripts/build_linux_packages.sh
+      - name: Verify installed deb and binary
+        run: |
+          mkdir -p /tmp/weftmark-deb-check
+          dpkg-deb -x dist/weftmark_*.deb /tmp/weftmark-deb-check
+          /tmp/weftmark-deb-check/usr/bin/weftmark --help >/dev/null
+          ./dist/weftmark-*-linux-amd64 --help >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weftmark-linux-amd64
+          path: |
+            dist/*.deb
+            dist/*-linux-amd64
+          if-no-files-found: error
