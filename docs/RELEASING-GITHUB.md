@@ -24,13 +24,15 @@ It does not change versions automatically or silently publish `main`.
 Release assets include:
 
 - Python wheel and source distribution
-- `weftmark-X.Y.Z-linux-amd64`: self-contained Linux executable (CLI)
-- `weftmark_X.Y.Z_amd64.deb`: Debian/Ubuntu package installing `/usr/bin/weftmark`
+- `weftmark-cli-X.Y.Z-linux-amd64`: standalone CLI executable
+- `weftmark-tui-X.Y.Z-linux-amd64`: standalone Textual TUI executable
+- `weftmark-cli_X.Y.Z_amd64.deb`: Debian package installing `/usr/bin/weftmark-cli` and `/usr/bin/weftmark`
+- `weftmark-tui_X.Y.Z_amd64.deb`: Debian package installing `/usr/bin/weftmark-tui`
 - Self-contained documentation HTML and A5 PDF
 - `SHA256SUMS` checksums for all assets
 
-The binary currently packages the **base WeftMark CLI**, not a full Rust-native
-replacement, and not optional TUI/MCP processes as separate executables.
+The binary releases package the **base CLI** and **Textual TUI** as separate
+executable artifacts. MCP is not yet distributed as a standalone executable.
 Builds use PyInstaller and are currently Linux **amd64 only**. The executable
 may still require compatible glibc/system facilities on the target distribution;
 test the `.deb` on supported Debian/Ubuntu versions before claiming universal
