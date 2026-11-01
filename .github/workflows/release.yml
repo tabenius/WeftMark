@@ -71,18 +71,13 @@ jobs:
           test -s build/weftmark_A5.pdf
           cp build/weftmark.html dist/weftmark.html
           cp build/weftmark_A5.pdf dist/weftmark_A5.pdf
-      - name: Validate installed Debian payload
+      - name: Validate packaged CLI and TUI, generate checksums
         shell: bash
         run: |
-          mkdir -p /tmp/weftmark-package-test
-          for kind in cli tui; do
-            mkdir -p "/tmp/weftmark-$kind-package-test"
-            dpkg-deb -x "dist/weftmark-$kind"_*.deb "/tmp/weftmark-$kind-package-test"
-            "/tmp/weftmark-$kind-package-test/usr/bin/weftmark-$kind" --help >/dev/null
-            "./dist/weftmark-$kind-"*-linux-amd64 --help >/dev/null
-          done
+          uv run --no-sync bash scripts/verify_linux_packages.sh
           cd dist
           sha256sum *.whl *.tar.gz *.deb *-linux-amd64 *.html *.pdf > SHA256SUMS
+          sha256sum --check SHA256SUMS
       - name: Publish GitHub Release assets
         env:
           GH_TOKEN: ${{ github.token }}
