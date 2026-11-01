@@ -31,6 +31,8 @@ def import_cad_evidence(
     *,
     report_bytes: bytes,
     nostoi_chain_verified: bool,
+    verified_nostoi_event: Mapping[str, Any] | None = None,
+    expected_source_sha256: str | None = None,
     observed_at: datetime,
 ) -> str:
     """Record a non-approval CAD test outcome, tied to an existing Change Set.
@@ -42,6 +44,8 @@ def import_cad_evidence(
         raise CadEvidenceImportError("timezone-aware observation required")
     if not nostoi_chain_verified:
         raise CadEvidenceImportError("independent Nostoi chain verification required")
+    if not isinstance(verified_nostoi_event, Mapping):
+        raise CadEvidenceImportError("specific independently verified Nostoi event required")
     if not isinstance(report_bytes, bytes) or len(report_bytes) > 16_000_000:
         raise CadEvidenceImportError("bounded original report required")
     if not isinstance(candidate, Mapping) or candidate.get("schema") != "ragbaz.cad.weftmark-evidence-candidate/1":
@@ -51,6 +55,8 @@ def import_cad_evidence(
         raise CadEvidenceImportError("invalid evidence ID")
     if any(not isinstance(v, str) or not _SHA.fullmatch(v) for v in (source, report)):
         raise CadEvidenceImportError("invalid CAD evidence digests")
+    if expected_source_sha256 != source:
+        raise CadEvidenceImportError("CAD source revision is not independently bound")
     if hashlib.sha256(report_bytes).hexdigest() != report:
         raise CadEvidenceImportError("KiCad report hash mismatch")
     try:
@@ -83,6 +89,23 @@ def import_cad_evidence(
         raise CadEvidenceImportError("missing matching Nostoi receipt")
     if not isinstance(receipt.get("receipt"), str) or not receipt["receipt"].strip():
         raise CadEvidenceImportError("empty Nostoi receipt")
+    body = verified_nostoi_event.get("body")
+    if (
+        verified_nostoi_event.get("kind") != "cad.evidence.completed"
+        or verified_nostoi_event.get("subject") != ident
+        or not isinstance(body, Mapping)
+        or body.get("schema") != "ragbaz.cad.nostoi-evidence/1"
+        or body.get("evidence_id") != ident
+        or body.get("change_set_id") != cs
+        or body.get("source_sha256") != source
+        or body.get("report_sha256") != report
+        or body.get("mode") != candidate["check"]
+        or body.get("verdict") != ("clear" if candidate["state"] == "passed" else "violations")
+        or body.get("tool_version") != candidate["tool_version"]
+        or body.get("freshness") != "saved-source-only"
+        or body.get("certification") is not False
+    ):
+        raise CadEvidenceImportError("verified Nostoi event does not bind this evidence")
     artifacts = candidate.get("artifacts")
     if not isinstance(artifacts, list) or len(artifacts) != 1 or not isinstance(artifacts[0], dict):
         raise CadEvidenceImportError("exactly one report artifact required")
@@ -91,7 +114,7 @@ def import_cad_evidence(
         raise CadEvidenceImportError("untrusted artifact URI")
     if artifact.get("digest") != report:
         raise CadEvidenceImportError("artifact/report digest mismatch")
-    if ledger.latest(kind="evidence",entity_id=ident) is not None:
+    if ledger.latest(kind="cad.evidence.imported",entity_id=ident) is not None or ledger.latest(kind="evidence",entity_id=ident) is not None:
         raise CadEvidenceImportError("duplicate evidence ID")
     head_sha = binding.latest.head_sha
     # External producer must not inherit authority from the importing operator.
