@@ -50,3 +50,11 @@ validation and ledger boundary independently of the optional KiCad installation.
 The low-level `import_cad_evidence` remains a trusted internal adapter; only the controller should be exposed to operator-owned commands. Neither function is an HTTP endpoint or a reviewer-approval interface. A valid local chain can still have been truncated or replaced; a trusted externally anchored head is needed before making stronger continuity claims.
 
 The imported record remains a distinct `cad.evidence.imported` observation and cannot independently satisfy a normal WeftMark evidence requirement or release readiness.
+
+## Live Nostoi contract test and retained head
+
+The hosted `CAD evidence integration smoke` workflow now builds the upstream Nostoi CLI and executes `tests/test_cad_nostoi_live.py` without mocking its commands. The test creates a real local JSONL chain, appends an actual `cad.evidence.completed` event, obtains an actual `nostoi head --json` checkpoint, verifies `nostoi show --json` against the append receipt and checks that tampering with the report prevents import.
+
+Operators may supply `trusted_head=(sequence, digest)` to `import_verified_cad_evidence`. The controller rejects imports if Nostoi's current head differs. **The checkpoint must be retained outside the trust domain of the mutable ledger**; obtaining the checkpoint from the same local chain immediately before checking does not defend against a chain rewritten before the read. Head equality intentionally rejects later legitimate append events, so choose a checkpoint policy with explicit lifecycle and trusted updates.
+
+The web reviewer loads only a local `ragbaz.weftmark.cad-inspector.v1` JSON snapshot and displays it as untrusted information; it does not use a remote URL from the document, authenticate an approver, or resolve artifact contents. Source Git head equality is a *separate* check from the KiCad file hash. Production work still needs authenticated artifact storage and a pinned source snapshot backed by a Change Set.
