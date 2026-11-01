@@ -1,0 +1,41 @@
+name: Refresh locked build dependencies
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: weftmark-lock-refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve and verify dependency lock
+        run: |
+          python -m pip install "uv==0.12.19"
+          uv lock --python python3.12
+          uv lock --check --python python3.12
+      - name: Commit lockfile update to main when required
+        shell: bash
+        run: |
+          if git diff --quiet -- uv.lock; then
+            echo "uv.lock already up to date"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add uv.lock
+          git commit -m "chore(lock): resolve pinned PyInstaller build group"
+          git pull --rebase origin main
+          git push origin HEAD:main
