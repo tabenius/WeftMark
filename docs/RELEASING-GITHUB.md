@@ -50,3 +50,7 @@ sha256sum -c SHA256SUMS
 Do not reuse tags for different source revisions. Require Actions checks before
 release, maintain provenance of generated assets, and use signing/attestations
 before treating releases as cryptographically authenticated supply-chain evidence.
+
+## Supply-chain and platform validation
+
+Release builds use the `build` dependency group (PyInstaller pinned in `uv.lock`) and GitHub artifact provenance attestations with `id-token: write` and `attestations: write`. GitHub-hosted CI tests clean `weftmark-cli` and `weftmark-tui` Debian installation in Debian 12 and Ubuntu 24.04 containers and runs a pseudo-terminal entrypoint smoke test. These checks do not establish that a complete interactive Textual workflow is usable on all terminals.
