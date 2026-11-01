@@ -106,6 +106,15 @@ def import_cad_evidence(
         or body.get("certification") is not False
     ):
         raise CadEvidenceImportError("verified Nostoi event does not bind this evidence")
+    # Nostoi CLI 'append' returns the sequence and digest. Require the
+    # independently verified record to match that receipt exactly.
+    match = re.fullmatch(r"([1-9][0-9]*) ([0-9a-f]{64})", receipt["receipt"].strip())
+    if (
+        match is None
+        or verified_nostoi_event.get("seq") != int(match.group(1))
+        or verified_nostoi_event.get("digest") != match.group(2)
+    ):
+        raise CadEvidenceImportError("verified Nostoi event does not match append receipt")
     artifacts = candidate.get("artifacts")
     if not isinstance(artifacts, list) or len(artifacts) != 1 or not isinstance(artifacts[0], dict):
         raise CadEvidenceImportError("exactly one report artifact required")
