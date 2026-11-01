@@ -24,6 +24,8 @@ def import_verified_cad_evidence(
     observed_at: datetime, nostoi_bin: str = "nostoi",
     trusted_head: tuple[int, str] | None = None,
     artifact_root: Path | None = None,
+    git_snapshot_root: Path | None = None,
+    git_source_path: str | None = None,
     runner=subprocess.run,
 ):
     """Verify exact stored source, report and verified event before ledger import.
@@ -60,6 +62,29 @@ def import_verified_cad_evidence(
     report_bytes = report.read_bytes()
     if hashlib.sha256(report_bytes).hexdigest() != candidate.get("report_sha256"):
         raise CadEvidenceImportError("saved report digest mismatch")
+    if (git_snapshot_root is None) != (git_source_path is None):
+        raise CadEvidenceImportError("Git snapshot root and source path must be provided together")
+    if git_snapshot_root is not None:
+        repo = Path(git_snapshot_root).resolve(strict=True)
+        rel = Path(git_source_path)
+        if (
+            not isinstance(git_source_path, str)
+            or rel.is_absolute()
+            or ".." in rel.parts
+            or not git_source_path.endswith((".kicad_sch", ".kicad_pcb"))
+            or not (repo / rel).resolve().is_relative_to(repo)
+            or source != (repo / rel).resolve(strict=True)
+        ):
+            raise CadEvidenceImportError("invalid or mismatched Git-bound CAD source path")
+        change_set_id = candidate.get("subject", {}).get("id")
+        binding = workspace.require_change_set(change_set_id)
+        commit = binding.latest.head_sha
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise CadEvidenceImportError("invalid Git head SHA")
+        blob = runner(["git", "-C", str(repo), "show", f"{commit}:{git_source_path}"],
+                      check=True, capture_output=True, timeout=30).stdout
+        if not isinstance(blob, bytes) or hashlib.sha256(blob).hexdigest() != expected:
+            raise CadEvidenceImportError("CAD source does not match reviewed Git revision")
     # No shell and no user-defined command arguments from the evidence itself.
     runner([nostoi_bin, "verify", str(chain)], check=True, capture_output=True,
            text=True, timeout=30)
