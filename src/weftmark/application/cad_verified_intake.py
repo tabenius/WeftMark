@@ -23,6 +23,7 @@ def import_verified_cad_evidence(
     report_path: Path, source_path: Path, nostoi_ledger: Path,
     observed_at: datetime, nostoi_bin: str = "nostoi",
     trusted_head: tuple[int, str] | None = None,
+    artifact_root: Path | None = None,
     runner=subprocess.run,
 ):
     """Verify exact stored source, report and verified event before ledger import.
@@ -44,6 +45,12 @@ def import_verified_cad_evidence(
     source = Path(source_path).resolve(strict=True)
     report = Path(report_path).resolve(strict=True)
     chain = Path(nostoi_ledger).resolve(strict=True)
+    if artifact_root is not None:
+        root = Path(artifact_root).resolve(strict=True)
+        if not root.is_dir() or not report.is_relative_to(root):
+            raise CadEvidenceImportError("report escapes trusted artifact root")
+        if source.is_relative_to(root) or chain.is_relative_to(root):
+            raise CadEvidenceImportError("source and ledger must be separate from artifact storage")
     if any(not p.is_file() for p in (source, report, chain)):
         raise CadEvidenceImportError("source, report and chain must be regular files")
     if source.stat().st_size > 64_000_000 or report.stat().st_size > 16_000_000:
