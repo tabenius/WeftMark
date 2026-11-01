@@ -10,9 +10,11 @@ from typing import Any
 from weftmark.application.ledger import LedgerService
 
 
-def inspect_cad_evidence(ledger: LedgerService, *, change_set_id: str) -> tuple[dict[str, Any], ...]:
+def inspect_cad_evidence(ledger: LedgerService, *, change_set_id: str, current_head_sha: str | None = None) -> tuple[dict[str, Any], ...]:
     if not isinstance(change_set_id, str) or not change_set_id or len(change_set_id) > 120:
         raise ValueError("invalid Change Set ID")
+    if current_head_sha is not None and (not isinstance(current_head_sha, str) or not current_head_sha.strip()):
+        raise ValueError("invalid current head")
     records = ledger.history(kind="cad.evidence.imported")
     result = []
     for entry in records:
@@ -21,6 +23,7 @@ def inspect_cad_evidence(ledger: LedgerService, *, change_set_id: str) -> tuple[
             continue
         if payload.get("subject") != {"kind": "change_set", "id": change_set_id}:
             continue
+        stale = current_head_sha is None or current_head_sha != payload["bound_commit_sha"]
         result.append({
             "id": payload["id"],
             "change_set_id": change_set_id,
@@ -33,6 +36,7 @@ def inspect_cad_evidence(ledger: LedgerService, *, change_set_id: str) -> tuple[
             "artifact_reference": payload["artifact_uri"],
             "limitations": tuple(payload["limitations"]),
             "approval": "none",
+            "source_binding_status": "unverified" if current_head_sha is None else ("stale" if stale else "matching-head"),
             "ready_for_release": False,
         })
     return tuple(result)
