@@ -32,7 +32,7 @@ DIGEST = hashlib.sha256(RAW).hexdigest()
 def verified_event():
     return {
         "kind": "cad.evidence.completed",
-        "subject": "cad-abc",
+        "subject": "cad-abc", "seq": 1, "digest": "f"*64,
         "body": {
             "schema": "ragbaz.cad.nostoi-evidence/1",
             "evidence_id": "cad-abc", "change_set_id": "cs-42",
@@ -54,7 +54,7 @@ def candidate():
         "report_sha256": DIGEST,
         "artifacts": [{"uri": "artifact:cad-erc", "digest": DIGEST}],
         "freshness": "saved-source-only", "approval": "none", "certification": False,
-        "nostoi": {"kind": "cad.evidence.completed", "subject": "cad-abc", "receipt": "1 abc"}
+        "nostoi": {"kind": "cad.evidence.completed", "subject": "cad-abc", "receipt": "1 " + "f"*64}
     }
 
 
@@ -117,3 +117,9 @@ def test_verified_event_body_and_source_digest_are_required():
         import_cad_evidence(ledger, Workspace(), data, report_bytes=RAW,
             nostoi_chain_verified=True, verified_nostoi_event=wrong,
             expected_source_sha256='a'*64, observed_at=datetime.now(timezone.utc))
+
+def test_nostoi_receipt_must_match_verified_record():
+    data=candidate()
+    data["nostoi"]["receipt"] = "2 " + "f"*64
+    with pytest.raises(CadEvidenceImportError,match="does not match append receipt"):
+        import_it(data)
