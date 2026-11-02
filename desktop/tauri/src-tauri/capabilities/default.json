@@ -1,0 +1,8 @@
+{
+  "identifier": "default",
+  "description": "Read-only reviewer with no privileged Tauri IPC permissions.",
+  "windows": [
+    "main"
+  ],
+  "permissions": []
+}
