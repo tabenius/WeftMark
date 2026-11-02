@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WeftMark Review",
+  "version": "0.0.1",
+  "identifier": "cc.ragbaz.weftmark.review",
+  "build": {
+    "frontendDist": "../../../web/review"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "WeftMark Review (read-only)",
+        "width": 1100,
+        "height": 760
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}
