@@ -59,6 +59,18 @@ jobs:
             build/weftmark_A5.pdf
           if-no-files-found: error
 
+  edge-inspector:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate read-only edge inspector
+        working-directory: edge/artifact-inspector
+        run: npm test
+
   linux-packages:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
