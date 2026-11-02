@@ -63,6 +63,10 @@ jobs:
           shopt -s nullglob
           files=(dist/*)
           (("${#files[@]}" > 1)) || { echo "::error::Missing release assets"; exit 1; }
+          # Fail if a previous invocation finalized this version.
+          if aws --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$prefix/READY" >/dev/null 2>&1; then
+            echo "::error::Release already finalized: $prefix"; exit 1
+          fi
           # Do not partially republish an existing version: check all object keys first.
           for file in "${files[@]}"; do
             key="${prefix}/${file##*/}"
@@ -73,9 +77,13 @@ jobs:
           # Manifest and final registry links use exactly the GitHub Release asset bytes.
           for file in "${files[@]}"; do
             key="${prefix}/${file##*/}"
-            aws --endpoint-url "$endpoint" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body "$file" >/dev/null
+            aws --endpoint-url "$endpoint" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body "$file" --if-none-match '*' >/dev/null
             remote_size=$(aws --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" --query ContentLength --output text)
             local_size=$(wc -c < "$file" | tr -d ' ')
             test "$remote_size" = "$local_size"
+            aws --endpoint-url "$endpoint" s3api get-object --bucket "$R2_BUCKET" --key "$key" "/tmp/r2-verify-${file##*/}" >/dev/null
+            cmp "$file" "/tmp/r2-verify-${file##*/}"
           done
+          printf 'verified release %s\\n' "$TAG" > /tmp/ragbaz-READY
+          aws --endpoint-url "$endpoint" s3api put-object --bucket "$R2_BUCKET" --key "$prefix/READY" --body /tmp/ragbaz-READY --if-none-match '*' >/dev/null
           echo "Published immutable artifacts to https://dl.ragbaz.cc/v1/weftmark/${TAG}/"
