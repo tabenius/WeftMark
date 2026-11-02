@@ -70,6 +70,8 @@ jobs:
       - name: Validate read-only edge inspector
         working-directory: edge/artifact-inspector
         run: npm test
+      - name: Verify Tauri read-only capability boundary
+        run: node --test desktop/tauri/security.test.mjs
 
   linux-packages:
     runs-on: ubuntu-22.04
