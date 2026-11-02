@@ -19,6 +19,7 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": false,
+    "icon": []
   }
 }
