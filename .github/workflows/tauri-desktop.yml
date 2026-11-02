@@ -33,4 +33,4 @@ jobs:
         run: node --test desktop/tauri/security.test.mjs
       - name: Compile desktop shell
         working-directory: desktop/tauri/src-tauri
-        run: cargo check --locked
+        run: cargo check
