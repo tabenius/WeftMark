@@ -1,0 +1,27 @@
+{
+  "schema": "ragbaz.release-package/1",
+  "product": "weftmark",
+  "repository": "tabenius/weftmark",
+  "channel": "candidate",
+  "distribution": "https://ragbaz.cc/downloads/",
+  "formats": [
+    "wheel",
+    "sdist",
+    "deb",
+    "cli",
+    "tui",
+    "html",
+    "pdf"
+  ],
+  "description": "Version-tagged release workflow builds and attests CLI/TUI packages",
+  "promotion": {
+    "requiresTag": true,
+    "requiresGreenCI": true,
+    "requiresSHA256": true,
+    "requiresAttestation": true,
+    "requiresSigning": true,
+    "requiresInstalledSmoke": true,
+    "automaticStable": false
+  },
+  "releaseEligible": true
+}
