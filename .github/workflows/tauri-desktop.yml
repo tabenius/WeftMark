@@ -1,0 +1,36 @@
+name: Tauri desktop validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/tauri/**'
+      - 'web/review/**'
+      - '.github/workflows/tauri-desktop.yml'
+  pull_request:
+    paths:
+      - 'desktop/tauri/**'
+      - 'web/review/**'
+      - '.github/workflows/tauri-desktop.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/tauri/src-tauri
+      - name: Install GTK / WebKit dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+      - name: Validate no privileged renderer capabilities
+        run: node --test desktop/tauri/security.test.mjs
+      - name: Compile desktop shell
+        working-directory: desktop/tauri/src-tauri
+        run: cargo check --locked
