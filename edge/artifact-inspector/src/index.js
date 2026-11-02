@@ -1,3 +1,4 @@
+import { verifyAccess } from "./access.js";
 /**
  * Optional WeftMark edge artifact inspector: read-only R2 digest addressing.
  *
@@ -17,10 +18,11 @@ export default {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method not allowed", { status: 405, headers: { ...headers, Allow: "GET, HEAD" } });
     }
-    // Access must protect the Worker route externally. A client-provided
-    // CF-Access-Jwt-Assertion is not sufficient proof of verification.
-    if (env.PRIVATE_ACCESS_ENFORCED !== "true") {
+    if (!env.ACCESS_ISS || !env.ACCESS_AUD || !env.ACCESS_JWKS_JSON) {
       return new Response("Private access not configured", { status: 503, headers });
+    }
+    if (!(await verifyAccess(request, env))) {
+      return new Response("Unauthorized", { status: 401, headers });
     }
     const match = /^\/v1\/artifacts\/([0-9a-f]{64})$/.exec(url.pathname);
     if (!match || url.search || url.hash) {
