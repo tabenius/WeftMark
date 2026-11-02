@@ -1,5 +1,10 @@
 name: Mirror verified GitHub release to RAGBAZ R2
 on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
   release:
     types: [published]
   workflow_dispatch:
