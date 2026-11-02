@@ -95,6 +95,19 @@ jobs:
           cd dist
           sha256sum *.whl *.tar.gz *.deb *-linux-amd64 *.html *.pdf > SHA256SUMS
           sha256sum --check SHA256SUMS
+      - name: Gate release on clean distro installs and TUI terminal
+        shell: bash
+        run: |
+          set -euo pipefail
+          for base in debian:12-slim ubuntu:24.04; do
+            docker run --rm -v "$PWD/dist:/packages:ro" "$base" sh -ec '
+              apt-get update -qq
+              apt-get install -y -qq /packages/weftmark-cli_*.deb /packages/weftmark-tui_*.deb
+              weftmark --help >/dev/null
+              weftmark-tui --help >/dev/null
+            '
+          done
+          uv run --no-sync python scripts/smoke_tui_pty.py dist/weftmark-tui
       - name: Attest build provenance of release assets
         uses: actions/attest-build-provenance@v3
         with:
