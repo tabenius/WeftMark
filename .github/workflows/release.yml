@@ -119,6 +119,11 @@ jobs:
             dist/*.html
             dist/*.pdf
             dist/SHA256SUMS
+      - name: Prepare registry manifest for all CLI, TUI and documentation packages
+        run: python scripts/create_registry_manifest.py dist
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign exact release manifest with GitHub Actions OIDC
+        run: cosign sign-blob --yes --bundle dist/release.sigstore.json dist/release.json
       - name: Publish GitHub Release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,4 +135,5 @@ jobs:
             --title "WeftMark $TAG" \
             --generate-notes \
             dist/*.whl dist/*.tar.gz dist/*.deb dist/*-linux-amd64 \
-            dist/weftmark.html dist/weftmark_A5.pdf dist/SHA256SUMS
+            dist/weftmark.html dist/weftmark_A5.pdf dist/SHA256SUMS \
+            dist/release.json dist/release.sigstore.json
