@@ -29,6 +29,18 @@ FAILURE_SQL = "SELECT * FROM weftmark_deliberately_missing_probe_table"
 MUTATION_SQL = "UPDATE weftmark_ledger_entries SET kind=? WHERE workspace_id=? AND ledger_id=?"
 
 
+def clean_source_revision():
+    """Bind evidence to a clean checkout, including staged and untracked inputs."""
+    top = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], cwd=ROOT, text=True).strip()
+    if Path(top).resolve() != ROOT.resolve():
+        raise ValueError("probe source must be the repository root")
+    dirty = subprocess.check_output(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=ROOT, text=True)
+    if dirty.strip():
+        raise ValueError("probe evidence requires a clean source checkout; commit or isolate changes first")
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+
+
 def code_digest(allowed):
     parts = [Path(__file__).read_bytes(), (ROOT / "cloudflare/d1-probe/worker.mjs").read_bytes(),
              canonical(allowed).encode(), schema_sql().encode()]
@@ -51,21 +63,25 @@ def allowed_statements():
 
 
 def prepare(args):
+    revision = clean_source_revision()
+    allowed = allowed_statements()
+    digest = code_digest(allowed)
     directory = Path(args.directory)
     directory.mkdir(parents=True, exist_ok=False)
-    allowed = allowed_statements()
     shutil.copyfile(ROOT / "cloudflare/d1-probe/worker.mjs", directory / "worker.mjs")
     (directory / "allowed-sql.json").write_text(json.dumps(allowed))
     (directory / "schema.sql").write_text(schema_sql())
-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     config = {"name": args.worker_name, "main": "worker.mjs", "compatibility_date": "2026-10-01",
         "account_id": args.account_id, "workers_dev": True, "preview_urls": False,
         "observability": {"enabled": False},
         "d1_databases": [{"binding": "DB", "database_name": args.database_name, "database_id": args.database_id}],
-        "vars": {"SOURCE_REVISION": revision, "PROBE_CODE_DIGEST": code_digest(allowed),
+        "vars": {"SOURCE_REVISION": revision, "PROBE_CODE_DIGEST": digest,
                  "EXPIRES_AT": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()}}
     (directory / "wrangler.json").write_text(json.dumps(config, indent=2) + "\n")
-    print(json.dumps({"directory": str(directory), "source_revision": revision, "code_digest": code_digest(allowed)}))
+    if clean_source_revision() != revision or code_digest(allowed) != digest:
+        raise ValueError("probe source changed during preparation; generated files are not verified")
+    print(json.dumps({"directory": str(directory), "source_revision": revision, "code_digest": digest,
+                      "source_clean": True, "artifact_provenance_verified": False}))
 
 
 class ProbeClient:
@@ -105,6 +121,9 @@ class ProbeClient:
 
 
 def verify(client):
+    revision = clean_source_revision()
+    allowed = allowed_statements()
+    digest = code_digest(allowed)
     results = []
     def check(name, condition):
         if not condition:
@@ -113,9 +132,10 @@ def verify(client):
     check("unauthenticated_refused", client.request("/identity", authenticated=False)[0] == 401)
     status, identity = client.request("/identity")
     check("authenticated_identity", status == 200 and identity["schema"] == "weftmark.d1-probe.v1")
-    check("deployed_code_matches", identity["code_digest"] == code_digest(allowed_statements()))
-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    check("deployed_revision_matches", identity["source_revision"] == revision)
+    # /identity echoes deployment configuration. It does not inspect the
+    # provider's deployed artifact and must never be labelled artifact proof.
+    check("configured_code_digest_matches", identity["code_digest"] == digest)
+    check("reported_revision_matches", identity["source_revision"] == revision)
     check("unallowlisted_sql_refused", client.request("/batch", {"schema": "weftmark.ledger-sql-plan.v1",
         "atomic": True, "statements": [{"sql": "DROP TABLE weftmark_ledger_entries", "params": []}]})[0] == 400)
     host = CallbackBatchExecutor(client.batch, atomic=True)
@@ -183,7 +203,11 @@ def verify(client):
     exported = ledger.export_jsonl()
     import nostoi
     check("export_nostoi_verification", nostoi.verify_jsonl(exported, "weftmark-ledger-v1")["ok"])
-    return {"schema": "weftmark.d1-verification.v1", "verified_at": datetime.now(timezone.utc).isoformat(),
+    if clean_source_revision() != revision or code_digest(allowed) != digest:
+        raise ValueError("probe source changed during verification; no evidence report can be published")
+    return {"schema": "weftmark.d1-verification.v2", "verified_at": datetime.now(timezone.utc).isoformat(),
+        "source_revision": revision, "source_clean": True, "artifact_provenance_verified": False,
+        "identity_evidence": "authenticated_worker_configuration_self_report",
         "worker": client.url, "deployment": identity, "workspace_id": workspace,
         "head": {"sequence": ledger.head().sequence, "digest": ledger.head().digest},
         "passed": results, "export_sha256": hashlib.sha256(exported.encode()).hexdigest()}

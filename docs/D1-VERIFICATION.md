@@ -1,5 +1,32 @@
 # Remote Cloudflare D1 verification
 
+## Provenance repair — 2026-11-07
+
+The earlier verifier checked `/identity` variables echoed by the Worker, not a
+provider-observed digest of the deployed artifact. Those historical checks must
+not be treated as artifact provenance. Current `weftmark.d1-verification.v2` reports call them
+`configured_code_digest_matches` and `reported_revision_matches`, label identity
+as an authenticated configuration self-report, and explicitly set
+`artifact_provenance_verified=false`.
+
+Preparation and verification now require a clean source checkout, including
+staged and untracked changes. Refusal happens before creating deployment output
+or making remote verification requests. Source revision/cleanliness and code
+digest are rechecked before a success report, so a changed checkout cannot
+publish successful exact-source evidence. Generated deployment output belongs
+outside the source worktree (or in an explicitly ignored generated directory).
+
+Local regression tests cover clean identity and tracked/staged/untracked
+refusals, plus the existing local conformance path. This repair did not deploy
+anything or rerun remote D1 tests. Provider/version-bound verification of the
+deployed artifact remains required before release; echoed configuration cannot
+close that gate.
+
+The full local suite passed 772 tests during this repair. Native Change Set
+`repair-d1-source-provenance-20261107` records the scoped branch and dirty state.
+Native portable handoff creation refused the uncommitted worktree as designed;
+no clean-head evidence/handoff or live deployment approval was fabricated.
+
 ## Scope and result
 
 The existing portable SQLite ledger was exercised against a **real remote D1

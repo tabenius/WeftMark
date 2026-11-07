@@ -32,6 +32,8 @@ tasks:
       - Probe credentials stay outside Git and evidence payloads; remote resources are individually identified.
       - Witness analysis separates signed receipts, retention, administrator independence and freshness.
     negative:
+      - Preparation and verification refuse staged, unstaged or untracked source changes before deployment output or remote test requests.
+      - Authenticated self-reported code/revision variables are not labelled provider-verified artifact provenance.
       - No existing ledger is migrated and no production or independently witnessed service is claimed.
       - No retention lock, key ceremony or new witness trust root is activated without separate approval.
       - Test SQL bridge is authenticated, statement-allowlisted, resource-isolated and time-limited, not a public ledger API.
@@ -46,5 +48,7 @@ tasks:
         required: true
         criterion: Independent review of probe exposure and witness trust assumptions before release.
     notes:
+      - "2026-11-07 repair prepared for branch publication: dirty-source refusal added and configuration checks relabelled honestly; provider/version-bound artifact verification remains a release blocker."
+      - Authoritative Frog coordination is unavailable while Kali is offline; native repair claim records the isolated local scope without inventing a fleet lock.
       - Explicit dependency exception permits verification of the predecessor while it awaits independent review; this does not approve its release.
       - Frog legacy storage is explicit because model leases do not yet enforce the mandatory exact file locks.

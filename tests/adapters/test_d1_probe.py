@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -15,7 +17,9 @@ probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
 
 
-def test_generated_allowlist_and_local_conformance_path(tmp_path):
+def test_generated_allowlist_and_local_conformance_path(tmp_path, monkeypatch):
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    monkeypatch.setattr(probe, "clean_source_revision", lambda: revision)
     allowed = probe.allowed_statements()
     assert allowed == probe.allowed_statements()
     assert probe.FAILURE_SQL in allowed and probe.MUTATION_SQL in allowed
@@ -41,8 +45,52 @@ def test_generated_allowlist_and_local_conformance_path(tmp_path):
             return [{"success": True, "results": list(r)} for r in rows]
 
     report = probe.verify(LocalProbe())
+    assert report["schema"] == "weftmark.d1-verification.v2"
     assert len(report["passed"]) == 19
     assert report["head"]["sequence"] == 5
+    assert report["source_clean"] is True
+    assert report["artifact_provenance_verified"] is False
+    assert "deployed_code_matches" not in report["passed"]
+    assert report["identity_evidence"] == "authenticated_worker_configuration_self_report"
+    monkeypatch.setattr(probe, "clean_source_revision", Mock(side_effect=[revision, "0" * 40]))
+    with pytest.raises(ValueError, match="source changed"):
+        probe.verify(LocalProbe())
+
+
+@pytest.fixture
+def clean_git_source(tmp_path, monkeypatch):
+    root = tmp_path / "source"
+    root.mkdir()
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    (root / "source.txt").write_text("Committed source\n")
+    subprocess.run(["git", "add", "source.txt"], cwd=root, check=True)
+    subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                    "commit", "-m", "Test source fixture"], cwd=root, check=True, capture_output=True)
+    monkeypatch.setattr(probe, "ROOT", root)
+    return root
+
+
+def test_source_identity_requires_an_exact_clean_repository(clean_git_source):
+    revision = probe.clean_source_revision()
+    assert len(revision) == 40
+    assert revision == subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=clean_git_source, text=True).strip()
+
+
+@pytest.mark.parametrize("dirty_kind", ["tracked", "staged", "untracked"])
+def test_dirty_source_is_refused_before_prepare_outputs_or_network(clean_git_source, tmp_path, dirty_kind):
+    target = clean_git_source / ("untracked.txt" if dirty_kind == "untracked" else "source.txt")
+    target.write_text("Uncommitted input\n")
+    if dirty_kind == "staged":
+        subprocess.run(["git", "add", "source.txt"], cwd=clean_git_source, check=True)
+    destination = tmp_path / "deployment"
+    with pytest.raises(ValueError, match="clean source"):
+        probe.prepare(SimpleNamespace(directory=destination))
+    assert not destination.exists()
+    client = SimpleNamespace(request=Mock(), batch=Mock())
+    with pytest.raises(ValueError, match="clean source"):
+        probe.verify(client)
+    client.request.assert_not_called()
+    client.batch.assert_not_called()
 
 
 @pytest.mark.parametrize("url", ["http://example.com", "https://user:password@example.com", "https://example.com/a", "https://example.com?token=test", "https://example.com#fragment"])
