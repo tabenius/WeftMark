@@ -5,7 +5,7 @@ summary: Convert a useful internal control plane into an honestly described open
 tasks:
   - slug: release-tag-source-provenance
     title: Bind signed release manifests to the checked-out tag
-    status: in_progress
+    status: review
     priority: P1
     depends:
       - packaging-alpha
