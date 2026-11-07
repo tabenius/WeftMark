@@ -57,7 +57,7 @@ def forbidden_imports(source: str) -> set[str]:
 
 
 def test_package_layers_are_importable() -> None:
-    assert weftmark.__version__ == "0.0.1"
+    assert weftmark.__version__ == "0.1.0a1"
     assert weftmark.domain.__name__ == "weftmark.domain"
     assert weftmark.application.__name__ == "weftmark.application"
 
