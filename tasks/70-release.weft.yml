@@ -190,7 +190,7 @@ tasks:
 
   - slug: prerelease-linux-package-version
     title: Build Linux packages from a PEP 440 prerelease version
-    status: review
+    status: done
     priority: P1
     depends:
       - packaging-alpha
@@ -221,7 +221,7 @@ tasks:
         criterion: Linux package build, deb verification and clean-container install pass on the alpha version.
     notes:
       - "Discovered while validating the alpha-release-evidence branch: the package script only accepted final X.Y.Z versions, so the deb job failed with `Invalid version`."
-      - "Status remains review until the GitHub-hosted linux-packages job passes on the prerelease version."
+      - "GitHub-hosted run 42397131374 at 4360cc5 passed Build executable and deb, deb verification, clean Debian 12/Ubuntu 24.04 container installs, and TUI PTY smoke with package version 0.1.0~a1."
 
   - slug: open-source-license
     title: Select and document the open-source license
@@ -276,4 +276,5 @@ tasks:
         criterion: Release bundle is published alongside the alpha artifact.
     notes:
       - "Implemented per docs/superpowers/plans/2026-09-12-alpha-release-evidence.md: release/ is gitignored, version is 0.1.0a1, scripts/build_release_evidence.py assembles the bundle, make release-evidence wraps it, and CI uploads the wheel plus bundle."
-      - "Status remains review: the required deployment evidence and alpha-release-evidence-cs release-readiness review need a real published CI run; no bundle or review was fabricated locally."
+      - "Published artifact `weftmark-release-evidence` from GitHub-hosted run 42397131374 at 4360cc5 contains `release/release-evidence-v0.json` and `dist/weftmark-0.1.0a1-py3-none-any.whl`; the bundle records source_sha, passing pytest/smoke return codes, the 90-task graph, and the assurance rollup."
+      - "Status remains review: the bundle truthfully records `review: null` because no native `alpha-release-evidence-cs` review decision exists yet; that release-readiness review is the remaining gate, not a fabricated value."
