@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'reconcile/**']
   pull_request:
   workflow_dispatch:
 
