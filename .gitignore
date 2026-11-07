@@ -26,6 +26,10 @@ build/*
 # Package build artifacts (sdist/wheel from `uv build` / scripts/smoke_install.py)
 dist/
 
+# Release evidence bundle (embeds the exact commit SHA it was built from;
+# never committed — see scripts/build_release_evidence.py)
+release/
+
 # Temporary exports
 *.tmp
 *.bak
