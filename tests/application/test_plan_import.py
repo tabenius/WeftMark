@@ -228,7 +228,12 @@ def test_weftmark_imports_its_own_reviewed_source_plan(tmp_path: Path) -> None:
     assert "source-plan-native-import" in result.skipped_terminal_tasks
     assert tasks.get("source-plan-native-import-core") is None
     assert tasks.get("source-plan-native-import") is None
-    assert tasks.require("frog-native-task-promotion-core").state is TaskState.TODO
+    representative = next(
+        task
+        for task in snapshot.tasks
+        if task.status not in {"done", "idea"}
+    )
+    assert tasks.require(representative.slug).state is TaskState.TODO
 
 
 def test_import_normalizes_ledger_refusal_without_partial_receipt(tmp_path: Path) -> None:
