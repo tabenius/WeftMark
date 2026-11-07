@@ -5,7 +5,7 @@ summary: Optional runtime observations and deliberate human attestation alongsid
 tasks:
   - slug: runtime-observability-surfaces
     title: Runtime observability and attestation surfaces
-    status: in_progress
+    status: review
     priority: P1
     depends:
       - terminal-review-ui
@@ -51,3 +51,6 @@ tasks:
     notes:
       - Cross-repository contract owners are Minotaur for host status, Nostoi for attestation and Rebekah for web and Dash projection.
       - Source work is not clean-head evidence until committed and recorded explicitly; independent review and deployment remain separate gates.
+      - "Agent review: the adapter is read-only and bounded (1 MiB, 120 s freshness, clock-skew state); missing or stale observations stay visible, terminal control bytes are stripped, and optional absence is not a baseline failure."
+      - "Agent review: Nostoi verification cannot be overridden by a contradictory ok payload and requires a fingerprint pin; signing is an explicit CLI step, never a refresh or service action."
+      - "Evidence: `python -m pytest tests/adapters/test_runtime_status.py tests/adapters/test_nostoi.py tests/cli tests/http tests/tui` passed 108 tests at 037c389. Independent review and deployment remain separate gates."

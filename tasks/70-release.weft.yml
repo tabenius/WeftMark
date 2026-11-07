@@ -5,7 +5,7 @@ summary: Convert a useful internal control plane into an honestly described open
 tasks:
   - slug: release-tag-source-provenance
     title: Bind signed release manifests to the checked-out tag
-    status: review
+    status: done
     priority: P1
     depends:
       - packaging-alpha
@@ -34,10 +34,12 @@ tasks:
         command: python -m pytest tests/test_registry_manifest.py
     notes:
       - Authoritative Frog is offline and excluded; native WeftMark records the isolated release scope.
+      - "Agent review: the manifest binds GITHUB_REF, GITHUB_REF_NAME, GITHUB_SHA, the peeled tag commit and the checked-out HEAD; fixtures cover branch refs, SHA substitution, tag mismatch, wrong repository, and symlinked/reserved/existing artifacts."
+      - "Evidence: `python -m pytest tests/test_registry_manifest.py` passed in GitHub-hosted CI run 42397785724 at 037c389."
 
   - slug: reconcile-attestation-pr-review
     title: Resolve attestation verification and collection review findings
-    status: review
+    status: done
     priority: P1
     depends: []
     purpose: Make signer identity, readable-manifest binding and Git inspection fail closed.
@@ -62,10 +64,13 @@ tasks:
       - kind: test
         required: true
         command: uv run --locked --extra test pytest tests/test_workspace_attestation.py
+    notes:
+      - "Actual GPG verification against pinned signer 78171B4532F8EFFBDFA2958F4315AE31DCC658B1 and pinned root 866ECB8348C0FE48E479736AF85CEFBA8B8E1040 returned GOODSIG/VALIDSIG, and scripts/verify-workspace.py with the local Nostoi reference exited 0: 'GPG signer, organisation delegation, chain, digest and manifest verified'."
+      - "Negative tests cover substituted signer and root, local-only certification, modified readable manifest, uninspectable Git, and failed or malformed Podman inspection."
 
   - slug: workspace-attestation-home
     title: Own the workspace collector and historical attestation bundle
-    status: review
+    status: done
     priority: P1
     depends: []
     purpose: Give the existing collector and signed delivery a durable home in WeftMark.
@@ -88,10 +93,13 @@ tasks:
       - kind: test
         required: true
         command: uv run --locked --extra test pytest tests/test_workspace_attestation.py
+    notes:
+      - "Historical bundle bytes are pinned by SHA-256 and unchanged; the collector scans the selected workspace and refuses an existing bundle without --replace."
+      - "The relocated workspace.jsonl chain and detached signature still verify with actual GPG and the local Nostoi reference."
 
   - slug: python-dependency-lock
     title: Lock runtime, test and documentation Python environments
-    status: review
+    status: done
     priority: P1
     depends: []
     purpose: Make fresh checkouts and CI use a reviewed dependency resolution.
@@ -119,6 +127,9 @@ tasks:
       - kind: test
         required: true
         command: uv run --locked --extra test --group docs python -m pytest
+    notes:
+      - "`uv lock --check` resolved 68 packages with CPython 3.12.15 (exit 0)."
+      - "`uv run --locked --extra test --group docs python -m pytest` passed 803 tests with 1 skipped locally; GitHub-hosted CI run 42397785724 at 037c389 also passed with locked installs."
 
   - slug: security-threat-model
     title: Threat-model local and remote coordination surfaces
