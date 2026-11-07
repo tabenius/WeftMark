@@ -2,7 +2,7 @@
 # Shared packaging acceptance gate for CI and release (Linux amd64).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-version="$(python -c 'import weftmark; print(weftmark.__version__)')"
+version="$(python scripts/package_version.py)"
 arch="$(dpkg --print-architecture)"
 [[ "$arch" == amd64 ]] || { echo "unsupported package architecture: $arch" >&2; exit 1; }
 for kind in cli tui; do

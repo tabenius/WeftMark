@@ -2,8 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-VERSION="$(python -c 'import importlib.metadata; print(importlib.metadata.version("weftmark"))')"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version" >&2; exit 1; }
+VERSION="$(python scripts/package_version.py)" || exit 1
 ARCH="$(dpkg --print-architecture)"
 [[ "$ARCH" == amd64 ]] || { echo "Unsupported architecture: $ARCH" >&2; exit 1; }
 mkdir -p dist

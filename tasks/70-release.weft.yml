@@ -188,6 +188,41 @@ tasks:
         required: true
         criterion: Package build and clean-install smoke test pass on supported Python versions.
 
+  - slug: prerelease-linux-package-version
+    title: Build Linux packages from a PEP 440 prerelease version
+    status: review
+    priority: P1
+    depends:
+      - packaging-alpha
+    purpose: Keep the alpha version bump from breaking the deb and PyInstaller package gate.
+    scope:
+      files:
+        - scripts/package_version.py
+        - scripts/build_linux_packages.sh
+        - scripts/verify_linux_packages.sh
+        - tests/test_package_version.py
+        - tasks/70-release.weft.yml
+      contracts:
+        - contract:package-v0
+    deliverables:
+      - Debian-compatible mapping of PEP 440 prereleases (`0.1.0a1` to `0.1.0~a1`).
+      - Shared version helper used by both package build and verification.
+    accept:
+      - "`0.1.0a1` produces installable `weftmark-*_0.1.0~a1_amd64.deb` packages."
+      - "Final `X.Y.Z` versions pass through unchanged."
+    negative:
+      - Unsupported or malformed version strings fail the package build before artifacts are emitted.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/test_package_version.py
+      - kind: ci
+        required: true
+        criterion: Linux package build, deb verification and clean-container install pass on the alpha version.
+    notes:
+      - "Discovered while validating the alpha-release-evidence branch: the package script only accepted final X.Y.Z versions, so the deb job failed with `Invalid version`."
+      - "Status remains review until the GitHub-hosted linux-packages job passes on the prerelease version."
+
   - slug: open-source-license
     title: Select and document the open-source license
     status: done
