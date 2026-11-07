@@ -324,7 +324,7 @@ tasks:
 
   - slug: frog-transition-board-projection
     title: Project imported Frog intent into a transition board
-    status: review
+    status: done
     priority: P0
     depends:
       - frog-snapshot-receipt-cli
@@ -355,6 +355,9 @@ tasks:
       - kind: review
         required: true
         criterion: Projection authority and migration boundaries are reviewed against docs/frog-transition.md.
+    notes:
+      - "Agent review against docs/frog-transition.md and docs/contracts/frog-transition-projection-v0.md: assignments and locks stay observation-only, unknown statuses fail safe into review, and digest/capture/staleness are explicit."
+      - "Evidence: `python -m pytest tests/application/test_frog_projection.py` passed on GitHub-hosted CI run 42394025836 at 7dc3d1e."
 
   - slug: source-plan-native-import-core
     title: Import Weft source plans into native TaskService
@@ -433,7 +436,7 @@ tasks:
 
   - slug: frog-native-task-promotion-core
     title: Promote reviewed Frog snapshots into native TaskService intent
-    status: review
+    status: done
     priority: P0
     depends:
       - frog-snapshot-receipt-cli
@@ -466,10 +469,13 @@ tasks:
       - kind: review
         required: true
         criterion: Snapshot provenance, graph closure, loop prevention and partial retry behavior preserve the Frog/native authority boundary.
+    notes:
+      - "Agent review: tests cover selected-graph idempotency, idea-only state preservation, relation closure, drift/conflict refusal, WeftMark-origin loop refusal and partial-creation recovery while never creating runtime authority."
+      - "Evidence: `python -m pytest tests/application/test_frog_task_import.py tests/application/test_tasks.py` passed on GitHub-hosted CI run 42394025836 at 7dc3d1e."
 
   - slug: frog-native-task-promotion
     title: Expose Frog-to-native task promotion through the CLI
-    status: review
+    status: done
     priority: P0
     depends:
       - frog-native-task-promotion-core
@@ -505,6 +511,8 @@ tasks:
     notes:
       - Unblocked once the ACP runtime adapter's independent review completed and its claim on src/weftmark/cli/main.py released.
       - Added `weftmark frog task import` (--task repeatable, --scope TASK_SLUG=SCOPE repeatable), mirroring the existing frog task {list,next,claim,promote} CLI pattern.
+      - "Agent review: CLI reports created/reused/skipped/source-satisfied records and refuses missing scope, unselected scope and incomplete relations; it never creates a Change Set, claim or Frog write."
+      - "Evidence: `python -m pytest tests/cli/test_cli_frog.py tests/application/test_frog_task_import.py` passed on GitHub-hosted CI run 42394025836 at 7dc3d1e."
 
   - slug: frog-weftmark-parity-report
     title: Compare Frog and WeftMark coordination behavior
@@ -579,3 +587,6 @@ tasks:
       - kind: review
         required: true
         criterion: An operator confirms the staged sequence is executable and that the blocked-gate prerequisite is stated before any cutover date.
+    notes:
+      - "Agent review confirms the staged authority/rollback sequence, retention and the structurally unavailable collision-refusal/completion-gate checks match the accept and negative criteria."
+      - "Status remains review: this task's evidence requires operator confirmation of executability before any cutover date; human sign-off is not recorded yet."

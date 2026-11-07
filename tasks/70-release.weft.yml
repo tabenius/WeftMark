@@ -216,7 +216,7 @@ tasks:
 
   - slug: alpha-release-evidence
     title: Produce the first release evidence bundle
-    status: todo
+    status: review
     priority: P0
     depends:
       - packaging-alpha
@@ -239,3 +239,6 @@ tasks:
       - kind: deployment
         required: true
         criterion: Release bundle is published alongside the alpha artifact.
+    notes:
+      - "Implemented per docs/superpowers/plans/2026-09-12-alpha-release-evidence.md: release/ is gitignored, version is 0.1.0a1, scripts/build_release_evidence.py assembles the bundle, make release-evidence wraps it, and CI uploads the wheel plus bundle."
+      - "Status remains review: the required deployment evidence and alpha-release-evidence-cs release-readiness review need a real published CI run; no bundle or review was fabricated locally."

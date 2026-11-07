@@ -53,7 +53,7 @@ tasks:
 
   - slug: git-untracked-directory-normalization
     title: Normalize untracked Git directory markers
-    status: review
+    status: done
     priority: P0
     depends:
       - local-git-adapter
@@ -81,6 +81,9 @@ tasks:
       - kind: review
         required: true
         criterion: Normalization is limited to Git's terminal directory marker and preserves the strict application-facing path contract.
+    notes:
+      - "Agent code review against adapter:git-local-v0: only `??` terminal markers are stripped, and domain path validation still rejects absolute, escaping, empty or non-canonical paths."
+      - "Evidence: `python -m pytest tests/adapters/test_git_local.py tests/contracts/test_git_port.py tests/application/test_task_claims.py` passed on GitHub-hosted CI run 42394025836 at 7dc3d1e."
 
   - slug: git-change-binding
     title: Bind Change Sets to base/head Git lineage
