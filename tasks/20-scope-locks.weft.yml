@@ -84,7 +84,7 @@ tasks:
 
   - slug: changeset-scope-amendment
     title: Explicitly widen a claimed Change Set's declared scope
-    status: review
+    status: done
     priority: P2
     depends:
       - scope-audit-service
@@ -130,6 +130,11 @@ tasks:
       - kind: review
         required: true
         criterion: Amendment stays append-only and auditable; it cannot be used to silently launder unrelated changes into an already-claimed Change Set.
+    notes:
+      - "Agent review: ScopeAmendment is append-only, cannot narrow or replace scopes, requires a non-empty reason, and is refused outside active/review states."
+      - "ClaimService.extend_scope checks claim owner/session and active state, acquires matching SemanticLocks in the same ledger append before widening the Change Set, and conflicts with every other active claim."
+      - "The CLI reaches widening only through `weftmark scope amend`, which requires `--reason`; tests cover non-owner, expired claim, conflicting scope, duplicates, empty reason and lifecycle refusals."
+      - "Evidence: `python -m pytest tests/domain/test_changeset.py tests/application/test_workspace.py tests/application/test_claims.py tests/cli/test_cli_workflow.py` passed 44 tests at 414745b."
 
   - slug: native-claim-workflow
     title: Persist and operate semantic Change Set claims locally
