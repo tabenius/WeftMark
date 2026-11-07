@@ -16,7 +16,7 @@ permissions:
 jobs:
   validate-and-build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,6 +35,16 @@ jobs:
         run: uv run --locked --extra test --group docs python -m pytest
       - name: Package and clean-install smoke
         run: uv run --locked --extra test --group docs make smoke
+      - name: Build the release evidence bundle
+        run: uv run --locked --extra test --group docs make release-evidence
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: weftmark-release-evidence
+          path: |
+            dist/*.whl
+            release/release-evidence-v0.json
+          if-no-files-found: error
       - name: Validate tasks and assurance
         run: |
           uv run --locked --extra test --group docs python scripts/validate_tasks.py

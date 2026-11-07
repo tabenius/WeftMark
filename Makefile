@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: all docs html pdf figures logo tasks rev0 smoke clean
+.PHONY: all docs html pdf figures logo tasks rev0 smoke release-evidence clean
 
 all: docs logo tasks
 
@@ -23,6 +23,9 @@ tasks:
 
 smoke:
 	$(PYTHON) scripts/smoke_install.py
+
+release-evidence:
+	$(PYTHON) scripts/build_release_evidence.py
 
 rev0: figures logo pdf
 	mkdir -p docs/artifacts
