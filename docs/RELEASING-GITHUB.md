@@ -20,6 +20,17 @@ exact immutable commit, reruns tests, builds, and creates a GitHub Release.
 
 The same workflow may be dispatched manually with an **existing version tag**.
 It does not change versions automatically or silently publish `main`.
+Dispatch against that tag itself, not against a branch with a different tag input:
+
+```bash
+gh workflow run release.yml --ref vX.Y.Z -f tag=vX.Y.Z
+```
+
+The event ref, selected tag, peeled tag commit and checked-out commit must agree.
+This keeps the GitHub Actions signing identity on `refs/tags/vX.Y.Z` so the
+RAGBAZ importer can verify it. Manifest generation resolves source identity from
+Git and refuses a branch dispatch, event-SHA mismatch or a different checkout
+before writing `release.json`; it does not trust an input tag alone.
 
 Release assets include:
 

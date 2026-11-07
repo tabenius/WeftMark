@@ -3,6 +3,38 @@ phase: release
 summary: Convert a useful internal control plane into an honestly described open-source alpha.
 
 tasks:
+  - slug: release-tag-source-provenance
+    title: Bind signed release manifests to the checked-out tag
+    status: in_progress
+    priority: P1
+    depends:
+      - packaging-alpha
+    purpose: Prevent manual dispatch from signing branch-context metadata for a different checked-out release tag.
+    scope:
+      files:
+        - scripts/create_registry_manifest.py
+        - .github/workflows/release.yml
+        - tests/test_registry_manifest.py
+        - tasks/70-release.weft.yml
+        - docs/RELEASING-GITHUB.md
+      contracts:
+        - contract:release-source-provenance-v1
+    deliverables:
+      - Exact Git tag, checkout and event identity checks before manifest publication.
+      - GitHub-hosted regression checks with synthetic Git repositories and artifacts.
+    accept:
+      - Release manifests identify the actual peeled tag commit and exact artifact hashes.
+      - Manual signing workflow runs on the selected tag ref rather than a branch ref.
+    negative:
+      - A mismatched event SHA, selected tag or checkout cannot produce a manifest.
+      - Existing manifests and symlinked artifacts cannot be overwritten or adopted.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/test_registry_manifest.py
+    notes:
+      - Authoritative Frog is offline and excluded; native WeftMark records the isolated release scope.
+
   - slug: reconcile-attestation-pr-review
     title: Resolve attestation verification and collection review findings
     status: review
