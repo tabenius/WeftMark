@@ -1,0 +1,36 @@
+format: weft-task-v0
+phase: ragbaz-presentation
+summary: WeftMark describes its own public catalog entry through ragbaz.component.json.
+
+tasks:
+  - slug: component-manifest-presentation
+    title: Own the ragbaz.cc catalog wording in ragbaz.component.json (schema 0.2.0)
+    status: review
+    priority: P3
+    depends: []
+    purpose: >
+      ragbaz.cc generates its catalog wording from each project's own
+      ragbaz.component.json instead of hand-maintained copies in www.ragbaz.
+    scope:
+      files:
+        - ragbaz.component.json
+        - tasks/85-ragbaz-presentation.weft.yml
+      contracts:
+        - contract:ragbaz-component-manifest-v0.2
+    deliverables:
+      - presentation.catalog carries the existing catalog name, tag, short and value text verbatim.
+      - identity.repository and schemaVersion 0.2.0 recorded.
+    accept:
+      - ragbaz.component.json validates against https://ragbaz.cc/schemas/ragbaz.component.schema.json.
+      - The rendered ragbaz.cc catalog text for WeftMark is unchanged.
+    negative:
+      - No runtime, capability, security or lifecycle claim in the manifest changes.
+    evidence:
+      - kind: test
+        required: true
+        command: python scripts/validate_tasks.py
+      - kind: review
+        required: true
+        criterion: Owner confirms the catalog wording now belongs in this repository.
+    notes:
+      - Opened from a hosted session without Frog or WeftMark CLIs; no Frog lock or native claim was acquired.

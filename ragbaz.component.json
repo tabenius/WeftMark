@@ -1,11 +1,12 @@
 {
   "$schema": "https://ragbaz.cc/schemas/ragbaz.component.schema.json",
-  "schemaVersion": "0.1.0",
+  "schemaVersion": "0.2.0",
   "identity": {
     "id": "ragbaz.weftmark",
     "name": "RAGBAZ WeftMark",
     "version": "0.0.1",
     "repoPath": "WeftMark",
+    "repository": "tabenius/WeftMark",
     "owner": "ragbaz",
     "lifecycle": "prototype"
   },
@@ -112,5 +113,19 @@
     "origin": "RAGBAZ Frog evolution",
     "sourceSnapshot": "2026-08-11",
     "runtimeImplemented": true
+  },
+  "presentation": {
+    "catalog": {
+      "slug": "weftmark",
+      "name": "WeftMark",
+      "tag": "research",
+      "tagLabel": "research",
+      "short": "Vendor-neutral ledger for multi-agent software work: scope, Git lineage, evidence, handoff, and review.",
+      "value": "WeftMark is RAGBAZ's internal control plane for multi-agent software work — Local Change Sets, semantic claims, Git lineage, evidence, review, handoff, CLI/status surfaces, and a read-only Kanban/mobile review client. It grows out of the operational primitives already proven in RAGBAZ Frog. Prototype runtime, not a released or supported product.",
+      "repo": "experiments/WeftMark",
+      "links": {
+        "site": "/#p-weftmark"
+      }
+    }
   }
 }
