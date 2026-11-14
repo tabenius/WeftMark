@@ -36,6 +36,7 @@ jobs:
             test -n "$value" || { echo "::error::R2 secrets not configured"; exit 1; }
           done
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@v3
       - name: Download existing GitHub Release and verify checksums
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,11 +49,18 @@ jobs:
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist
           cd dist
           test -s SHA256SUMS
+          test -s release.json
+          test -s release.sigstore.json
+          cosign verify-blob --bundle release.sigstore.json \
+            --certificate-identity "https://github.com/tabenius/WeftMark/.github/workflows/release.yml@refs/tags/$TAG" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" release.json
           sha256sum --check --strict SHA256SUMS
           python - <<'PY'
           from pathlib import Path
           dist = Path(".")
-          actual = {p.name for p in dist.iterdir() if p.is_file() and p.name != "SHA256SUMS"}
+          import hashlib, json, os
+          excluded = {"SHA256SUMS", "release.json", "release.sigstore.json"}
+          actual = {p.name for p in dist.iterdir() if p.is_file() and p.name not in excluded}
           expected = set()
           for line in (dist/"SHA256SUMS").read_text().splitlines():
               if len(line) < 67 or line[64] != " " or line[65] not in " *":
@@ -65,7 +73,21 @@ jobs:
               expected.add(name)
           if actual != expected or not actual:
               raise SystemExit(f"Release inventory mismatch: missing={expected-actual}, unlisted={actual-expected}")
-          print(f"Verified complete inventory of {len(actual)} assets")
+          manifest=json.loads((dist/"release.json").read_text())
+          if manifest.get("schema") != "ragbaz.release/1" or manifest.get("repository") != "tabenius/WeftMark" or manifest.get("product") != "weftmark":
+              raise SystemExit("Signed manifest has invalid identity")
+          if manifest.get("version") != os.environ["TAG"].removeprefix("v"):
+              raise SystemExit("Signed manifest tag mismatch")
+          entries=manifest.get("files", [])
+          names=[entry.get("name") for entry in entries]
+          if len(names)!=len(set(names)) or set(names)!=(actual | {"SHA256SUMS"}):
+              raise SystemExit("Signed manifest inventory mismatch")
+          for entry in entries:
+              name=entry["name"]
+              data=(dist/name).read_bytes()
+              if entry["sha256"]!=hashlib.sha256(data).hexdigest() or entry["bytes"]!=len(data):
+                  raise SystemExit(f"Signed manifest digest mismatch: {name}")
+          print(f"Verified signed manifest and {len(actual)} release assets")
           PY
       - name: Install pinned upload client
         run: python -m pip install --disable-pip-version-check 'awscli==1.42.69'
