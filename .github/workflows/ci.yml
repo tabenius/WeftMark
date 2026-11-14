@@ -108,3 +108,25 @@ jobs:
             dist/*.deb
             dist/*-linux-amd64
           if-no-files-found: error
+
+  ragbaz-release-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release workflow handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -ryaml -e '
+            mirror = YAML.load_file(".github/workflows/ragbaz-r2.yml")
+            build = YAML.load_file(".github/workflows/release.yml")
+            triggers = mirror["on"] || mirror[true] || {}
+            abort "Missing workflow_call" unless triggers.key?("workflow_call")
+            abort "Duplicate release event" if triggers.key?("release")
+            job = build.fetch("jobs").fetch("mirror-ragbaz-r2")
+            abort "Incorrect dependency" unless Array(job.fetch("needs")).include?("release")
+            abort "Incorrect handoff" unless job.fetch("uses") == "./.github/workflows/ragbaz-r2.yml"
+          '
+          grep -Fq 'sha256sum --check --strict SHA256SUMS' .github/workflows/ragbaz-r2.yml
+          grep -Fq -- '--if-none-match' .github/workflows/ragbaz-r2.yml
