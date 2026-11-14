@@ -16,6 +16,8 @@ permissions:
 
 jobs:
   release:
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     permissions:
@@ -144,3 +146,13 @@ jobs:
             dist/*.whl dist/*.tar.gz dist/*.deb dist/*-linux-amd64 \
             dist/weftmark.html dist/weftmark_A5.pdf dist/SHA256SUMS \
             dist/release.json dist/release.sigstore.json
+
+  mirror-ragbaz-r2:
+    name: Publish verified assets to dl.ragbaz.cc
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ragbaz-r2.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit

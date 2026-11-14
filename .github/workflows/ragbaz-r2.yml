@@ -1,0 +1,133 @@
+name: Mirror verified GitHub release to RAGBAZ R2
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: true
+        description: Existing immutable GitHub Release tag (vX.Y.Z)
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ragbaz-r2-weftmark-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: ragbaz-public-releases
+    timeout-minutes: 25
+    steps:
+      - name: Validate ref and required configuration
+        id: release
+        env:
+          TAG: ${{ inputs.tag }}
+          ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+          SECRET_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid release tag"; exit 1; }
+          for value in "$ACCOUNT_ID" "$ACCESS_KEY" "$SECRET_KEY"; do
+            test -n "$value" || { echo "::error::R2 secrets not configured"; exit 1; }
+          done
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@v3
+      - name: Download existing GitHub Release and verify checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Never mirror unpublished, draft, or prerelease assets.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'select(.isDraft == false and .isPrerelease == false)' | grep -q .
+          mkdir -p dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist
+          cd dist
+          test -s SHA256SUMS
+          test -s release.json
+          test -s release.sigstore.json
+          cosign verify-blob --bundle release.sigstore.json \
+            --certificate-identity "https://github.com/tabenius/WeftMark/.github/workflows/release.yml@refs/tags/$TAG" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" release.json
+          sha256sum --check --strict SHA256SUMS
+          python - <<'PY'
+          from pathlib import Path
+          dist = Path(".")
+          import hashlib, json, os
+          excluded = {"SHA256SUMS", "release.json", "release.sigstore.json"}
+          actual = {p.name for p in dist.iterdir() if p.is_file() and p.name not in excluded}
+          expected = set()
+          for line in (dist/"SHA256SUMS").read_text().splitlines():
+              if len(line) < 67 or line[64] != " " or line[65] not in " *":
+                  raise SystemExit("Invalid checksum inventory format")
+              name = line[66:]
+              if Path(name).name != name or name in {"", ".", ".."}:
+                  raise SystemExit("Invalid checksum inventory filename")
+              if name in expected:
+                  raise SystemExit("Duplicate checksum inventory entry")
+              expected.add(name)
+          if actual != expected or not actual:
+              raise SystemExit(f"Release inventory mismatch: missing={expected-actual}, unlisted={actual-expected}")
+          manifest=json.loads((dist/"release.json").read_text())
+          if manifest.get("schema") != "ragbaz.release/1" or manifest.get("repository") != "tabenius/WeftMark" or manifest.get("product") != "weftmark":
+              raise SystemExit("Signed manifest has invalid identity")
+          if manifest.get("version") != os.environ["TAG"].removeprefix("v"):
+              raise SystemExit("Signed manifest tag mismatch")
+          entries=manifest.get("files", [])
+          names=[entry.get("name") for entry in entries]
+          if len(names)!=len(set(names)) or set(names)!=(actual | {"SHA256SUMS"}):
+              raise SystemExit("Signed manifest inventory mismatch")
+          for entry in entries:
+              name=entry["name"]
+              data=(dist/name).read_bytes()
+              if entry["sha256"]!=hashlib.sha256(data).hexdigest() or entry["bytes"]!=len(data):
+                  raise SystemExit(f"Signed manifest digest mismatch: {name}")
+          print(f"Verified signed manifest and {len(actual)} release assets")
+          PY
+      - name: Install pinned upload client
+        run: python -m pip install --disable-pip-version-check 'awscli==1.42.69'
+      - name: Upload release objects once, verify stored hashes
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          TAG: ${{ steps.release.outputs.tag }}
+          R2_BUCKET: ragbaz-releases-public
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          prefix="v1/weftmark/${TAG}"
+          shopt -s nullglob
+          files=(dist/*)
+          (("${#files[@]}" > 1)) || { echo "::error::Missing release assets"; exit 1; }
+          # Fail if a previous invocation finalized this version.
+          if aws --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$prefix/READY" >/dev/null 2>&1; then
+            echo "::error::Release already finalized: $prefix"; exit 1
+          fi
+          # Do not partially republish an existing version: check all object keys first.
+          for file in "${files[@]}"; do
+            key="${prefix}/${file##*/}"
+            if aws --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" >/dev/null 2>&1; then
+              echo "::error::Already published: $key"; exit 1
+            fi
+          done
+          # Manifest and final registry links use exactly the GitHub Release asset bytes.
+          for file in "${files[@]}"; do
+            key="${prefix}/${file##*/}"
+            aws --endpoint-url "$endpoint" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body "$file" --if-none-match '*' >/dev/null
+            remote_size=$(aws --endpoint-url "$endpoint" s3api head-object --bucket "$R2_BUCKET" --key "$key" --query ContentLength --output text)
+            local_size=$(wc -c < "$file" | tr -d ' ')
+            test "$remote_size" = "$local_size"
+            aws --endpoint-url "$endpoint" s3api get-object --bucket "$R2_BUCKET" --key "$key" "/tmp/r2-verify-${file##*/}" >/dev/null
+            cmp "$file" "/tmp/r2-verify-${file##*/}"
+          done
+          printf 'verified release %s\n' "$TAG" > /tmp/ragbaz-READY
+          aws --endpoint-url "$endpoint" s3api put-object --bucket "$R2_BUCKET" --key "$prefix/READY" --body /tmp/ragbaz-READY --if-none-match '*' >/dev/null
+          echo "Published immutable artifacts to https://dl.ragbaz.cc/v1/weftmark/${TAG}/"
