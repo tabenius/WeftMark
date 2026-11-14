@@ -5,8 +5,6 @@ on:
       tag:
         required: true
         type: string
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -16,11 +14,10 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ragbaz-r2-weftmark-${{ inputs.tag || github.event.release.tag_name }}
+  group: ragbaz-r2-weftmark-${{ inputs.tag }}
   cancel-in-progress: false
 jobs:
   publish:
-    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     runs-on: ubuntu-24.04
     environment: ragbaz-public-releases
     timeout-minutes: 25
@@ -28,7 +25,7 @@ jobs:
       - name: Validate ref and required configuration
         id: release
         env:
-          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          TAG: ${{ inputs.tag }}
           ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
           SECRET_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -45,6 +42,8 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
+          # Never mirror unpublished, draft, or prerelease assets.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'select(.isDraft == false and .isPrerelease == false)' | grep -q .
           mkdir -p dist
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist
           cd dist
@@ -89,6 +88,6 @@ jobs:
             aws --endpoint-url "$endpoint" s3api get-object --bucket "$R2_BUCKET" --key "$key" "/tmp/r2-verify-${file##*/}" >/dev/null
             cmp "$file" "/tmp/r2-verify-${file##*/}"
           done
-          printf 'verified release %s\\n' "$TAG" > /tmp/ragbaz-READY
+          printf 'verified release %s\n' "$TAG" > /tmp/ragbaz-READY
           aws --endpoint-url "$endpoint" s3api put-object --bucket "$R2_BUCKET" --key "$prefix/READY" --body /tmp/ragbaz-READY --if-none-match '*' >/dev/null
           echo "Published immutable artifacts to https://dl.ragbaz.cc/v1/weftmark/${TAG}/"
