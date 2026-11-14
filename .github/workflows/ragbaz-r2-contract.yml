@@ -1,0 +1,43 @@
+name: RAGBAZ release workflow contract
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ragbaz-r2.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/ragbaz-r2-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ragbaz-r2.yml'
+      - '.github/workflows/release.yml'
+permissions:
+  contents: read
+jobs:
+  workflow-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse workflow YAML and validate trigger contract
+        run: |
+          ruby -ryaml -e '
+            mirror = YAML.load_file(".github/workflows/ragbaz-r2.yml")
+            build = YAML.load_file(".github/workflows/release.yml")
+            triggers = mirror["on"] || mirror[true] || {}
+            abort "Missing reusable mirror trigger" unless triggers.key?("workflow_call")
+            abort "Missing manual recovery trigger" unless triggers.key?("workflow_dispatch")
+            abort "Duplicated release event trigger" if triggers.key?("release")
+            mirror_job = build.fetch("jobs").fetch("mirror-ragbaz-r2")
+            abort "Mirror must depend on release job" unless Array(mirror_job.fetch("needs")).include?("release")
+            abort "Wrong reusable workflow" unless mirror_job.fetch("uses") == "./.github/workflows/ragbaz-r2.yml"
+            puts "Release workflow contract verified"
+          '
+      - name: Verify required checks are present in publishing workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=.github/workflows/ragbaz-r2.yml
+          grep -Fq 'sha256sum --check --strict SHA256SUMS' "$file"
+          grep -Fq 'aws --endpoint-url "$endpoint" s3api get-object' "$file"
+          grep -Fq -- '--if-none-match' "$file"
+          grep -Fq '"$prefix/READY"' "$file"
