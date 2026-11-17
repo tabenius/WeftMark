@@ -4,7 +4,7 @@
   "identity": {
     "id": "ragbaz.weftmark",
     "name": "RAGBAZ WeftMark",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "repoPath": "WeftMark",
     "repository": "tabenius/WeftMark",
     "owner": "ragbaz",
@@ -37,6 +37,31 @@
       }
     ]
   },
+  "dependencies": [
+    {
+      "componentId": "ragbaz.nostoi",
+      "kind": "install",
+      "version": "0.1.0",
+      "optional": true,
+      "reason": "weftmark[sqlite] extra pins the nostoi Python bindings at b043bf953eeda3ea720adfa91f1b2177c0ab1143 when installed from source."
+    },
+    {
+      "componentId": "ragbaz.nostoi",
+      "kind": "runtime",
+      "version": "0.1.0",
+      "reason": "Ledger verify/attest and CAD evidence intake invoke the external nostoi CLI and its canonicalizer."
+    },
+    {
+      "componentId": "ragbaz.nostoi",
+      "kind": "build",
+      "reason": "cad-evidence-smoke CI checks out tabenius/nostoi and builds its release CLI for integration tests."
+    },
+    {
+      "componentId": "ragbaz.nostoi",
+      "kind": "debug",
+      "reason": "Workspace attestation verification loads the sibling nostoi reference implementation from contrib/python."
+    }
+  ],
   "provides": {
     "artifacts": [
       {
