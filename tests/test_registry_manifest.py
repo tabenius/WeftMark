@@ -79,3 +79,11 @@ def test_linked_artifacts_are_refused_before_manifest_publication(release_source
     with pytest.raises(ValueError, match="artifact"):
         registry.create_manifest(dist, repository_root=root, environ=env)
     assert not (dist / "release.json").exists()
+
+
+def test_hidden_dist_files_are_not_release_artifacts(release_source):
+    root, dist, env = release_source
+    (dist / ".gitignore").write_text("*.tmp\n")
+    manifest = registry.create_manifest(dist, repository_root=root, environ=env)
+    assert len(manifest["files"]) == 3
+    assert all(not item["name"].startswith(".") for item in manifest["files"])

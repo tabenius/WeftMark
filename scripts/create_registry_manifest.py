@@ -38,6 +38,9 @@ def create_manifest(root, *, repository_root, environ):
     for path in sorted(root.iterdir()):
         if path.name in {"release.json", "release.sigstore.json"}:
             continue
+        # dist/.gitignore is tracked in the repository and is not an artifact.
+        if path.name.startswith("."):
+            continue
         if not path.is_file() or path.is_symlink() or ".." in path.name or path.name.lower() in {"catalog.json", "release.json", "release.sigstore.json"} or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}", path.name):
             raise ValueError("Invalid release artifact")
         size = path.stat().st_size
