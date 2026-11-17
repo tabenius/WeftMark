@@ -116,7 +116,10 @@ jobs:
       - name: Prepare registry manifest for CLI, TUI and Python packages
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
-        run: python scripts/create_registry_manifest.py dist
+        run: |
+          # Smoke tests use these build aliases; only versioned binaries ship.
+          rm dist/weftmark-cli dist/weftmark-tui
+          python scripts/create_registry_manifest.py dist
       - uses: sigstore/cosign-installer@v3
       - name: Sign exact release manifest with GitHub Actions OIDC
         run: cosign sign-blob --yes --bundle dist/release.sigstore.json dist/release.json

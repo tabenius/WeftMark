@@ -80,6 +80,17 @@ jobs:
               raise SystemExit("Signed manifest tag mismatch")
           entries=manifest.get("files", [])
           names=[entry.get("name") for entry in entries]
+          # v0.1.0 signed two build aliases as well as their byte-identical,
+          # versioned release assets. Recover only these known aliases, without
+          # modifying the published manifest, checksums, assets or tag. The
+          # signed digest/size checks below still verify every recovered byte.
+          if os.environ["TAG"] == "v0.1.0":
+              for kind in ("cli", "tui"):
+                  alias = f"weftmark-{kind}"
+                  versioned = f"weftmark-{kind}-0.1.0-linux-amd64"
+                  if alias in names and alias not in actual and versioned in actual:
+                      (dist/alias).write_bytes((dist/versioned).read_bytes())
+                      actual.add(alias)
           if len(names)!=len(set(names)) or set(names)!=(actual | {"SHA256SUMS"}):
               raise SystemExit("Signed manifest inventory mismatch")
           for entry in entries:
