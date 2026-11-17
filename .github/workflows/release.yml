@@ -68,10 +68,6 @@ jobs:
         with:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install document build system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pandoc libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev
       - name: Restore locked build environment
         run: |
           python -m pip install "uv==0.12.19"
@@ -84,23 +80,16 @@ jobs:
           test "v$version" = "$TAG" || { echo "::error::Tag does not match package version"; exit 1; }
       - name: Run tests and packaging acceptance before publication
         run: uv run --no-sync python -m pytest
-      - name: Build distributions, executable, deb and documentation
+      - name: Build distributions, executable and deb packages
         run: |
           uv build
           uv run --no-sync bash scripts/build_linux_packages.sh
-          uv run --no-sync python scripts/build_figures.py
-          uv run --no-sync python scripts/build_logo.py --size 512
-          uv run --no-sync python scripts/build_pdf.py
-          test -s build/weftmark.html
-          test -s build/weftmark_A5.pdf
-          cp build/weftmark.html dist/weftmark.html
-          cp build/weftmark_A5.pdf dist/weftmark_A5.pdf
       - name: Validate packaged CLI and TUI, generate checksums
         shell: bash
         run: |
           uv run --no-sync bash scripts/verify_linux_packages.sh
           cd dist
-          sha256sum *.whl *.tar.gz *.deb *-linux-amd64 *.html *.pdf > SHA256SUMS
+          sha256sum *.whl *.tar.gz *.deb *-linux-amd64 > SHA256SUMS
           sha256sum --check SHA256SUMS
       - name: Gate release on clean distro installs and TUI terminal
         shell: bash
@@ -123,10 +112,8 @@ jobs:
             dist/*.tar.gz
             dist/*.deb
             dist/*-linux-amd64
-            dist/*.html
-            dist/*.pdf
             dist/SHA256SUMS
-      - name: Prepare registry manifest for all CLI, TUI and documentation packages
+      - name: Prepare registry manifest for CLI, TUI and Python packages
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: python scripts/create_registry_manifest.py dist
@@ -144,8 +131,66 @@ jobs:
             --title "WeftMark $TAG" \
             --generate-notes \
             dist/*.whl dist/*.tar.gz dist/*.deb dist/*-linux-amd64 \
-            dist/weftmark.html dist/weftmark_A5.pdf dist/SHA256SUMS \
-            dist/release.json dist/release.sigstore.json
+            dist/SHA256SUMS dist/release.json dist/release.sigstore.json
+
+  docs:
+    name: Build documentation package (non-blocking for software release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate immutable release tag
+        env:
+          TAG: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Docs require a vX.Y.Z tag"; exit 1; }
+          [[ "$REF" == "refs/tags/$TAG" ]] || { echo "::error::Docs require an immutable tag ref"; exit 1; }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install documentation build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pandoc libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev
+      - name: Restore locked docs environment
+        run: |
+          python -m pip install "uv==0.12.19"
+          uv sync --locked --group docs --python python3.12
+      - name: Build HTML and PDF documentation
+        run: |
+          uv run --no-sync python scripts/build_figures.py
+          uv run --no-sync python scripts/build_logo.py --size 512
+          uv run --no-sync python scripts/build_pdf.py
+          test -s build/weftmark.html
+          test -s build/weftmark_A5.pdf
+      - name: Package documentation
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p docs-package
+          cp build/weftmark.html build/weftmark_A5.pdf docs-package/
+          (cd docs-package && sha256sum weftmark.html weftmark_A5.pdf > SHA256SUMS)
+          tar -czf "weftmark-docs-${TAG}.tar.gz" -C docs-package .
+          sha256sum "weftmark-docs-${TAG}.tar.gz" > "weftmark-docs-${TAG}.tar.gz.sha256"
+      - name: Upload documentation package
+        uses: actions/upload-artifact@v4
+        with:
+          name: weftmark-docs-${{ github.ref_name }}
+          path: |
+            weftmark-docs-*.tar.gz
+            weftmark-docs-*.tar.gz.sha256
+          if-no-files-found: error
+      - name: Record documentation status
+        if: always()
+        run: |
+          echo "Documentation is built as a separate, versioned artifact. A docs failure does not block the software release." >> "$GITHUB_STEP_SUMMARY"
 
   mirror-ragbaz-r2:
     name: Publish verified assets to dl.ragbaz.cc
