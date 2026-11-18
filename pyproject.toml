@@ -20,7 +20,7 @@ weftmark-tui = "weftmark.tui.app:main"
 
 [project.optional-dependencies]
 sqlite = [
-  "nostoi @ git+https://github.com/tabenius/nostoi.git@b043bf953eeda3ea720adfa91f1b2177c0ab1143#subdirectory=bindings/python",
+  "nostoi>=0.1.1,<0.2",
 ]
 mcp = [
   "mcp>=2,<3",
@@ -29,7 +29,7 @@ tui = [
   "textual>=8,<9",
 ]
 test = [
-  "nostoi @ git+https://github.com/tabenius/nostoi.git@b043bf953eeda3ea720adfa91f1b2177c0ab1143#subdirectory=bindings/python",
+  "nostoi>=0.1.1,<0.2",
   "jsonschema>=4.26,<5",
   "pytest>=8,<9",
   "mcp>=2,<3",
@@ -38,6 +38,21 @@ test = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# uv alone consumes these sources; ordinary pip consumers should install the
+# published Nostoi wheel first (see docs/INSTALL.md). Do not resolve our package
+# name from an unrelated public index. The lock records exact source and hashes.
+[tool.uv.sources]
+nostoi = [
+  { url = "https://dl.ragbaz.cc/v1/nostoi/v0.1.1/nostoi-0.1.1-cp311-abi3-manylinux_2_34_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and implementation_name == 'cpython'" },
+  { git = "https://github.com/tabenius/nostoi.git", rev = "e45387189c9d20b51260589c0429936950ac4d93", subdirectory = "bindings/python", marker = "sys_platform != 'linux' or platform_machine != 'x86_64' or implementation_name != 'cpython'" },
+]
+
+[tool.weftmark.nostoi-release]
+version = "0.1.1"
+repository = "tabenius/nostoi"
+source-commit = "e45387189c9d20b51260589c0429936950ac4d93"
+signing-workflow = "registry-candidate.yml"
 
 [tool.setuptools.package-data]
 "weftmark.adapters" = ["sql/*.sql"]
