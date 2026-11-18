@@ -19,6 +19,7 @@ tasks:
         - src/weftmark/cli/completion.py
         - src/weftmark/cli/output.py
         - src/weftmark/cli/main.py
+        - src/weftmark/cli/version.py
         - src/weftmark/__init__.py
         - tests/cli/*
         - docs/CLI.md
