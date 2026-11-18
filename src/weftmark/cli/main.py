@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -732,8 +733,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "system":
             payload = load_runtime_status(args.snapshot)
-            print(json.dumps(payload, sort_keys=True) if args.json else "\n".join(payload["summary"]))
-            return 0
+            source = args.snapshot or os.environ.get("RAGBAZ_RUNTIME_STATUS")
+            unavailable = payload["status"] == "unavailable"
+            if args.json:
+                payload["ok"] = not unavailable
+                if unavailable:
+                    payload.update(_failure_fields(
+                        f"Runtime snapshot {source} is unreadable or invalid.",
+                        "RUNTIME_SNAPSHOT_UNAVAILABLE",
+                        "Fix RAGBAZ_RUNTIME_STATUS or --snapshot with a valid "
+                        "ragbaz.runtime-status.v1 file; native workflows remain available.",
+                        {"source": source},
+                    ))
+                print(json.dumps(payload, sort_keys=True))
+            else:
+                print("\n".join(payload["summary"]))
+                if unavailable:
+                    _emit_error(
+                        f"Runtime snapshot {source} is unreadable or invalid.",
+                        json_output=False,
+                        code="RUNTIME_SNAPSHOT_UNAVAILABLE",
+                        remediation="Fix RAGBAZ_RUNTIME_STATUS or --snapshot; native workflows remain available.",
+                    )
+            return EXIT_INVALID if unavailable else 0
         if args.command == "ledger" and args.ledger_command in ("attest", "verify-attestation"):
             return attestation_command(
                 args.path, principal=args.principal, key=getattr(args, "key", None),
@@ -746,7 +768,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "ledger" and args.ledger_command == "verify":
             report = verify_with_nostoi(args.path)
-            payload = {"ok": report["ok"], "nostoi": report}
+            failure = _failure_fields(
+                f"Ledger {report.get('path', args.path)} failed verification: "
+                f"{report.get('problem') or 'unknown problem'}",
+                None if report["ok"] else "LEDGER_INVALID",
+                None if report["ok"] else (
+                    "Inspect the first reported problem or restore the ledger "
+                    "from a verified backup; see docs/SQLITE-LEDGER.md."
+                ),
+                {"path": report.get("path", args.path), "problem": report.get("problem")},
+            )
+            payload = {"ok": report["ok"], "nostoi": report, **failure}
             if args.json:
                 print(json.dumps(payload, sort_keys=True))
             else:
@@ -767,6 +799,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                               "  names a different position; verify-attestation checks prefix coverage")
                     else:
                         print("  no attestation; sign deliberately with weftmark ledger attest PATH --principal YOU")
+            if not report["ok"]:
+                _emit_error(
+                    f"Ledger {report.get('path', args.path)} failed verification: "
+                    f"{report.get('problem') or 'unknown problem'}",
+                    json_output=False,
+                    code="LEDGER_INVALID",
+                    remediation=failure["remediation"],
+                )
             return 0 if report["ok"] else EXIT_LEDGER
         if args.command == "tui":
             try:
@@ -1388,9 +1428,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
                 observed_at=observed_at,
             )
-            _emit_evidence(
-                evidence_result_to_payload(result), json_output=args.json
-            )
+            evidence_payload = evidence_result_to_payload(result)
+            failure: dict[str, Any] | None = None
+            if result.evidence.state in (EvidenceState.FAILED, EvidenceState.UNAVAILABLE):
+                command = evidence_payload.get("command") or {}
+                argv = " ".join(command.get("argv") or []) or "(no command)"
+                cwd = command.get("cwd", "unknown cwd")
+                state = result.evidence.state
+                failure = {
+                    "code": "EVIDENCE_FAILED" if state is EvidenceState.FAILED else "EVIDENCE_UNAVAILABLE",
+                    "message": (
+                        f"Evidence {evidence_payload['id']} for Change Set "
+                        f"{evidence_payload['subject']['id']} at "
+                        f"{evidence_payload['bound_commit_sha']} did not pass: "
+                        f"{evidence_payload['detail'] or state.value} ({argv})"
+                    ),
+                    "remediation": (
+                        f"Rerun '{argv}' in {cwd} to see its output, then record "
+                        "a new evidence id with weftmark evidence run --id <new-id>."
+                    ),
+                    "record": {
+                        "id": evidence_payload["id"],
+                        "exit_code": evidence_payload.get("exit_code"),
+                        "stdout_digest": evidence_payload.get("stdout_digest"),
+                        "stderr_digest": evidence_payload.get("stderr_digest"),
+                    },
+                }
+            _emit_evidence(evidence_payload, json_output=args.json, failure=failure)
             if result.evidence.state is EvidenceState.PASSED:
                 return 0
             if result.evidence.state is EvidenceState.FAILED:
@@ -1917,14 +1981,38 @@ def _emit_frog_task_list(
 
 
 def _emit_frog_parity(payload: dict[str, Any], *, json_output: bool) -> None:
+    ready = payload["cutover_ready"]
+    failing = [
+        check["id"] for check in payload["checks"]
+        if check["required"] and check["classification"] != "match"
+    ]
     if json_output:
-        print(json.dumps({"ok": True, "frog_parity": payload}, sort_keys=True))
+        body: dict[str, Any] = {"ok": ready, "frog_parity": payload}
+        if not ready:
+            body.update(_failure_fields(
+                f"Parity for {payload['source']['digest']} has unresolved required checks: "
+                f"{', '.join(failing) or 'see frog parity output'}.",
+                "FROG_CUTOVER_BLOCKED",
+                f"Parity for {payload['source']['digest']} has unresolved required checks: "
+                f"{', '.join(failing) or 'see frog parity output'}.",
+                "Inspect 'weftmark frog parity <digest>' and satisfy the listed checks "
+                "before retiring any Frog write path.",
+            ))
+        print(json.dumps(body, sort_keys=True))
         return
-    readiness = "cutover ready" if payload["cutover_ready"] else "cutover blocked"
+    readiness = "cutover ready" if ready else "cutover blocked"
     print(f"{readiness}  {payload['source']['label']}  {payload['source']['digest']}")
     for check in payload["checks"]:
         print(
             f"  {check['classification']}: {check['id']} - {check['summary']}"
+        )
+    if not ready:
+        _emit_error(
+            f"Parity for {payload['source']['digest']} has unresolved required checks: "
+            f"{', '.join(failing) or 'see above'}.",
+            json_output=False,
+            code="FROG_CUTOVER_BLOCKED",
+            remediation="Satisfy the listed checks before retiring any Frog write path.",
         )
 
 
@@ -2085,11 +2173,39 @@ def _emit_claim_list(payloads: list[dict[str, Any]], *, json_output: bool) -> No
         )
 
 
-def _emit_error(message: str, *, json_output: bool) -> None:
+def _failure_fields(
+    message: str,
+    code: str | None,
+    remediation: str | None,
+    record: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Additive fields shared by every failure envelope; safe for old clients."""
+    fields: dict[str, Any] = {"error": message}
+    if code:
+        fields["code"] = code
+    if remediation:
+        fields["remediation"] = remediation
+    if record:
+        fields["record"] = record
+    return fields
+
+
+def _emit_error(
+    message: str,
+    *,
+    json_output: bool,
+    code: str | None = None,
+    remediation: str | None = None,
+    record: dict[str, Any] | None = None,
+) -> None:
+    fields = _failure_fields(message, code, remediation, record)
     if json_output:
-        json_line({"ok": False, "error": message})
+        json_line({"ok": False, **fields})
     else:
-        print(f"{paint('error:', 'bold', 'red', stream=sys.stderr)} {message}", file=sys.stderr)
+        prefix = paint("error:", "bold", "red", stream=sys.stderr)
+        label = f" {code}" if code else ""
+        next_step = f" NEXT: {remediation}" if remediation else ""
+        print(f"{prefix}{label} {message}{next_step}", file=sys.stderr)
 
 
 def _emit_scope(payload: dict[str, Any], *, json_output: bool) -> None:
@@ -2103,9 +2219,24 @@ def _emit_scope(payload: dict[str, Any], *, json_output: bool) -> None:
         print(f"  BLOCKING {finding['scope']['kind']}:{finding['scope']['key']}  {finding['rationale']}")
 
 
-def _emit_evidence(payload: dict[str, Any], *, json_output: bool) -> None:
+def _emit_evidence(
+    payload: dict[str, Any],
+    *,
+    json_output: bool,
+    failure: dict[str, Any] | None = None,
+) -> None:
     if json_output:
-        print(json.dumps({"ok": payload["state"] == "passed", "evidence": payload}, sort_keys=True))
+        body: dict[str, Any] = {
+            "ok": payload["state"] == "passed", "evidence": payload
+        }
+        if failure:
+            body.update(_failure_fields(
+                failure["message"],
+                failure.get("code"),
+                failure.get("remediation"),
+                failure.get("record"),
+            ))
+        print(json.dumps(body, sort_keys=True))
         return
     state = paint(payload["state"], *status_styles(payload["state"]))
     print(f"{payload['id']}  {payload['kind']}  {state}")
@@ -2120,6 +2251,13 @@ def _emit_evidence(payload: dict[str, Any], *, json_output: bool) -> None:
     print(f"  duration: {payload['duration_seconds']:.3f}s")
     if payload["detail"]:
         print(f"  detail: {payload['detail']}")
+    if failure:
+        _emit_error(
+            failure["message"],
+            json_output=False,
+            code=failure.get("code"),
+            remediation=failure.get("remediation"),
+        )
 
 
 def _emit_evidence_list(payloads: list[dict[str, Any]], *, json_output: bool) -> None:

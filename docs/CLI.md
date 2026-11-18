@@ -138,8 +138,12 @@ weftmark --json evidence list --changeset my-change | jq '.evidence[] | select(.
 Successful commands emit `{"ok": true, ...}` on stdout. Policy and evidence
 refusals emit `{"ok": false, ...}` with a payload such as `review`, `evidence` or
 `scope_audit` plus a non-zero exit code. Invocation and Git errors emit
-`{"ok": false, "error": "..."}`. Human-readable diagnostics go to stderr. Exit
-codes:
+`{"ok": false, "error": "..."}`. Failures from evidence, ledger verification,
+runtime snapshots and Frog parity add three **additive** fields: `code` (stable
+identifier such as `EVIDENCE_FAILED`), `remediation` (the next command or
+setting to try), and `record` (the ids, paths and digests involved). The human
+form prints the same `code` and `NEXT:` line to stderr. Human-readable
+diagnostics never pollute stdout. Exit codes:
 
 | Code | Meaning |
 | --- | --- |
