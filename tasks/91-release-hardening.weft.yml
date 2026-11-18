@@ -1,0 +1,161 @@
+format: weft-task-v0
+phase: release
+summary: Hardening items from the public-release security review after the blockers.
+
+tasks:
+  - slug: bundle-authenticity
+    title: Stop describing unsigned bundles as verified
+    status: todo
+    priority: P1
+    depends:
+      - public-claim-consistency
+    purpose: >
+      verify_bundle() checks only envelope shape and a self-digest, so any party
+      can construct a matching bundle. The CLI prints "verified" and JSON says
+      ok:true, which reads as authenticated provenance. Imported bundles must
+      not become release or review authority without a trust anchor.
+    scope:
+      files:
+        - src/weftmark/application/bundle.py
+        - src/weftmark/application/bundle_import.py
+        - src/weftmark/cli/main.py
+        - tests/cli/test_cli_bundle.py
+        - docs/security.md
+      contracts:
+        - contract:bundle-v0
+        - boundary:trust-inputs
+    deliverables:
+      - Output and docs say "self-consistent digest verified (unsigned bundle)" with authenticated:false in JSON.
+      - A defined signature/attestation path with a pinned signer before import can be treated as authority.
+    accept:
+      - A forged bundle with a self-consistent digest is never reported as authenticated.
+      - Imported unsigned bundles are labelled untrusted observations.
+    negative:
+      - Do not conflate a self-digest with a signature or an external identity check.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/cli/test_cli_bundle.py
+      - kind: review
+        required: true
+        criterion: Maintainer review of the authenticity wording and import trust path.
+    notes: >
+      Finding H1 in docs/PUBLIC-RELEASE-REVIEW.md. Blocks use of bundles as
+      release evidence, not publication of the unreviewed prototype itself.
+
+  - slug: human-output-sanitization
+    title: Strip terminal controls and markup from untrusted human-facing fields
+    status: todo
+    priority: P1
+    depends: []
+    purpose: >
+      docs/security.md classifies repository, forge and ledger text as untrusted,
+      but CLI emitters pass it to print() unchanged. A hostile goal, rationale or
+      error string can inject CSI/OSC sequences, create OSC 8 hyperlinks or spoof
+      review state. Only runtime_status and one TUI screen sanitize today.
+    scope:
+      files:
+        - src/weftmark/cli/main.py
+        - src/weftmark/cli/color.py
+        - src/weftmark/tui/screens.py
+        - src/weftmark/tui/formatting.py
+        - tests/cli/*
+        - tests/tui/*
+      contracts:
+        - contract:cli-output-v1
+        - boundary:trust-inputs
+    deliverables:
+      - One shared sanitizer used by every human emitter; markup=False on all TUI Static widgets.
+      - Regression tests with OSC 8 hyperlink, CSI colour and Rich/Textual markup payloads.
+    accept:
+      - No untrusted field can emit an escape sequence or be interpreted as markup.
+      - JSON output remains byte-faithful so machine consumers lose no data.
+    negative:
+      - Sanitizing must not alter digests, ids or structured JSON values.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/cli tests/tui
+      - kind: review
+        required: true
+        criterion: Maintainer review of the sanitizer against docs/security.md trust classification.
+    notes: >
+      Finding M1. Textual/Rich rendering was not exercised in the review; verify
+      it here. Preserve deliberate colour from color.py, which wraps its own text.
+
+  - slug: pin-workflow-actions
+    title: Pin release and CI GitHub Actions to immutable commit SHAs
+    status: todo
+    priority: P2
+    depends: []
+    purpose: >
+      Release and CI workflows use mutable tags such as actions/checkout@v4 while
+      holding id-token, attestations and contents write permissions plus R2
+      secrets. A compromised upstream tag could alter release inputs or
+      exfiltrate secrets.
+    scope:
+      files:
+        - .github/workflows/ci.yml
+        - .github/workflows/release.yml
+        - .github/workflows/ragbaz-r2.yml
+        - .github/workflows/refresh-build-lock.yml
+        - scripts/*workflow*
+      contracts:
+        - boundary:supply-chain
+    deliverables:
+      - Every action reference resolves to a full 40-character commit SHA.
+      - A lint or check rejects tag refs in release-related workflows.
+    accept:
+      - No mutable action refs remain in release, mirror or lock-refresh workflows.
+      - Dependabot or an equivalent process can still propose updates.
+    negative:
+      - Do not pin by tag or by a shortened SHA.
+    evidence:
+      - kind: ci
+        required: true
+        criterion: Workflow lint check passes and hosted CI is green.
+      - kind: review
+        required: true
+        criterion: Maintainer review of the pinned SHAs and update process.
+    notes: Finding M2 in docs/PUBLIC-RELEASE-REVIEW.md.
+
+  - slug: release-manifest-paths
+    title: Align signed manifest paths and repository identity with published objects
+    status: todo
+    priority: P2
+    depends: []
+    purpose: >
+      create_registry_manifest.py writes path values like
+      releases/weftmark/<ver>/multi/<name>, but ragbaz-r2.yml publishes
+      v1/weftmark/${TAG}/<name>. Repository identity case also differs between
+      the manifest, the verifier and release-registry.json. Current in-repo
+      verifiers use name and happen to match, but external consumers of the
+      signed manifest may not.
+    scope:
+      files:
+        - scripts/create_registry_manifest.py
+        - .github/workflows/ragbaz-r2.yml
+        - release-registry.json
+        - tests/**/*manifest*
+      contracts:
+        - contract:release-manifest-v1
+        - boundary:release-provenance
+    deliverables:
+      - Manifest path values equal the actual R2 object keys.
+      - Repository identity is canonicalized once and compared identically on creation and verification.
+      - A test asserts path/key correspondence without re-publishing immutable tags.
+    accept:
+      - A consumer reading only the signed manifest can locate every artifact.
+      - Case differences cannot make a valid release unverifiable.
+    negative:
+      - Do not rewrite or re-point any published tag or existing release manifest.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/test_registry_manifest.py
+      - kind: review
+        required: true
+        criterion: Maintainer review of manifest-to-object mapping and identity canonicalization.
+    notes: >
+      Finding M3. Published tags v0.1.0 and v0.1.1 are immutable; validate
+      against a fixture rather than changing them.

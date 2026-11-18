@@ -1,0 +1,83 @@
+format: weft-task-v0
+phase: release
+summary: Repair the review-tooling gaps found while landing the release-remediation task plans.
+
+tasks:
+  - slug: plan-validator-parity
+    title: Make validate_tasks.py enforce the same rules as the runtime plan importer
+    status: todo
+    priority: P1
+    depends: []
+    purpose: >
+      The remediation task plans passed scripts/validate_tasks.py but failed the
+      full runtime suite in hosted CI. WeftPlanAdapter.load rejected a YAML
+      mapping in a deliverables list, and plan import rejected a purpose string
+      under the ledger secret filter. Local task-plan validation must fail with
+      the same errors before a plan is published, not nine minutes into CI.
+    scope:
+      files:
+        - scripts/validate_tasks.py
+        - src/weftmark/adapters/weft_plan.py
+        - tests/**/*weft_plan*
+        - tests/application/test_plan_import.py
+      contracts:
+        - contract:source-plan-v0
+        - boundary:trust-inputs
+    deliverables:
+      - validate_tasks.py loads each plan through WeftPlanAdapter and reports exact task and field locations.
+      - The validator applies the same text-type and ledger-safety checks as plan import.
+      - A regression test feeds a plan with a mapping in deliverables and asserts a non-zero exit with the field path.
+    accept:
+      - Every plan accepted by validate_tasks.py is loadable and importable by the runtime.
+      - A rejected plan names the file, task slug, field and reason.
+    negative:
+      - Do not weaken WeftPlanAdapter or the ledger safety filter to make validation agree.
+      - Do not mutate the ledger or repository while validating.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/adapters/test_weft_plan.py tests/application/test_plan_import.py
+      - kind: test
+        required: true
+        command: python scripts/validate_tasks.py
+    notes: >
+      Found when PR #59 failed validate-and-build in hosted CI. The immediate
+      plan defects are fixed in this same branch; this task closes the tooling
+      gap that let them through.
+
+  - slug: secret-filter-permission-context
+    title: Stop flagging workflow permission names as secret-bearing task text
+    status: todo
+    priority: P2
+    depends: []
+    purpose: >
+      The ledger secret filter rejects the literal permission spelling used in
+      GitHub Actions because it matches a generic assignment pattern. A task
+      purpose describing the id-token write permission was rejected as if it
+      contained a credential. The filter should keep finding real assigned
+      values without treating permission grammar as a leak.
+    scope:
+      files:
+        - src/weftmark/application/ledger.py
+        - tests/application/test_ledger_service.py
+        - docs/security.md
+      contracts:
+        - boundary:trust-inputs
+    deliverables:
+      - A narrow exception for permission scope spellings in prose, with a test.
+      - Real assignments of credentials still fail with the same exact error.
+    accept:
+      - A task purpose naming the id-token write permission imports successfully.
+      - A string containing an assigned credential value is still rejected.
+    negative:
+      - Do not disable the filter for task purpose fields or lower its overall sensitivity.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/application/test_ledger_service.py
+      - kind: security
+        required: true
+        criterion: Maintainer review confirms no real secret-bearing assignment becomes admissible.
+    notes: >
+      Found while landing tasks/91-release-hardening.weft.yml in PR #59. The
+      immediate task text was rephrased; this task fixes the false positive.
