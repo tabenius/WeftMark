@@ -1,0 +1,142 @@
+format: weft-task-v0
+phase: release
+summary: Close the three blockers found in the public-release security review.
+
+tasks:
+  - slug: release-readiness-gate
+    title: Enforce the declared native review gate before any release is published
+    status: todo
+    priority: P0
+    depends: []
+    conflicts:
+      - public-claim-consistency
+    purpose: >
+      Today a tag reachable from main produces signed, published artifacts even
+      while tasks/70-release.weft.yml records alpha-release-evidence in review
+      with review:null and every assurance fact marked releasable:false. The
+      signed manifest authenticates the tag workflow and exact bytes, not human
+      or native review. The release must not outrun its own declared gate.
+    scope:
+      files:
+        - scripts/validate_release_readiness.py
+        - scripts/build_release_evidence.py
+        - .github/workflows/release.yml
+        - .github/workflows/ci.yml
+        - release-registry.json
+        - tasks/70-release.weft.yml
+      contracts:
+        - contract:release-evidence-v0
+        - boundary:release-provenance
+    deliverables:
+      - A machine-checkable release-readiness validator invoked by both ci and release workflows.
+      - Evidence collector fails when used as a gate and review is null or non-releasable.
+      - release-registry.json posture matches the actual gate state.
+    accept:
+      - A tag whose source SHA differs from the reviewed head cannot be released.
+      - A missing, stale or non-releasable review decision blocks release with an actionable error.
+      - Contradictory assurance facts block release rather than being ignored.
+    negative:
+      - A keyless signature or green CI run alone is not treated as review evidence.
+      - The validator must not mutate the ledger, Git state or any published artifact.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/release/test_release_readiness.py
+      - kind: ci
+        required: true
+        criterion: Hosted release-contract check passes at the published head.
+      - kind: review
+        required: true
+        criterion: Maintainer review of the gate against tasks/70-release.weft.yml and docs/security.md.
+    notes: >
+      Blocker B1 in docs/PUBLIC-RELEASE-REVIEW.md. Keep the collector and the
+      validator distinct so evidence assembly remains usable for diagnostics.
+
+  - slug: public-claim-consistency
+    title: Make public security and release claims match the implementation
+    status: todo
+    priority: P0
+    depends: []
+    conflicts:
+      - release-readiness-gate
+    purpose: >
+      docs/security.md says signed releases, an SBOM and a package gate do not
+      exist when they do; ragbaz.component.json says no mutation surface exists
+      when the loopback HTTP control exposes claim/release/handoff/review; and
+      release-registry.json says releaseEligible:true while the README calls the
+      project a prototype. Public docs must describe what is actually signed,
+      what identity is pinned, what surfaces exist and what remains unproven.
+    scope:
+      files:
+        - docs/security.md
+        - docs/RELEASING-GITHUB.md
+        - ragbaz.component.json
+        - release-registry.json
+        - README.md
+        - tests/security/test_security_threat_model.py
+      contracts:
+        - boundary:trust-inputs
+        - boundary:release-provenance
+        - surface:public-docs
+    deliverables:
+      - Exact replacement for the stale docs/security.md WM-T12 statement.
+      - Component metadata describing the loopback bearer-token capability model.
+      - User-facing cosign verification command with pinned identity and issuer.
+      - A docs-consistency test asserting exact expected statements, not substrings.
+    accept:
+      - Every public claim about signing, releasability and mutation surfaces is traceable to code or workflow steps.
+      - The stated posture is one of unreviewed prototype or reviewed release, not both.
+      - Verification instructions work against the published v0.1.0 artifacts.
+    negative:
+      - Do not claim independent review, human approval or reproducible builds; the code does not establish them.
+      - Do not remove documented limitations to make the posture sound stronger.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/security/test_security_threat_model.py
+      - kind: docs
+        required: true
+        command: python scripts/validate_tasks.py
+      - kind: review
+        required: true
+        criterion: Maintainer review of every changed public claim against cited source lines.
+    notes: >
+      Blocker B2 in docs/PUBLIC-RELEASE-REVIEW.md. This slice is documentation
+      and metadata only; the release gate itself belongs to release-readiness-gate.
+
+  - slug: lock-refresh-pr
+    title: Replace direct bot pushes to main with reviewed lockfile PRs
+    status: todo
+    priority: P0
+    depends: []
+    purpose: >
+      .github/workflows/refresh-build-lock.yml has contents:write and pushes
+      uv.lock straight to main, which release.yml then consumes with uv sync
+      --locked. A dependency change can reach a signed release without review,
+      contradicting README.md's "review the lockfile diff" instruction.
+    scope:
+      files:
+        - .github/workflows/refresh-build-lock.yml
+        - scripts/*lock*
+        - tests/**/*lock*
+      contracts:
+        - boundary:supply-chain
+    deliverables:
+      - Workflow opens or updates a PR for uv.lock instead of pushing to main.
+      - Least-privilege credentials, pinned action SHAs and branch protection assumptions documented.
+    accept:
+      - No workflow job in this repository pushes generated files directly to main.
+      - A lockfile diff lands only through a PR with required status checks.
+    negative:
+      - The workflow must not persist broad credentials or write to unrelated branches.
+    evidence:
+      - kind: ci
+        required: true
+        criterion: A dry-run lock refresh opens a PR and does not push to main.
+      - kind: review
+        required: true
+        criterion: Maintainer review of workflow permissions and token scope.
+    notes: >
+      Blocker B3 in docs/PUBLIC-RELEASE-REVIEW.md. Coordinate with
+      release-readiness-gate so the validator can assert the lock came from a
+      reviewed PR.
