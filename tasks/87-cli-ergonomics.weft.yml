@@ -1,0 +1,70 @@
+format: weft-task-v0
+phase: cli
+summary: Make the CLI a polished, scriptable terminal citizen.
+
+tasks:
+  - slug: cli-terminal-ergonomics
+    title: Colorful help, version, completions, JSON and environment-aware output
+    status: in_progress
+    priority: P1
+    depends: []
+    purpose: >
+      Operators and agents share one CLI. It must look deliberate in a terminal,
+      stay machine-readable for jq and shells, and honour the environment's
+      color, pager and editor conventions instead of hard-coding behaviour.
+    scope:
+      files:
+        - src/weftmark/cli/color.py
+        - src/weftmark/cli/banner.py
+        - src/weftmark/cli/completion.py
+        - src/weftmark/cli/output.py
+        - src/weftmark/cli/main.py
+        - src/weftmark/__init__.py
+        - tests/cli/*
+        - docs/CLI.md
+        - docs/INSTALL.md
+        - README.md
+        - tasks/87-cli-ergonomics.weft.yml
+      contracts:
+        - contract:cli-output-v1
+        - contract:cli-completion-v1
+        - boundary:terminal-environment
+    deliverables:
+      - >
+        A logo-derived colored ASCII banner on --help and a --version report
+        that lists the capabilities included in the current installation.
+      - >
+        Bash and fish completions covering subcommands, nested subcommands and
+        their options, generated from the live argparse parser.
+      - >
+        Consistent --json output across commands, plus pager/editor/color
+        selection from WEFTMARK_ and conventional environment variables.
+    accept:
+      - weftmark --help shows the woven-W ASCII banner without breaking argparse help.
+      - weftmark --version prints the version and installed optional capabilities.
+      - Bash and fish completion scripts remain valid and cover nested commands/options.
+      - NO_COLOR and TERM=dumb suppress color; FORCE_COLOR or WEFTMARK_COLOR override it.
+      - JSON output stays parseable even when color is forced on.
+      - Pager and editor honor WEFTMARK_PAGER/PAGER and WEFTMARK_EDITOR/EDITOR/VISUAL.
+    negative:
+      - Color sequences never appear in piped or --json output by default.
+      - Completion generation never opens a repository or ledger.
+      - An unsafe pager or editor string is never passed to a shell.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/cli/test_cli_ergonomics.py tests/cli/test_cli_completion_color.py
+      - kind: ci
+        required: true
+        criterion: Hosted full suite and workflow contract checks pass at the published head.
+      - kind: review
+        required: true
+        criterion: Terminal-environment handling reviewed for injection safety and machine-output purity.
+    notes: >
+      No public record or wire format changes. The authoritative Frog database
+      lives on kali-1, which is down for hardware reasons: replacement parts are
+      delayed by snail mail and the economy. It is not a transient network fault
+      and cannot be reconciled from this machine's empty local database. No Frog
+      lock or completion is claimed. Work stays isolated on cli/ergonomics-polish
+      with a native task, claim and exact-head evidence until the fleet head is
+      back and the dual-run records can be reconciled.

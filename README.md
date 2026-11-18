@@ -111,10 +111,16 @@ defaults to JSONL; migration is explicit. See
 [`docs/SQLITE-LEDGER.md`](docs/SQLITE-LEDGER.md) for use, SQL/API schemas, the
 portable D1/libSQL batch seam, Litestream boundaries and remaining review gates.
 
-### Shell completion
+### Everyday CLI
 
-`weftmark completion <shell>` prints a completion script for the top-level
-subcommands (derived from the live parser, so it stays in sync). Set it up once:
+`weftmark --help` opens with a woven-W wordmark derived from the logo;
+`weftmark --version` lists the capabilities actually installed (core ledger,
+forge adapters, completions, and whether the optional `tui`/`sqlite` extras are
+present). Both work outside a Git repository.
+
+`weftmark completion <shell>` prints a completion script generated from the live
+argparse tree: top-level and nested subcommands, their options, and enumerated
+values such as `--priority p0..p3`. Set it up once:
 
 ```bash
 # bash — add to ~/.bashrc:
@@ -126,10 +132,13 @@ weftmark completion bash | sudo tee /etc/bash_completion.d/weftmark
 weftmark completion fish > ~/.config/fish/completions/weftmark.fish
 ```
 
-Human-readable output (evidence state, review outcome) is colored only when
-writing to a terminal; it stays plain when piped or redirected, under `NO_COLOR`,
-or under `TERM=dumb`, so `--json` and scraped output are byte-clean (`FORCE_COLOR`
-forces it on).
+Human-readable output is colored only on a real terminal. `NO_COLOR`, `TERM=dumb`
+and `WEFTMARK_COLOR=never` disable it; `FORCE_COLOR`, `CLICOLOR_FORCE` and
+`WEFTMARK_COLOR=always` enable it. `--json` always emits one clean JSON document
+suitable for `jq`, even when color is forced. Help uses `$WEFTMARK_PAGER`/`$PAGER`
+on a terminal (`--no-pager` disables it); `task create --edit` opens
+`$WEFTMARK_EDITOR`/`$VISUAL`/`$EDITOR`. See [`docs/CLI.md`](docs/CLI.md) for the
+full reference, including exit codes and scripting examples.
 
 ## From Frog to WeftMark
 

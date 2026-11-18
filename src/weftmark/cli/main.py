@@ -9,7 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from weftmark.cli.color import color_enabled, paint, status_styles
+from weftmark.cli.banner import help_banner
+from weftmark.cli.color import color_enabled, paint, status_paint, status_styles
+from weftmark.cli.completion import script as completion_script
+from weftmark.cli.output import edit_text, json_line, page_text
+from weftmark.cli.version import version_payload, version_text
 from weftmark.adapters.acp import AcpProviderSpec, AcpRuntimeProxy
 from weftmark.adapters.git_local import LocalGit, LocalGitError
 from weftmark.adapters.frog import FrogImportError, read_frog_snapshot
@@ -171,6 +175,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=".", help="path inside the Git repository")
     parser.add_argument("--ledger", help="override the local JSONL ledger path")
     parser.add_argument("--json", action="store_true", help="emit structured JSON")
+    parser.add_argument(
+        "--no-pager", action="store_true", help="never page help or long output"
+    )
+    parser.add_argument(
+        "--version", action="store_true", help="show version and installed capabilities"
+    )
     # Attribution for evidence this invocation records. The id is an opaque
     # string kept verbatim in the ledger; an external worker names itself here
     # (e.g. a Sylvae run passes "sylvae:run/<id>", an OpenCode session
@@ -240,9 +250,13 @@ def build_parser() -> argparse.ArgumentParser:
     task_create = task_commands.add_parser("create", help="create native task intent")
     task_create.add_argument("id")
     task_create.add_argument("--title", required=True)
-    task_create.add_argument("--why", required=True)
-    task_create.add_argument("--what", required=True, dest="what_text")
+    task_create.add_argument("--why", help="why the task exists (or use --edit)")
+    task_create.add_argument("--what", dest="what_text", help="deliverable (or use --edit)")
     task_create.add_argument("--roi-note")
+    task_create.add_argument(
+        "--edit", action="store_true",
+        help="compose why/what/roi-note in $WEFTMARK_EDITOR (VISUAL, EDITOR, vi)",
+    )
     task_create.add_argument(
         "--priority",
         choices=tuple(value.value for value in TaskPriority),
@@ -632,52 +646,88 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _top_level_commands(parser: argparse.ArgumentParser) -> list[str]:
-    """The top-level subcommand names, read from the live parser so a
-    completion script stays in sync as commands are added."""
-    for action in parser._actions:
-        if isinstance(action, argparse._SubParsersAction):
-            return sorted(action.choices)
-    return []
-
-
-def _completion_script(shell: str, commands: list[str]) -> str:
-    """A dependency-free completion script for ``weftmark`` covering the
-    top-level subcommands."""
-    cmds = " ".join(commands)
-    if shell == "bash":
-        return (
-            "# weftmark bash completion.\n"
-            '# Setup: eval "$(weftmark completion bash)"  (add to ~/.bashrc), or\n'
-            "#   weftmark completion bash | sudo tee /etc/bash_completion.d/weftmark\n"
-            "_weftmark_complete() {\n"
-            '    local cur="${COMP_WORDS[COMP_CWORD]}"\n'
-            '    if [ "$COMP_CWORD" -eq 1 ]; then\n'
-            f'        COMPREPLY=( $(compgen -W "{cmds}" -- "$cur") )\n'
-            "    fi\n"
-            "}\n"
-            "complete -F _weftmark_complete weftmark\n"
+def _help_target(
+    parser: argparse.ArgumentParser, argv: Sequence[str]
+) -> argparse.ArgumentParser:
+    """Find the parser whose help was requested, without running the command."""
+    current = parser
+    consumes_value = {"--repo", "--ledger", "--producer-id", "--producer-kind"}
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token in ("-h", "--help"):
+            return current
+        if token in consumes_value:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        subparsers = next(
+            (action for action in current._actions if isinstance(action, argparse._SubParsersAction)),
+            None,
         )
-    if shell == "fish":
-        lines = [
-            "# weftmark fish completion.",
-            "# Setup: weftmark completion fish > ~/.config/fish/completions/weftmark.fish",
-            "complete -c weftmark -f",
-        ]
-        lines += [
-            f"complete -c weftmark -n __fish_use_subcommand -a {cmd}"
-            for cmd in commands
-        ]
-        return "\n".join(lines) + "\n"
-    raise ValueError(f"unsupported shell: {shell}")
+        if subparsers and token in subparsers.choices:
+            current = subparsers.choices[token]
+            index += 1
+            continue
+        break
+    return current
+
+
+_TASK_EDIT_TEMPLATE = """\
+# WeftMark task intent for {task_id}
+# Replace the placeholders, then save and exit. Lines starting with # are ignored.
+why:
+    WHY THIS TASK EXISTS
+what:
+    WHAT WILL BE DELIVERED
+roi_note:
+"""
+
+
+def _parse_task_draft(text: str) -> dict[str, str]:
+    """Read ``key:`` sections from a short editor draft."""
+    result: dict[str, list[str]] = {}
+    current: str | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.endswith(":") and line[:-1] in {"why", "what", "roi_note"}:
+            current = line[:-1]
+            result.setdefault(current, [])
+            continue
+        if current is not None:
+            result[current].append(line)
+    return {key: " ".join(parts).strip() for key, parts in result.items()}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
+    # These surfaces must work outside a Git repository and touch no ledger.
+    if "--version" in argv and "--help" not in argv and "-h" not in argv:
+        payload = version_payload()
+        if "--json" in argv:
+            json_line(payload)
+        else:
+            print(version_text(payload))
+        return 0
+    if "-h" in argv or "--help" in argv:
+        target = _help_target(parser, argv)
+        help_text = target.format_help()
+        if target is parser:
+            help_text = help_banner() + "\n" + help_text
+        if "--no-pager" in argv:
+            print(help_text, end="")
+        else:
+            page_text(help_text)
+        return 0
     args = parser.parse_args(argv)
     # Handled before any repo/ledger setup: completion needs no workspace.
     if args.command == "completion":
-        print(_completion_script(args.shell, _top_level_commands(parser)), end="")
+        print(completion_script(args.shell, parser), end="")
         return 0
     try:
         if args.command == "system":
@@ -793,14 +843,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit_status(payload, json_output=args.json)
             return 0
         if args.command == "task" and args.task_command == "create":
+            why, what, roi_note = args.why, args.what_text, args.roi_note
+            if args.edit:
+                draft = edit_text(_TASK_EDIT_TEMPLATE.format(task_id=args.id))
+                if draft is None:
+                    _emit_error(
+                        f"Editor failed or was cancelled; nothing was created. "
+                        f"Set WEFTMARK_EDITOR, VISUAL or EDITOR to a working editor.",
+                        json_output=args.json,
+                    )
+                    return EXIT_INVALID
+                fields = _parse_task_draft(draft)
+                why = fields.get("why") or why
+                what = fields.get("what") or what
+                roi_note = fields.get("roi_note") or roi_note
+            missing = [
+                name for name, value in (("--why", why), ("--what", what)) if not value
+            ]
+            if missing:
+                _emit_error(
+                    f"Task {args.id} needs {' and '.join(missing)}. "
+                    "Use --why and --what, or --edit.",
+                    json_output=args.json,
+                )
+                return EXIT_INVALID
             created_at = _now()
             value = tasks.create(
                 TaskIntent.create(
                     id=args.id,
                     title=args.title,
-                    why=args.why,
-                    what=args.what_text,
-                    roi_note=args.roi_note,
+                    why=why,
+                    what=what,
+                    roi_note=roi_note,
                     priority=TaskPriority(args.priority),
                     state=TaskState(args.state),
                     scopes=tuple(Scope.parse(value) for value in args.scope),
@@ -1478,8 +1552,8 @@ def _emit(payload: dict[str, Any], *, json_output: bool, action: str | None = No
     if json_output:
         print(json.dumps({"ok": True, "changeset": payload}, sort_keys=True))
         return
-    prefix = f"{action} " if action else ""
-    print(f"{prefix}{payload['id']}  {payload['state']}")
+    prefix = paint(f"{action} ", "dim") if action else ""
+    print(f"{prefix}{payload['id']}  {status_paint(payload['state'])}")
     print(f"  goal: {payload['goal']}")
     print(f"  branch: {payload['branch']}")
     print(f"  base: {payload['base_sha']}")
@@ -1493,8 +1567,11 @@ def _emit_task(
     if json_output:
         print(json.dumps({"ok": True, "task": payload}, sort_keys=True))
         return
-    prefix = f"{action} " if action else ""
-    print(f"{prefix}{payload['id']}  {payload['state']}  {payload['priority']}")
+    prefix = paint(f"{action} ", "dim") if action else ""
+    print(
+        f"{prefix}{payload['id']}  {status_paint(payload['state'])}  "
+        f"{paint(payload['priority'], 'bright_cyan')}"
+    )
     print(f"  title: {payload['title']}")
     print(
         "  scopes: "
@@ -1516,7 +1593,7 @@ def _emit_task_list(payloads: list[dict[str, Any]], *, json_output: bool) -> Non
         return
     for payload in payloads:
         print(
-            f"{payload['id']}  {payload['state']}  "
+            f"{payload['id']}  {status_paint(payload['state'])}  "
             f"{payload['priority']}  {payload['title']}"
         )
 
@@ -2010,9 +2087,9 @@ def _emit_claim_list(payloads: list[dict[str, Any]], *, json_output: bool) -> No
 
 def _emit_error(message: str, *, json_output: bool) -> None:
     if json_output:
-        print(json.dumps({"ok": False, "error": message}, sort_keys=True))
+        json_line({"ok": False, "error": message})
     else:
-        print(f"error: {message}", file=sys.stderr)
+        print(f"{paint('error:', 'bold', 'red', stream=sys.stderr)} {message}", file=sys.stderr)
 
 
 def _emit_scope(payload: dict[str, Any], *, json_output: bool) -> None:
