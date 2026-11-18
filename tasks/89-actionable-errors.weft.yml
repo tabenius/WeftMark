@@ -1,0 +1,51 @@
+format: weft-task-v0
+phase: cli
+summary: Make failures name the object, the cause and the next command.
+
+tasks:
+  - slug: actionable-error-contract
+    title: Actionable error envelopes for silent or misleading failures
+    status: in_progress
+    priority: P1
+    depends:
+      - cli-terminal-ergonomics
+    purpose: >
+      A first-time user cannot recover from a failure that only says "command
+      exited with status 1", or from a JSON document that reports ok:true while
+      the exit code says a gate was blocked. Failures must be copy-pasteable
+      instructions, not internal jargon.
+    scope:
+      files:
+        - src/weftmark/cli/main.py
+        - tests/cli/test_actionable_errors.py
+        - docs/CLI.md
+        - tasks/89-actionable-errors.weft.yml
+      contracts:
+        - contract:cli-output-v1
+        - contract:cli-error-envelope-v1
+    deliverables:
+      - Additive error fields (code, remediation, record) to the JSON envelope and human stderr line.
+      - Actionable failures for evidence run, ledger verify, runtime snapshot and blocked Frog parity.
+      - Tests covering both human and JSON surfaces at exact head.
+    accept:
+      - A failed evidence command exits 6 and says which command to rerun and where.
+      - Blocked Frog parity emits ok:false in JSON and names the failing checks.
+      - An invalid runtime snapshot is not reported as a silent success.
+      - An invalid ledger emits LEDGER_INVALID with the first problem and a recovery instruction.
+    negative:
+      - Existing JSON clients that read the "error" string remain compatible; fields are additive.
+      - No secret-bearing argv or command output is added to error payloads.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest -q tests/cli/test_actionable_errors.py tests/cli/test_cli_ergonomics.py tests/adapters/test_runtime_status.py
+      - kind: ci
+        required: true
+        criterion: Hosted full suite passes at the published head.
+      - kind: review
+        required: true
+        criterion: Author self-review of error wording and JSON compatibility.
+    notes: >
+      Remaining P1/P2 rewrites from the public-release review are deliberately
+      out of scope; they belong in follow-up tasks. Authoritative Frog remains
+      offline on kali-1; no Frog lock or completion is claimed.
