@@ -98,14 +98,21 @@
     ]
   },
   "security": {
-    "authMethods": [],
-    "tokenScopes": [],
+    "authMethods": [
+      "local-loopback-bearer-token"
+    ],
+    "tokenScopes": [
+      "claim",
+      "release",
+      "handoff",
+      "review"
+    ],
     "tenantBoundary": "none",
     "dataClasses": [
       "public"
     ],
     "secretAccess": "none",
-    "revocation": "No remote mutation surface exists in the prototype. The HTTP read surface is loopback-only; its optional local bearer token is replaced by restarting with a different token file.",
+    "revocation": "No forge mutation surface exists in the prototype. The optional loopback HTTP control surface is disabled unless a separate write token and explicit capabilities are configured; rotate or replace the token file and restart the process to revoke access.",
     "auditEvents": []
   },
   "health": {
