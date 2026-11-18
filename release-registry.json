@@ -23,5 +23,5 @@
     "requiresInstalledSmoke": true,
     "automaticStable": false
   },
-  "releaseEligible": true
+  "releaseEligible": false
 }

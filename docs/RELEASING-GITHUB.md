@@ -56,7 +56,18 @@ git tag v0.0.1
 git push origin v0.0.1
 gh release view v0.0.1
 sha256sum -c SHA256SUMS
+
+# Verify the signed release manifest. Pin the workflow identity and OIDC issuer;
+# substitute the exact immutable tag you are verifying.
+cosign verify-blob --bundle release.sigstore.json \
+  --certificate-identity "https://github.com/tabenius/WeftMark/.github/workflows/release.yml@refs/tags/v0.1.0" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  release.json
 ```
+
+The signature authenticates the tag workflow and the exact manifest bytes. It
+does **not** prove human review, independent review, or a reproducible build;
+those require separate release evidence.
 
 Do not reuse tags for different source revisions. Require Actions checks before
 release, maintain provenance of generated assets, and use signing/attestations
