@@ -102,8 +102,10 @@ Ordinary `pip install .` does not consume this lockfile.
 ### Optional transactional SQLite ledger
 
 `uv sync --locked --extra sqlite` installs the SQLite `LedgerPort` adapter and
-its pinned Nostoi codec/verifier dependency (Rust is needed to build the native
-bindings). It preserves supported existing ledger digests and adds atomic CAS,
+Nostoi >=0.1.1,<0.2. On Linux amd64 CPython with glibc >=2.34, uv selects the
+hash-locked release wheel: no Rust toolchain is needed. Other platforms use the
+pinned release source and require Rust/Maturin; Linux musl or older glibc needs
+an explicit source override. It preserves supported existing ledger digests and adds atomic CAS,
 idempotent receipts, workspace isolation and verified backups. The CLI still
 defaults to JSONL; migration is explicit. See
 [`docs/SQLITE-LEDGER.md`](docs/SQLITE-LEDGER.md) for use, SQL/API schemas, the

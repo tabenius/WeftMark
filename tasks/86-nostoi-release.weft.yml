@@ -1,0 +1,50 @@
+format: weft-task-v0
+phase: release
+summary: Consume released Nostoi artifacts instead of compiling an old snapshot.
+tasks:
+  - slug: nostoi-released-dependency
+    title: Use Nostoi 0.1.1 or compatible newer releases
+    status: in_progress
+    priority: P1
+    depends: []
+    purpose: Install only the needed artifacts on resource-constrained machines.
+    scope:
+      files:
+        - pyproject.toml
+        - uv.lock
+        - ragbaz.component.json
+        - README.md
+        - docs/INSTALL.md
+        - docs/SQLITE-LEDGER.md
+        - scripts/*nostoi*
+        - tests/*nostoi*
+        - .github/workflows/*
+        - tasks/86-nostoi-release.weft.yml
+      contracts:
+        - contract:nostoi-release-dependency-v1
+    deliverables:
+      - Optional Nostoi version floor with hash-locked prebuilt Linux bindings.
+      - A verified release CLI for CAD integration instead of a Rust source build.
+      - Phase-specific dependency metadata and minimal-install guidance.
+    accept:
+      - SQLite and test extras require Nostoi >=0.1.1 and <0.2.
+      - Supported Linux amd64 CPython installs use the released wheel without Rust.
+      - CLI installation checks release identity, signature, source and artifact hash.
+      - JSONL-only installations do not require Nostoi.
+    negative:
+      - Wrong source identity or altered artifacts cannot be installed by the helper.
+      - The lockfile must not retain the previous b043bf snapshot.
+    evidence:
+      - kind: test
+        required: true
+        command: python -m pytest tests/test_nostoi_dependency.py
+      - kind: ci
+        required: true
+        criterion: Hosted full suite and real released Nostoi CLI integration pass.
+      - kind: review
+        required: true
+        criterion: Dependency selection and release verification reviewed without bypassing signature checks.
+    notes:
+      - Authoritative Frog is on offline Kali; no local substitute or Frog lock is claimed.
+      - Work is isolated on deps/nostoi-released-wheel with a native task and claim.
+      - This changes the optional dependency/distribution contract, not ledger record formats.

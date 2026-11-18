@@ -41,24 +41,28 @@
     {
       "componentId": "ragbaz.nostoi",
       "kind": "install",
-      "version": "0.1.0",
+      "version": ">=0.1.1,<0.2",
       "optional": true,
-      "reason": "weftmark[sqlite] extra pins the nostoi Python bindings at b043bf953eeda3ea720adfa91f1b2177c0ab1143 when installed from source."
+      "reason": "SQLite and test extras require compatible Nostoi releases; uv selects the hash-locked Linux amd64 wheel, with verified release source fallback on other platforms."
     },
     {
       "componentId": "ragbaz.nostoi",
       "kind": "runtime",
-      "version": "0.1.0",
-      "reason": "Ledger verify/attest and CAD evidence intake invoke the external nostoi CLI and its canonicalizer."
+      "version": ">=0.1.1,<0.2",
+      "optional": true,
+      "reason": "SQLite uses the native Python binding; optional ledger verify/attest and CAD intake use the external CLI. JSONL-only operation needs neither."
     },
     {
       "componentId": "ragbaz.nostoi",
       "kind": "build",
-      "reason": "cad-evidence-smoke CI checks out tabenius/nostoi and builds its release CLI for integration tests."
+      "version": ">=0.1.1,<0.2",
+      "optional": true,
+      "reason": "SQLite-enabled tests/builds consume released bindings; CAD CI installs a signature/hash-verified release CLI rather than compiling Rust. Other platforms may build the pinned release bindings from source."
     },
     {
       "componentId": "ragbaz.nostoi",
       "kind": "debug",
+      "optional": true,
       "reason": "Workspace attestation verification loads the sibling nostoi reference implementation from contrib/python."
     }
   ],

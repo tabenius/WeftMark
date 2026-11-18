@@ -2,11 +2,14 @@ version = 1
 revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
-    "python_full_version >= '3.14'",
+    "python_full_version >= '3.14' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.14' and implementation_name != 'cpython') or (python_full_version >= '3.14' and platform_machine != 'x86_64') or (python_full_version >= '3.14' and sys_platform != 'linux')",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten'",
+    "python_full_version == '3.13.*' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "(python_full_version == '3.13.*' and implementation_name != 'cpython' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'linux')",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.13' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "(python_full_version < '3.13' and implementation_name != 'cpython' and sys_platform == 'linux') or (python_full_version < '3.13' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'emscripten') or (python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux')",
 ]
 
 [[package]]
@@ -621,8 +624,28 @@ wheels = [
 
 [[package]]
 name = "nostoi"
-version = "0.1.0"
-source = { git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=b043bf953eeda3ea720adfa91f1b2177c0ab1143#b043bf953eeda3ea720adfa91f1b2177c0ab1143" }
+version = "0.1.1"
+source = { git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=e45387189c9d20b51260589c0429936950ac4d93#e45387189c9d20b51260589c0429936950ac4d93" }
+resolution-markers = [
+    "(python_full_version >= '3.14' and implementation_name != 'cpython') or (python_full_version >= '3.14' and platform_machine != 'x86_64') or (python_full_version >= '3.14' and sys_platform != 'linux')",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "(python_full_version == '3.13.*' and implementation_name != 'cpython' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'linux')",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+    "(python_full_version < '3.13' and implementation_name != 'cpython' and sys_platform == 'linux') or (python_full_version < '3.13' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform == 'emscripten') or (python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux')",
+]
+
+[[package]]
+name = "nostoi"
+version = "0.1.1"
+source = { url = "https://dl.ragbaz.cc/v1/nostoi/v0.1.1/nostoi-0.1.1-cp311-abi3-manylinux_2_34_x86_64.whl" }
+resolution-markers = [
+    "python_full_version >= '3.14' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "python_full_version == '3.13.*' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "python_full_version < '3.13' and implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+]
+wheels = [
+    { url = "https://dl.ragbaz.cc/v1/nostoi/v0.1.1/nostoi-0.1.1-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:e8ab2a8662bb214ca01454fac013dc504203dd92fa8e51a7386db9a15b4122aa" },
+]
 
 [[package]]
 name = "opentelemetry-api"
@@ -1428,12 +1451,14 @@ mcp = [
     { name = "mcp" },
 ]
 sqlite = [
-    { name = "nostoi" },
+    { name = "nostoi", version = "0.1.1", source = { git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=e45387189c9d20b51260589c0429936950ac4d93#e45387189c9d20b51260589c0429936950ac4d93" }, marker = "implementation_name != 'cpython' or platform_machine != 'x86_64' or sys_platform != 'linux'" },
+    { name = "nostoi", version = "0.1.1", source = { url = "https://dl.ragbaz.cc/v1/nostoi/v0.1.1/nostoi-0.1.1-cp311-abi3-manylinux_2_34_x86_64.whl" }, marker = "implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 test = [
     { name = "jsonschema" },
     { name = "mcp" },
-    { name = "nostoi" },
+    { name = "nostoi", version = "0.1.1", source = { git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=e45387189c9d20b51260589c0429936950ac4d93#e45387189c9d20b51260589c0429936950ac4d93" }, marker = "implementation_name != 'cpython' or platform_machine != 'x86_64' or sys_platform != 'linux'" },
+    { name = "nostoi", version = "0.1.1", source = { url = "https://dl.ragbaz.cc/v1/nostoi/v0.1.1/nostoi-0.1.1-cp311-abi3-manylinux_2_34_x86_64.whl" }, marker = "implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pytest" },
     { name = "textual" },
 ]
@@ -1457,8 +1482,10 @@ requires-dist = [
     { name = "jsonschema", marker = "extra == 'test'", specifier = ">=4.26,<5" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2,<3" },
     { name = "mcp", marker = "extra == 'test'", specifier = ">=2,<3" },
-    { name = "nostoi", marker = "extra == 'sqlite'", git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=b043bf953eeda3ea720adfa91f1b2177c0ab1143" },
-    { name = "nostoi", marker = "extra == 'test'", git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=b043bf953eeda3ea720adfa91f1b2177c0ab1143" },
+    { name = "nostoi", marker = "implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'sqlite'", url = "https://dl.ragbaz.cc/v1/nostoi/v0.1.1/nostoi-0.1.1-cp311-abi3-manylinux_2_34_x86_64.whl" },
+    { name = "nostoi", marker = "implementation_name == 'cpython' and platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'test'", url = "https://dl.ragbaz.cc/v1/nostoi/v0.1.1/nostoi-0.1.1-cp311-abi3-manylinux_2_34_x86_64.whl" },
+    { name = "nostoi", marker = "(implementation_name != 'cpython' and extra == 'sqlite') or (platform_machine != 'x86_64' and extra == 'sqlite') or (sys_platform != 'linux' and extra == 'sqlite')", git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=e45387189c9d20b51260589c0429936950ac4d93" },
+    { name = "nostoi", marker = "(implementation_name != 'cpython' and extra == 'test') or (platform_machine != 'x86_64' and extra == 'test') or (sys_platform != 'linux' and extra == 'test')", git = "https://github.com/tabenius/nostoi.git?subdirectory=bindings%2Fpython&rev=e45387189c9d20b51260589c0429936950ac4d93" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8,<9" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "textual", marker = "extra == 'test'", specifier = ">=8,<9" },

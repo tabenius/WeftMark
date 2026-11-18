@@ -10,11 +10,15 @@ The source plan is `tasks/36-sqlite-ledger.weft.yml`.
 uv sync --locked --extra sqlite
 ```
 
-Source installation builds Nostoi's Rust Python extension through Maturin; a
-Rust toolchain is required until compatible wheels are distributed. The SQLite
-extra and test extra pin Nostoi to commit
-`b043bf953eeda3ea720adfa91f1b2177c0ab1143`. Ordinary JSONL installations do not
-require Nostoi. `uv.lock` records the same source identity.
+The SQLite and test extras require Nostoi `>=0.1.1,<0.2`. The repository's uv
+sources select the released 0.1.1 abi3 wheel on Linux amd64 CPython (Python
+3.11+, glibc >=2.34); the lock records its exact SHA-256. No local Rust build
+is needed there. Other platforms use the release source at
+`e45387189c9d20b51260589c0429936950ac4d93` and require Rust/Maturin. Linux musl
+or glibc older than 2.34 must explicitly override the wheel source; they must
+not silently install an incompatible binary. Ordinary JSONL installations
+still do not require Nostoi. See [INSTALL.md](INSTALL.md) for pip installation
+and upgrading the reviewed release selection.
 
 ```python
 from datetime import datetime, timezone
