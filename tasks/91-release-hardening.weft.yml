@@ -90,8 +90,9 @@ tasks:
     depends: []
     purpose: >
       Release and CI workflows use mutable tags such as actions/checkout@v4 while
-      holding id-token:write, attestations:write, contents:write and R2 secrets.
-      A compromised upstream tag could alter release inputs or exfiltrate secrets.
+      holding id-token, attestations and contents write permissions plus R2
+      secrets. A compromised upstream tag could alter release inputs or
+      exfiltrate secrets.
     scope:
       files:
         - .github/workflows/ci.yml
@@ -102,7 +103,7 @@ tasks:
       contracts:
         - boundary:supply-chain
     deliverables:
-      - Every uses: reference resolves to a full 40-character commit SHA.
+      - Every action reference resolves to a full 40-character commit SHA.
       - A lint or check rejects tag refs in release-related workflows.
     accept:
       - No mutable action refs remain in release, mirror or lock-refresh workflows.
