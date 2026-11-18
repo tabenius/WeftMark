@@ -5,7 +5,7 @@ summary: Make failures name the object, the cause and the next command.
 tasks:
   - slug: actionable-error-contract
     title: Actionable error envelopes for silent or misleading failures
-    status: in_progress
+    status: done
     priority: P1
     depends:
       - cli-terminal-ergonomics
@@ -48,4 +48,7 @@ tasks:
     notes: >
       Remaining P1/P2 rewrites from the public-release review are deliberately
       out of scope; they belong in follow-up tasks. Authoritative Frog remains
-      offline on kali-1; no Frog lock or completion is claimed.
+      offline on kali-1; no Frog lock or completion is claimed. Native review
+      actionable-errors-author-review-b1c9984-v2 at exact head
+      b1c998400cccf1be4c481e3f589a139b19939de3; PR #57 merged at
+      1b7cb15161355c75ac9e07295fcbc635dd9e1ff4.

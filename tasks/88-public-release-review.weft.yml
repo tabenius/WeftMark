@@ -5,7 +5,7 @@ summary: Public-release readiness review for usability, security and actionable 
 tasks:
   - slug: public-release-readiness-review
     title: Review WeftMark as a whole for first public release
-    status: in_progress
+    status: done
     priority: P1
     depends:
       - cli-terminal-ergonomics
@@ -48,4 +48,8 @@ tasks:
       Research is read-only except for the report and this plan. Remediation
       items are to be split into their own scoped tasks rather than widening
       this one. Authoritative Frog remains offline on kali-1 for hardware and
-      logistics reasons; no Frog lock or completion is claimed.
+      logistics reasons; no Frog lock or completion is claimed. Native review
+      public-release-review-author-28e0ce8 at exact head
+      28e0ce8b34115c5cf1322b279c66dee6a6ca05d9; PR #58 merged at
+      1464ceb1c211e3e1b7aef4e78b631d6fa1f1a8d2. Author self-review only; not an
+      independent security audit. Remediation remains open in tasks 90-92.
