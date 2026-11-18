@@ -83,6 +83,11 @@ cd WeftMark
 pip install .
 ```
 
+> **New here?** Follow the [five-minute Quickstart](docs/QUICKSTART.md) for one
+> complete local loop: declare a Change Set, claim a scope, commit, record
+> evidence, review, and hand off. It only writes to a local ledger; nothing is
+> committed, pushed or published by WeftMark.
+
 ### Locked development environment
 
 The committed `uv.lock` records runtime dependencies and all optional extras.

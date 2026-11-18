@@ -1,0 +1,51 @@
+format: weft-task-v0
+phase: release
+summary: Public-release readiness review for usability, security and actionable errors.
+
+tasks:
+  - slug: public-release-readiness-review
+    title: Review WeftMark as a whole for first public release
+    status: in_progress
+    priority: P1
+    depends:
+      - cli-terminal-ergonomics
+    purpose: >
+      A first-time user must be able to install WeftMark, understand what it
+      does and does not do, and recover from every failure without reading the
+      project's design chapters. Before publication, security claims and
+      authority boundaries must be checked against the actual code, not the
+      roadmap, and the surrounding tool market must be described honestly so
+      users know what this is and is not.
+    scope:
+      files:
+        - docs/PUBLIC-RELEASE-REVIEW.md
+        - tasks/88-public-release-review.weft.yml
+      contracts:
+        - contract:cli-output-v1
+        - boundary:trust-inputs
+        - boundary:release-provenance
+    deliverables:
+      - A severity-ranked, file-and-line-cited security review distinguishing release blockers from documented limitations.
+      - A first-time-user usability review with a concrete five-minute path and prioritized fixes.
+      - An inventory of user-facing error paths with actionable rewrite proposals and a project error-message style guide.
+      - A candid comparison with adjacent tool categories (agent evidence, supply-chain attestation, task trackers, orchestrators).
+    accept:
+      - Every finding names an exact file and line and states whether it blocks release.
+      - Error rewrites say what failed, why, and the next command or setting to try.
+      - The report does not claim Frog synchronization or independent review that did not happen.
+      - Documentation contradictions discovered during review are listed with proposed exact replacements.
+    negative:
+      - A passing terminal command outside WeftMark is not presented as durable evidence.
+      - The review must not silently become an implementation slice for unrelated fixes.
+    evidence:
+      - kind: review
+        required: true
+        criterion: Author self-review of findings against the cited source; not an independent security audit.
+      - kind: docs
+        required: true
+        command: python scripts/validate_tasks.py
+    notes: >
+      Research is read-only except for the report and this plan. Remediation
+      items are to be split into their own scoped tasks rather than widening
+      this one. Authoritative Frog remains offline on kali-1 for hardware and
+      logistics reasons; no Frog lock or completion is claimed.
