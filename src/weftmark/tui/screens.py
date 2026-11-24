@@ -10,7 +10,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from weftmark.application.status import ChangeSetStatus
 from weftmark.tui.data import TuiError
-from weftmark.tui.formatting import detail_text, evidence_summary, sort_statuses
+from weftmark.tui.formatting import detail_text, evidence_summary, inspector_text, sort_statuses
 from weftmark.adapters.runtime_status import runtime_text
 
 
@@ -21,6 +21,7 @@ class ChangeSetListScreen(Screen):
         Binding("l", "select", "Open", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("s", "system", "System / signing", show=True),
+        Binding("?", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -81,6 +82,9 @@ class ChangeSetListScreen(Screen):
     def action_system(self) -> None:
         self.app.push_screen(RuntimeScreen())
 
+    def action_help(self) -> None:
+        self.app.push_screen(TextInspectorScreen(binding_help(self)))
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         status = self._by_id.get(str(event.row_key.value))
         if status is None:
@@ -94,6 +98,11 @@ class ChangeSetDetailScreen(Screen):
         Binding("h", "back", "Back", show=True),
         Binding("escape", "back", "Back", show=False),
         Binding("s", "system", "System / signing", show=True),
+        Binding("e", "evidence", "Evidence", show=True),
+        Binding("w", "review", "Review", show=True),
+        Binding("d", "handoff", "Handoff", show=True),
+        Binding("g", "git", "Git observation", show=True),
+        Binding("?", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -103,7 +112,7 @@ class ChangeSetDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield VerticalScroll(Static(detail_text(self._status), id="detail"))
+        yield VerticalScroll(Static(detail_text(self._status), id="detail", markup=False))
         yield Footer()
 
     def action_back(self) -> None:
@@ -111,6 +120,50 @@ class ChangeSetDetailScreen(Screen):
 
     def action_system(self) -> None:
         self.app.push_screen(RuntimeScreen())
+
+    def action_help(self) -> None:
+        self.app.push_screen(TextInspectorScreen(binding_help(self)))
+
+    def action_evidence(self) -> None:
+        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "evidence")))
+
+    def action_review(self) -> None:
+        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "review")))
+
+    def action_handoff(self) -> None:
+        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "handoff")))
+
+    def action_git(self) -> None:
+        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "git")))
+
+    def action_quit(self) -> None:
+        self.app.exit()
+
+
+def binding_help(screen: Screen) -> str:
+    """The same bindings drive dispatch, footer and contextual help."""
+    return "Read-only reviewer bindings\n\n" + "\n".join(
+        f"{binding.key}: {binding.description}" for binding in screen.BINDINGS
+        if isinstance(binding, Binding)
+    )
+
+
+class TextInspectorScreen(Screen):
+    """Inert text from the existing status snapshot, not a mutation surface."""
+
+    BINDINGS = [Binding("h,escape", "back", "Back"), Binding("q", "quit", "Quit")]
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield VerticalScroll(Static(self._text, id="inspector", markup=False))
+        yield Footer()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
 
     def action_quit(self) -> None:
         self.app.exit()

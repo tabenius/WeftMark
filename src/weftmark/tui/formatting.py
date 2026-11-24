@@ -89,3 +89,36 @@ def detail_text(status: ChangeSetStatus) -> str:
         lines.append("blockers:")
         lines.extend(f"  {line}" for line in blockers)
     return "\n".join(lines)
+
+
+def inspector_text(status: ChangeSetStatus, view: str) -> str:
+    """Only observed status facts; never invent unavailable review/forge data."""
+    lines = [f"{view.capitalize()} for {status.id}", ""]
+    if view == "evidence":
+        for evidence in status.evidence_refs:
+            lines.extend((f"{evidence.id}: {evidence.kind} ({evidence.state})",
+                          f"Producer: {evidence.producer_kind} / {evidence.producer_id}"))
+            lines.extend(f"Artifact: {artifact}" for artifact in evidence.artifacts)
+        if not status.evidence_refs:
+            lines.append("No evidence references available in this status snapshot.")
+    elif view in ("review", "handoff"):
+        identifier = getattr(status, f"latest_{view}_id")
+        if identifier is None:
+            lines.append(f"No {view} recorded.")
+        else:
+            lines.extend((f"ID: {identifier}",
+                          f"Head: {getattr(status, f'latest_{view}_head_sha')}",
+                          f"Snapshot binding: {'current' if getattr(status, f'latest_{view}_is_current') else 'stale'}"))
+            if view == "review":
+                lines.append(f"Outcome: {status.latest_review_outcome or 'unknown'}")
+            lines.append("Full record is not included in this status snapshot.")
+    elif view == "git":
+        lines.extend((f"Branch: {status.branch}", f"Observed head: {status.observed_head_sha}",
+                      f"Observed at: {status.observed_at.isoformat()}"))
+        lines.extend(f"Dirty path: {path}" for path in status.dirty_paths)
+        if not status.dirty_paths:
+            lines.append("No dirty paths observed.")
+        lines.append("Base revision and forge state are not included in this snapshot.")
+    else:
+        raise ValueError(f"Unknown inspector: {view}")
+    return "\n".join(lines)
