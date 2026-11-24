@@ -1,4 +1,4 @@
-"""The two read-only screens: a Change Set list and its detail view."""
+"""Read-only Change Set list, detail and snapshot inspector screens."""
 
 from __future__ import annotations
 
@@ -98,6 +98,7 @@ class ChangeSetDetailScreen(Screen):
         Binding("h", "back", "Back", show=True),
         Binding("escape", "back", "Back", show=False),
         Binding("s", "system", "System / signing", show=True),
+        Binding("r", "refresh", "Refresh snapshot", show=True),
         Binding("e", "evidence", "Evidence", show=True),
         Binding("w", "review", "Review", show=True),
         Binding("d", "handoff", "Handoff", show=True),
@@ -125,16 +126,30 @@ class ChangeSetDetailScreen(Screen):
         self.app.push_screen(TextInspectorScreen(binding_help(self)))
 
     def action_evidence(self) -> None:
-        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "evidence")))
+        self.app.push_screen(StatusInspectorScreen(self, "evidence"))
 
     def action_review(self) -> None:
-        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "review")))
+        self.app.push_screen(StatusInspectorScreen(self, "review"))
 
     def action_handoff(self) -> None:
-        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "handoff")))
+        self.app.push_screen(StatusInspectorScreen(self, "handoff"))
 
     def action_git(self) -> None:
-        self.app.push_screen(TextInspectorScreen(inspector_text(self._status, "git")))
+        self.app.push_screen(StatusInspectorScreen(self, "git"))
+
+    def action_refresh(self) -> bool:
+        try:
+            workspace = self.app.reload_status()  # type: ignore[attr-defined]
+            status = next((item for item in workspace.change_sets if item.id == self._status.id), None)
+            if status is None:
+                raise TuiError("Selected Change Set is no longer available.")
+        except TuiError as error:
+            self.query_one("#detail", Static).update("Refresh failed; retained old snapshot.\n\n" + detail_text(self._status))
+            self.notify(str(error), severity="error")
+            return False
+        self._status = status
+        self.query_one("#detail", Static).update(detail_text(status))
+        return True
 
     def action_quit(self) -> None:
         self.app.exit()
@@ -167,6 +182,20 @@ class TextInspectorScreen(Screen):
 
     def action_quit(self) -> None:
         self.app.exit()
+
+
+class StatusInspectorScreen(TextInspectorScreen):
+    BINDINGS = [Binding("r", "refresh", "Refresh snapshot"), *TextInspectorScreen.BINDINGS]
+
+    def __init__(self, detail: ChangeSetDetailScreen, view: str) -> None:
+        self._detail = detail
+        self._view = view
+        super().__init__(inspector_text(detail._status, view))
+
+    def action_refresh(self) -> None:
+        refreshed = self._detail.action_refresh()
+        prefix = "" if refreshed else "Refresh failed; retained old snapshot.\n\n"
+        self.query_one("#inspector", Static).update(prefix + inspector_text(self._detail._status, self._view))
 
 
 class RuntimeScreen(Screen):
