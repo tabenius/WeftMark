@@ -48,7 +48,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ steps.version.outputs.tag }}
           persist-credentials: false
-      - name: Refuse unreviewed or previously published release
+      - name: Require main ancestry and refuse previously published release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -103,6 +103,10 @@ jobs:
             '
           done
           uv run --no-sync python scripts/smoke_tui_pty.py dist/weftmark-tui
+      - name: Require exact-head native release review and passing evidence
+        run: |
+          uv run --locked --extra test --group docs make release-evidence
+          uv run --locked python scripts/check_release_review.py release/release-evidence-v0.json --head "$(git rev-parse HEAD)"
       - name: Attest build provenance of release assets
         uses: actions/attest-build-provenance@v3
         with:

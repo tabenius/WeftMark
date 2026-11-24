@@ -13,6 +13,23 @@ package. The focused CAD evidence integration smoke workflow remains independent
 
 ## Create a release
 
+### Exact-head native review is required
+
+Before attestation or publication, the release workflow now validates the fresh
+native-ledger evidence bundle with `scripts/check_release_review.py`. It requires
+the release source SHA, a review for `alpha-release-evidence-cs` at that same SHA,
+outcome `ready`, boolean `is_releasable: true`, and passing pytest/smoke results.
+Missing, stale, follow-up-only or malformed evidence refuses release. Ancestry
+alone is not review, and an author review is not independent security review.
+
+**Provisioning blocker:** stock GitHub-hosted runners have no native ledger, so
+releases fail closed until an authenticated, exact-head native-review transport
+is deliberately configured. This patch does not invent that trust path or change
+the GitHub-hosted-only policy. Normal CI and development builds remain available.
+Do not auto-approve in CI, manufacture JSON reviews, accept an untrusted downloaded
+bundle, or bypass the gate. The checker validates policy, not identity/signatures;
+it only consumes the bundle freshly built from the authorized native ledger.
+
 The version in `pyproject.toml` and `src/weftmark/__init__.py` must match
 the semantic version tag. After a green main CI run, create and push a version
 tag (`vX.Y.Z`). The `Release` workflow validates the tag, checks out that
