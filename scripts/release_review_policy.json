@@ -1,0 +1,7 @@
+{
+  "schema": "weftmark.release-review-policy.v1",
+  "principal": "weftmark-release-review",
+  "namespace": "weftmark-release-review-v1",
+  "fingerprint": null,
+  "public_key": null
+}
