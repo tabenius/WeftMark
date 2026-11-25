@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
+      actions: read
       id-token: write
       attestations: write
     steps:

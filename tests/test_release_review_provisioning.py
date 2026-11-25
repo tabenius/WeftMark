@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -125,3 +126,6 @@ def test_hosted_workflows_do_not_receive_private_keys_or_auto_approve():
     assert 'provision_release_review.py apply' in release
     assert 'ssh-keygen -Y sign' not in release
     assert 'review create' not in intake
+    # Explicit job permissions disable unspecified scopes; gh run/download
+    # needs Actions read, not signing keys or Actions write authority.
+    assert yaml.safe_load(release)['jobs']['release']['permissions']['actions'] == 'read'
