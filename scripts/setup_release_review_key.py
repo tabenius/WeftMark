@@ -25,6 +25,16 @@ def require_encrypted_key(path):
         raise ValueError('private key must have a passphrase; protect it locally with ssh-keygen -p')
 
 
+def normalize_public_key(output):
+    lines = output.strip().splitlines()
+    parts = lines[0].split() if len(lines) == 1 else []
+    if len(parts) < 2 or parts[0] != 'ssh-ed25519':
+        raise ValueError('dedicated review key must be Ed25519')
+    # OpenSSH may retain a comment after the two public-key fields. It is not
+    # part of the key blob or fingerprint and must not make enrollment fail.
+    return ' '.join(parts[:2])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--key', type=Path, required=True)
@@ -51,10 +61,8 @@ def main():
             subprocess.run(['ssh-keygen', '-t', 'ed25519', '-a', '100', '-C', 'WeftMark release review', '-f', str(key)], check=True)
         require_encrypted_key(key)
         # Prompt locally again if necessary: derive, do not trust a stale .pub.
-        public = subprocess.check_output(['ssh-keygen', '-y', '-f', str(key)], text=True).strip()
+        public = normalize_public_key(subprocess.check_output(['ssh-keygen', '-y', '-f', str(key)], text=True))
         parts = public.split()
-        if len(parts) != 2 or parts[0] != 'ssh-ed25519':
-            raise ValueError('dedicated review key must be Ed25519')
         fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(parts[1], validate=True)).digest()).decode().rstrip('=')
         policy = {'schema': 'weftmark.release-review-policy.v1', 'principal': 'weftmark-release-review',
                   'namespace': 'weftmark-release-review-v1', 'fingerprint': fingerprint, 'public_key': public}

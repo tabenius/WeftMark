@@ -24,8 +24,10 @@ alone is not review, and an author review is not independent security review.
 
 Hosted runners do not receive a private ledger. The signed-receipt ceremony below
 transports only the minimal native review. Its dedicated public key must first be
-explicitly enrolled in `scripts/release_review_policy.json`; the initial null pin refuses
-release. Do not auto-approve in CI, manufacture reviews, use another product's key,
+explicitly enrolled in `scripts/release_review_policy.json`; a null pin refuses
+release. The owner-enrolled dedicated signer is
+`SHA256:OyhH3b8uVIdi6uoBnefjxhznTJOTjLi6RFSjp4faRw0`.
+Do not auto-approve in CI, manufacture reviews, use another product's key,
 or accept trust policy from the downloaded artifact. Normal CI remains available.
 
 ### Dedicated review-key and hosted provisioning ceremony

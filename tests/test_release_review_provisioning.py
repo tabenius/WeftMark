@@ -99,10 +99,20 @@ def test_review_is_never_implicitly_upgraded_or_self_approved():
 
 
 def test_unenrolled_policy_and_unencrypted_production_key_are_refused(tmp_path, signer):
+    unconfigured = tmp_path/'unconfigured-policy.json'
+    policy = json.loads(signer[1].read_text())
+    policy.update(public_key=None,fingerprint=None)
+    unconfigured.write_text(json.dumps(policy))
     with pytest.raises(ValueError,match='not been enrolled'):
-        transport.load_policy(ROOT/'scripts/release_review_policy.json')
+        transport.load_policy(unconfigured)
     with pytest.raises(ValueError,match='passphrase'):
         ceremony.require_encrypted_key(signer[0])
+
+
+def test_public_key_comments_from_openssh_do_not_break_ceremony(signer):
+    public = signer[0].with_suffix('.pub').read_text().strip()
+    assert ceremony.normalize_public_key(public+' owner label') == ' '.join(public.split()[:2])
+    assert transport.load_policy(ROOT/'scripts/release_review_policy.json')['fingerprint'] == 'SHA256:OyhH3b8uVIdi6uoBnefjxhznTJOTjLi6RFSjp4faRw0'
 
 
 def test_hosted_workflows_do_not_receive_private_keys_or_auto_approve():

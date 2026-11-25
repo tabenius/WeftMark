@@ -2,6 +2,6 @@
   "schema": "weftmark.release-review-policy.v1",
   "principal": "weftmark-release-review",
   "namespace": "weftmark-release-review-v1",
-  "fingerprint": null,
-  "public_key": null
+  "fingerprint": "SHA256:OyhH3b8uVIdi6uoBnefjxhznTJOTjLi6RFSjp4faRw0",
+  "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBI2hycRjn8Q28puY3HAMnnXJfmHO35ubqc7yMlgVwun"
 }
