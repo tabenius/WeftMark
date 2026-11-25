@@ -1,4 +1,4 @@
-"""The two read-only screens: a Change Set list and its detail view."""
+"""Read-only Change Set list, detail and snapshot inspector screens."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from weftmark.application.status import ChangeSetStatus
 from weftmark.tui.data import TuiError
-from weftmark.tui.formatting import detail_text, evidence_summary, sort_statuses
+from weftmark.tui.formatting import detail_text, evidence_summary, inspector_text, sort_statuses
 from weftmark.adapters.runtime_status import runtime_text
 
 
@@ -21,6 +21,7 @@ class ChangeSetListScreen(Screen):
         Binding("l", "select", "Open", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("s", "system", "System / signing", show=True),
+        Binding("?", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -81,6 +82,9 @@ class ChangeSetListScreen(Screen):
     def action_system(self) -> None:
         self.app.push_screen(RuntimeScreen())
 
+    def action_help(self) -> None:
+        self.app.push_screen(TextInspectorScreen(binding_help(self)))
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         status = self._by_id.get(str(event.row_key.value))
         if status is None:
@@ -94,6 +98,12 @@ class ChangeSetDetailScreen(Screen):
         Binding("h", "back", "Back", show=True),
         Binding("escape", "back", "Back", show=False),
         Binding("s", "system", "System / signing", show=True),
+        Binding("r", "refresh", "Refresh snapshot", show=True),
+        Binding("e", "evidence", "Evidence", show=True),
+        Binding("w", "review", "Review", show=True),
+        Binding("d", "handoff", "Handoff", show=True),
+        Binding("g", "git", "Git observation", show=True),
+        Binding("?", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -103,7 +113,7 @@ class ChangeSetDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield VerticalScroll(Static(detail_text(self._status), id="detail"))
+        yield VerticalScroll(Static(detail_text(self._status), id="detail", markup=False))
         yield Footer()
 
     def action_back(self) -> None:
@@ -112,8 +122,80 @@ class ChangeSetDetailScreen(Screen):
     def action_system(self) -> None:
         self.app.push_screen(RuntimeScreen())
 
+    def action_help(self) -> None:
+        self.app.push_screen(TextInspectorScreen(binding_help(self)))
+
+    def action_evidence(self) -> None:
+        self.app.push_screen(StatusInspectorScreen(self, "evidence"))
+
+    def action_review(self) -> None:
+        self.app.push_screen(StatusInspectorScreen(self, "review"))
+
+    def action_handoff(self) -> None:
+        self.app.push_screen(StatusInspectorScreen(self, "handoff"))
+
+    def action_git(self) -> None:
+        self.app.push_screen(StatusInspectorScreen(self, "git"))
+
+    def action_refresh(self) -> bool:
+        try:
+            workspace = self.app.reload_status()  # type: ignore[attr-defined]
+            status = next((item for item in workspace.change_sets if item.id == self._status.id), None)
+            if status is None:
+                raise TuiError("Selected Change Set is no longer available.")
+        except TuiError as error:
+            self.query_one("#detail", Static).update("Refresh failed; retained old snapshot.\n\n" + detail_text(self._status))
+            self.notify(str(error), severity="error")
+            return False
+        self._status = status
+        self.query_one("#detail", Static).update(detail_text(status))
+        return True
+
     def action_quit(self) -> None:
         self.app.exit()
+
+
+def binding_help(screen: Screen) -> str:
+    """The same bindings drive dispatch, footer and contextual help."""
+    return "Read-only reviewer bindings\n\n" + "\n".join(
+        f"{binding.key}: {binding.description}" for binding in screen.BINDINGS
+        if isinstance(binding, Binding)
+    )
+
+
+class TextInspectorScreen(Screen):
+    """Inert text from the existing status snapshot, not a mutation surface."""
+
+    BINDINGS = [Binding("h,escape", "back", "Back"), Binding("q", "quit", "Quit")]
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield VerticalScroll(Static(self._text, id="inspector", markup=False))
+        yield Footer()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_quit(self) -> None:
+        self.app.exit()
+
+
+class StatusInspectorScreen(TextInspectorScreen):
+    BINDINGS = [Binding("r", "refresh", "Refresh snapshot"), *TextInspectorScreen.BINDINGS]
+
+    def __init__(self, detail: ChangeSetDetailScreen, view: str) -> None:
+        self._detail = detail
+        self._view = view
+        super().__init__(inspector_text(detail._status, view))
+
+    def action_refresh(self) -> None:
+        refreshed = self._detail.action_refresh()
+        prefix = "" if refreshed else "Refresh failed; retained old snapshot.\n\n"
+        self.query_one("#inspector", Static).update(prefix + inspector_text(self._detail._status, self._view))
 
 
 class RuntimeScreen(Screen):

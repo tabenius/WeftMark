@@ -1,13 +1,14 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       tag:
         description: 'Existing semantic version tag, for example v0.0.1'
+        required: true
+        type: string
+      review_run_id:
+        description: 'Successful Release review intake run ID for this exact tag/head'
         required: true
         type: string
 
@@ -22,6 +23,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
+      actions: read
       id-token: write
       attestations: write
     steps:
@@ -48,7 +50,35 @@ jobs:
           fetch-depth: 0
           ref: ${{ steps.version.outputs.tag }}
           persist-credentials: false
-      - name: Refuse unreviewed or previously published release
+      - name: Fetch authenticated review from successful exact-tag intake
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_RUN_ID: ${{ inputs.review_run_id }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$REVIEW_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'A review intake run ID is required'; exit 1; }
+          export RELEASE_HEAD="$(git rev-parse HEAD)"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REVIEW_RUN_ID" > "$RUNNER_TEMP/review-run.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          run = json.loads((Path(os.environ['RUNNER_TEMP']) / 'review-run.json').read_text())
+          expected = {'head_sha':os.environ['RELEASE_HEAD'], 'head_branch':os.environ['RELEASE_TAG'],
+                      'event':'workflow_dispatch', 'conclusion':'success',
+                      'path':'.github/workflows/release-review-intake.yml'}
+          if any(run.get(key) != value for key, value in expected.items()):
+              raise ValueError('review intake source, tag, workflow or success mismatch')
+          if run.get('repository', {}).get('full_name', '').lower() != os.environ['GITHUB_REPOSITORY'].lower():
+              raise ValueError('review intake belongs to another repository')
+          PY
+          gh run download "$REVIEW_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "weftmark-release-review-$RELEASE_HEAD" --dir "$RUNNER_TEMP/release-review"
+          python3 scripts/provision_release_review.py verify \
+            --receipt "$RUNNER_TEMP/release-review/review.json" \
+            --signature "$RUNNER_TEMP/release-review/review.json.sig" \
+            --head "$RELEASE_HEAD" --tag "$RELEASE_TAG"
+      - name: Require main ancestry and refuse previously published release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -103,6 +133,16 @@ jobs:
             '
           done
           uv run --no-sync python scripts/smoke_tui_pty.py dist/weftmark-tui
+      - name: Require exact-head native release review and passing evidence
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          uv run --locked --extra test --group docs make release-evidence
+          uv run --locked python scripts/provision_release_review.py apply \
+            --receipt "$RUNNER_TEMP/release-review/review.json" \
+            --signature "$RUNNER_TEMP/release-review/review.json.sig" \
+            --head "$(git rev-parse HEAD)" --tag "$RELEASE_TAG" --bundle release/release-evidence-v0.json
+          uv run --locked python scripts/check_release_review.py release/release-evidence-v0.json --head "$(git rev-parse HEAD)"
       - name: Attest build provenance of release assets
         uses: actions/attest-build-provenance@v3
         with:

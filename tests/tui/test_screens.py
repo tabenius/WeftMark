@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import Mock
 from datetime import datetime, timezone
 
 from textual.app import App
 from textual.widgets import DataTable, Static
 
-from weftmark.application.status import ChangeSetStatus, WorkspaceStatus
+from weftmark.application.status import ChangeSetStatus, EvidenceRef, WorkspaceStatus
 from weftmark.tui.data import TuiError
-from weftmark.tui.screens import ChangeSetDetailScreen, ChangeSetListScreen
+from weftmark.tui.screens import ChangeSetDetailScreen, ChangeSetListScreen, TextInspectorScreen, binding_help
+from weftmark.tui.formatting import inspector_text, snapshot_label
+from weftmark.tui.data import TuiError
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
 
@@ -62,6 +67,79 @@ async def _list_screen_renders_one_row_per_status():
 
 def test_list_screen_renders_one_row_per_status() -> None:
     run(_list_screen_renders_one_row_per_status())
+
+
+async def _inspectors_use_the_typed_snapshot_and_return_to_detail():
+    status = replace(make_status("cs-1"), goal="[bold]literal goal[/bold]",
+                     evidence_refs=(EvidenceRef("ev-1", "test", "current", "agent", "worker", ("[link=bad]literal[/link]",)),))
+    app = _HarnessApp((status,))
+    async with app.run_test() as pilot:
+        await pilot.press("enter")
+        await pilot.pause()
+        detail = app.screen
+        assert detail.query_one("#detail", Static)._render_markup is False
+        for key, expected in (("e", "ev-1"), ("w", "No review recorded"),
+                              ("d", "No handoff recorded"), ("g", "Observed head"),
+                              ("?", "e: Evidence")):
+            await pilot.press(key)
+            await pilot.pause()
+            assert isinstance(app.screen, TextInspectorScreen)
+            text = app.screen.query_one("#inspector", Static)
+            assert text._render_markup is False
+            assert expected in text.content
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is detail
+
+
+def test_inspectors_use_the_typed_snapshot_and_return_to_detail():
+    run(_inspectors_use_the_typed_snapshot_and_return_to_detail())
+
+
+def test_inspector_reports_stale_records_without_inventing_full_details():
+    status = replace(make_status("cs-1"), latest_review_id="review-1",
+                     latest_review_outcome="ready", latest_review_head_sha="old-head")
+    text = inspector_text(status, "review")
+    assert "stale" in text
+    assert "Full record is not included" in text
+    assert "old-head" in text
+
+
+def test_help_is_generated_from_dispatchable_screen_bindings():
+    screen = ChangeSetDetailScreen(make_status("cs-1"))
+    for binding in screen.BINDINGS:
+        assert callable(getattr(screen, "action_" + binding.action))
+        assert f"{binding.key}: {binding.description}" in binding_help(screen)
+
+
+async def _refresh_inspector_updates_parent_and_labels_failures():
+    original = make_status("cs-1")
+    updated = replace(original, observed_head_sha="new-head")
+    app = _HarnessApp((original,))
+    app.reload_status = Mock(side_effect=[SimpleNamespace(change_sets=(updated,)), TuiError("offline"), SimpleNamespace(change_sets=())])
+    async with app.run_test() as pilot:
+        await pilot.press("enter", "g")
+        await pilot.pause()
+        for expected in ("new-head", "Refresh failed", "Refresh failed"):
+            await pilot.press("r")
+            await pilot.pause()
+            assert expected in app.screen.query_one("#inspector", Static).content
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen._status.observed_head_sha == "new-head"
+        assert "Refresh failed" in app.screen.query_one("#detail", Static).content
+
+
+def test_refresh_inspector_updates_parent_and_labels_failures():
+    run(_refresh_inspector_updates_parent_and_labels_failures())
+
+
+def test_snapshot_age_is_explicit_and_future_or_naive_time_is_not_fresh():
+    status = make_status("cs-1")
+    assert "0s ago" in snapshot_label(status, now=status.observed_at)
+    assert "not live state" in snapshot_label(status)
+    assert "future timestamp" in snapshot_label(replace(status, observed_at=status.observed_at.replace(year=2099)))
+    assert "age unavailable" in snapshot_label(replace(status, observed_at=status.observed_at.replace(tzinfo=None)))
 
 
 async def _list_screen_shows_a_message_when_there_are_no_change_sets():

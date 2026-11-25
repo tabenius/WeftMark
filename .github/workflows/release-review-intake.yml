@@ -1,0 +1,62 @@
+name: Release review intake
+
+on:
+  workflow_dispatch:
+    inputs:
+      receipt_base64:
+        description: 'Base64 of the signed minimal native review JSON (never a private ledger or key)'
+        required: true
+        type: string
+      signature_base64:
+        description: 'Base64 of its detached SSHSIG signature'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  intake:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Decode bounded public review material
+        env:
+          RECEIPT_B64: ${{ inputs.receipt_base64 }}
+          SIGNATURE_B64: ${{ inputs.signature_base64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          directory = Path(os.environ['RUNNER_TEMP']) / 'release-review'
+          directory.mkdir(mode=0o700)
+          for variable, name, maximum in [('RECEIPT_B64','review.json',131072),('SIGNATURE_B64','review.json.sig',16384)]:
+              encoded = os.environ[variable]
+              if len(encoded) > maximum * 2:
+                  raise ValueError('review input exceeds limit')
+              raw = base64.b64decode(encoded, validate=True)
+              if len(raw) > maximum:
+                  raise ValueError('decoded review input exceeds limit')
+              with (directory / name).open('xb') as stream:
+                  stream.write(raw)
+          PY
+      - name: Verify dedicated signer and exact immutable source
+        env:
+          RELEASE_HEAD: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$RELEASE_HEAD"
+          python3 scripts/provision_release_review.py verify \
+            --receipt "$RUNNER_TEMP/release-review/review.json" \
+            --signature "$RUNNER_TEMP/release-review/review.json.sig" \
+            --head "$RELEASE_HEAD" --tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weftmark-release-review-${{ github.sha }}
+          path: ${{ runner.temp }}/release-review/*
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,7 @@
+{
+  "schema": "ragbaz.fixture-vendor/v1",
+  "source": "https://github.com/tabenius/frog",
+  "source_path": "contracts/task-observations.v1.json",
+  "source_commit": "29f57706538dfc4aca7489627302c649a5c6a0e7",
+  "sha256": "087e8b028ff29b4759d3b4b0c6028dcb37823549a640d9d45687c1ecdb544951"
+}

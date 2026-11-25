@@ -13,17 +13,100 @@ package. The focused CAD evidence integration smoke workflow remains independent
 
 ## Create a release
 
+### Exact-head native review is required
+
+Before attestation or publication, the release workflow now validates the fresh
+native-ledger evidence bundle with `scripts/check_release_review.py`. It requires
+the release source SHA, a review for `alpha-release-evidence-cs` at that same SHA,
+outcome `ready`, boolean `is_releasable: true`, and passing pytest/smoke results.
+Missing, stale, follow-up-only or malformed evidence refuses release. Ancestry
+alone is not review, and an author review is not independent security review.
+
+Hosted runners do not receive a private ledger. The signed-receipt ceremony below
+transports only the minimal native review. Its dedicated public key must first be
+explicitly enrolled in `scripts/release_review_policy.json`; a null pin refuses
+release. The owner-enrolled dedicated signer is
+`SHA256:OyhH3b8uVIdi6uoBnefjxhznTJOTjLi6RFSjp4faRw0`.
+Do not auto-approve in CI, manufacture reviews, use another product's key,
+or accept trust policy from the downloaded artifact. Normal CI remains available.
+
+### Dedicated review-key and hosted provisioning ceremony
+
+Release is now a deliberate **manual workflow dispatch**, not an automatic tag
+publication. First enroll the public policy in reviewed source, then tag that
+source, create an actual native release review at its exact head, sign its minimal
+receipt locally, run intake on the tag, and dispatch release with that successful
+intake run ID. The private signing key and complete ledger never enter GitHub CI.
+
+1. From your own interactive terminal, create a dedicated encrypted key:
+
+   ```sh
+   python3 scripts/setup_release_review_key.py \
+     --key "$HOME/.config/weftmark/signing/review_ed25519" \
+     --policy-output /tmp/opencode/weftmark-review-policy-proposed.json
+   ```
+
+   The ceremony prompts for a passphrase locally, rejects an unencrypted key,
+   derives the public half from the private key, and proposes only public policy.
+   Do not put passphrases in chat, argv, tracked files or CI. Compare the public
+   fingerprint, explicitly replace the null policy with this proposal, review the
+   diff and commit it **before** tagging release source. Keep and test an encrypted
+   independent recovery copy; the tool does not claim to create one. No Android,
+   APT, root or box key is silently reused.
+
+2. Create the genuine native `alpha-release-evidence-cs` review through the native
+   workflow, with current required evidence at the clean tagged source head. Then:
+
+   ```sh
+   uv run --locked python scripts/provision_release_review.py export \
+     --repo . --tag vX.Y.Z --output /tmp/opencode/weftmark-review.json
+   ssh-keygen -Y sign -f "$HOME/.config/weftmark/signing/review_ed25519" \
+     -n weftmark-release-review-v1 /tmp/opencode/weftmark-review.json
+   ```
+
+   Export refuses a missing/stale/not-ready native review. Signing is a deliberate
+   local operator action, never an evidence runner or CI auto-approval. The minimal
+   receipt contains repository/head/tag, native review identifiers/outcome and a
+   maximum seven-day validity window, not private prompts, ledger paths or test logs.
+
+3. Base64-encode `weftmark-review.json` and its `.sig` into a JSON object with keys
+   `receipt_base64` and `signature_base64`. Submit that public object using
+   `gh workflow run release-review-intake.yml --ref vX.Y.Z --json` on stdin.
+   Intake validates the dedicated fingerprint, SSHSIG namespace/principal, exact
+   source/tag, expiry and native ready state, then uploads a seven-day artifact.
+   Missing enrollment, unsigned/altered data and cross-head receipts fail closed.
+
+4. After intake succeeds, dispatch:
+
+   ```sh
+   gh workflow run release.yml --ref vX.Y.Z -f tag=vX.Y.Z -f review_run_id=INTAKE_RUN_ID
+   ```
+
+   Release checks the intake's repository/workflow/tag/head/event/success before
+   downloading its exact-head artifact, re-verifies the offline signature against
+   source-controlled public policy, builds fresh test/smoke evidence, and injects
+   only the authenticated review into that fresh bundle before the release gate.
+   A review receipt never substitutes for CI tests, package checks or attestation.
+
+The signature authenticates the dedicated key holder's review statement; it does
+not establish independent human/security review, external timestamping or full
+ledger provenance. The exporter reads native authority, but the signature cannot
+prevent a dishonest key holder from asserting false facts. Repo policy enrollment,
+key custody and independent review requirements remain explicit owner decisions.
+
 The version in `pyproject.toml` and `src/weftmark/__init__.py` must match
 the semantic version tag. After a green main CI run, create and push a version
-tag (`vX.Y.Z`). The `Release` workflow validates the tag, checks out that
-exact immutable commit, reruns tests, builds, and creates a GitHub Release.
+tag (`vX.Y.Z`). After signed review intake succeeds, manually dispatch `Release`.
+It validates the tag and review run, checks out that exact immutable commit,
+reruns tests, builds, and creates a GitHub Release.
 
-The same workflow may be dispatched manually with an **existing version tag**.
+The workflow must be dispatched manually with an **existing version tag** and
+the successful exact-head review intake run ID.
 It does not change versions automatically or silently publish `main`.
 Dispatch against that tag itself, not against a branch with a different tag input:
 
 ```bash
-gh workflow run release.yml --ref vX.Y.Z -f tag=vX.Y.Z
+gh workflow run release.yml --ref vX.Y.Z -f tag=vX.Y.Z -f review_run_id=INTAKE_RUN_ID
 ```
 
 The event ref, selected tag, peeled tag commit and checked-out commit must agree.
